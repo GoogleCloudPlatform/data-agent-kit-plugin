@@ -15,7 +15,7 @@ description: |
   SQL/BigQuery ML HANDOFF: If the user requires a SQL solution, use this skill to dictate the ANALYSIS STEPS (e.g., markdown analysis cells, visualization logic), but defer to `bigquery` for all SQL syntax.
 license: Apache-2.0
 metadata:
-  version: v1
+  version: v2
   publisher: google
 ---
 
@@ -42,6 +42,9 @@ Identify distinct groups based on their features.
 -   Transform ordinal data with an ordinal encoder.
 -   Transform nominal data with a one hot encoder.
 -   Standardize numerical features.
+-   Assemble all prompt-specified features and transformed columns (including
+    converted date timestamps, scaled numericals, and encodings) into the
+    feature vector for clustering.
 -   Perform clustering with a range of values, and collect the silhouette score.
 -   Choose the optimal number of clusters based on the silhouette score.
 -   Use dimensionality reduction (e.g., PCA) to project the data into two
