@@ -13,7 +13,7 @@ description: |
   - Performing simple SQL queries that can be done directly in BigQuery.
 license: Apache-2.0
 metadata:
-  version: v12
+  version: v13
   publisher: google
 ---
 
@@ -28,11 +28,16 @@ metadata:
 1.  **Understand schemas**: **ALWAYS** use `@skill:discovering-gcp-data-assets`
     skill or `references/schema_direct_inspection.md` to understand input and
     output schemas. Include the schema in your thought process BEFORE generating
-    any code. Do NOT guess column names. Unless explicitly specified, assume
-    that the assets are located in the same project. Avoid scanning for assets
-    across other projects as it can take a long time. If an expected dataset or
-    table does not exist, use `@skill:discovering-gcp-data-assets` to discover
-    all similar tables in the namespace or project.
+    any code. Do NOT guess column names. When a fully qualified BigQuery table
+    is provided in the prompt (e.g. `project.dataset.table`), directly inspect
+    its schema using `bigquery__get_table_info` or
+    `spark.read.format("bigquery").option("table", ...).load().printSchema()`
+    rather than running redundant multi-catalog searches across Dataplex or
+    listing dataset IDs. Unless explicitly specified, assume that the assets are
+    located in the same project. Avoid scanning for assets across other projects
+    as it can take a long time. If an expected dataset or table does not exist,
+    use `@skill:discovering-gcp-data-assets` to discover all similar tables in
+    the namespace or project.
 
     *MINOR TYPO RULE*: If there is a minor typo (e.g. `employees` vs
     `employee`), you can fix the error and proceed.
