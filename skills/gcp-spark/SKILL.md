@@ -13,7 +13,7 @@ description: |
   - Performing simple SQL queries that can be done directly in BigQuery.
 license: Apache-2.0
 metadata:
-  version: v12
+  version: v13
   publisher: google
 ---
 
@@ -46,6 +46,19 @@ metadata:
     Do NOT proceed with code generation, do NOT add fallback logic to code, and
     do NOT automatically substitute any alternative table (even if its schema
     seems to match) without explicit user permission.
+
+    *ICEBERG TABLE LOOKUP RULE*: When loading or reading an Iceberg table (e.g.
+    `<CATALOG>.<NAMESPACE>.<TABLE>`), if the table lookup or read fails with an
+    `AnalysisException`, table not found, or missing table error, immediately
+    list tables in the `<CATALOG>.<NAMESPACE>` catalog namespace using
+    `@skill:discovering-gcp-data-assets` or `spark.sql("SHOW TABLES IN
+    catalog.namespace")` to discover available alternatives. If an alternative
+    table exists in the namespace (e.g. `bronze_transactions`), IMMEDIATELY
+    report to the user that the requested table was not found but the
+    alternative exists, and ask the user if you should use that table instead.
+    STOP EXECUTING your turn. Do NOT engage in exploratory debugging loops
+    checking IAM roles, ADC credentials, Dataplex across regions, or GCS
+    buckets, and do NOT attempt fallback workarounds without user confirmation.
 2.  **Verify source accessibility**: verify access/existence using `gcloud
     storage ls gs://<path-to-dataset>`. If accessing or reading a GCS path fails
     with a storage error e.g., permission errors like `403
