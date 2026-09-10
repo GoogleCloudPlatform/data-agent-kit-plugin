@@ -183,21 +183,32 @@ following fields:
             `PythonVirtualenvOperator` to create an isolated virtual
             environment.
 
--   **BigQuery Dataset Location**: When creating a `sql` action with the `bigquery` engine, you **must inspect the location of any referenced BigQuery
-    datasets** (e.g., whether it is multi-region `US`/`EU` or a specific region
-    like `us-central1`).
-    Run:
+-   **SQL Actions (`sql`)**:
+    -   **BigQuery Dataset Location**: When creating a `sql` action with the `bigquery` engine, you **must inspect the location of any referenced BigQuery
+        datasets** (e.g., whether it is multi-region `US`/`EU` or a specific region
+        like `us-central1`).
+        Run:
 
-    ```
-    # Replace <PROJECT_ID> and <DATASET_ID> with the actual project and dataset ID
-    bq show --format=prettyjson <PROJECT_ID>:<DATASET_ID>
-    ```
+        ```
+        # Replace <PROJECT_ID> and <DATASET_ID> with the actual project and dataset ID
+        bq show --format=prettyjson <PROJECT_ID>:<DATASET_ID>
+        ```
 
-    Extract the `location` field (e.g., `US`, `EU`, `us-central1`) and set
-    `actions[].sql.engine.bigquery.location: <LOCATION>` (or
-    `actions[].dataIngestion.bigqueryDts.location: <LOCATION>`). Do NOT omit the
-    location or assume `defaults.location` matches the BigQuery dataset
-    location.
+        Extract the `location` field (e.g., `US`, `EU`, `us-central1`) and set
+        `actions[].sql.engine.bigquery.location: <LOCATION>` (or
+        `actions[].dataIngestion.bigqueryDts.location: <LOCATION>`). Do NOT omit the
+        location or assume `defaults.location` matches the BigQuery dataset
+        location.
+    -   **BigQuery vs Dataproc Query Syntax**:
+        -   **For BigQuery (`engine.bigquery`)**: Specify the output table via
+            `destinationTable: project.dataset.table_name`. The query
+            (`query.inline` or `query.path`) must be a standard **`SELECT`**
+            query without DDL/DML statements (do **not** use `CREATE TABLE`,
+            `CREATE OR REPLACE TABLE`, or `INSERT INTO` as BigQuery will fail).
+        -   **For Dataproc (`engine.dataprocServerless` / `engine.dataprocOnGce`)**:
+            Dataproc engines do not support `destinationTable`; include DDL/DML
+            statements (`CREATE TABLE ... AS SELECT ...` or `INSERT OVERWRITE`)
+            directly in the SQL query text to materialize output tables.
 
 -   Before creating or updating the `deployment.yaml` file, you **must** first
     run the following command to get the list of available Composer environments
