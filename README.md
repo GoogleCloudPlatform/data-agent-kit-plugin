@@ -170,7 +170,7 @@ Edit the configuration file:
 <summary><b>Codex</b></summary>
 
 1. Edit the configuration file:
-`~/.codex/plugins/cache/data-agent-kit-starter-pack-marketplace/dak/0.10.1/.mcp.json`
+`~/.codex/plugins/cache/data-agent-kit-starter-pack-marketplace/dak/0.10.1/mcp.json`
 
 2. Restart Codex.
 </details>

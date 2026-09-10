@@ -14,6 +14,12 @@
       "title": "GCP Region",
       "description": "Region for GCP services (e.g. us-west1)",
       "required": true
+    },
+    "BILLING_QUOTA_PROJECT_ID": {
+      "type": "string",
+      "title": "Billing / Quota Project ID",
+      "description": "Optional GCP project ID for API quota and billing attribution (X-Goog-User-Project)",
+      "required": false
     }
   }
 }

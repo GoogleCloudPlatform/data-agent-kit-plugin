@@ -39,7 +39,8 @@
         "https://spanner.googleapis.com/mcp"
       ],
       "env": {
-        "X_GOOG_PROXY_HEADERS": "{\"User-Agent\": \"datacloud.claude\"}"
+        "X_GOOG_PROXY_HEADERS": "{\"User-Agent\": \"datacloud.claude\"}",
+        "BILLING_QUOTA_PROJECT_ID": "${user_config.BILLING_QUOTA_PROJECT_ID}"
       }
     },
     "alloydb-postgres": {
@@ -59,7 +60,8 @@
         "https://sqladmin.googleapis.com/mcp"
       ],
       "env": {
-        "X_GOOG_PROXY_HEADERS": "{\"User-Agent\": \"datacloud.claude\"}"
+        "X_GOOG_PROXY_HEADERS": "{\"User-Agent\": \"datacloud.claude\"}",
+        "BILLING_QUOTA_PROJECT_ID": "${user_config.BILLING_QUOTA_PROJECT_ID}"
       }
     },
     "knowledge_catalog": {
