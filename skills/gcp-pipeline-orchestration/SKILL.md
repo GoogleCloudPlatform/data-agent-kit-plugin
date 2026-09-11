@@ -210,6 +210,50 @@ following fields:
             statements (`CREATE TABLE ... AS SELECT ...` or `INSERT OVERWRITE`)
             directly in the SQL query text to materialize output tables.
 
+-   **AI / Vertex AI Actions (`ai`)**:
+    -   **Scope & Capabilities**: Support for Agent Platform (`Vertex AI`) is currently limited to uploading a trained custom model to the Vertex AI Model Registry (`agentPlatform.modelUpload`) and running batch predictions (`agentPlatform.batchInference`). Model training (e.g. Keras/TensorFlow models) is executed in a `pyspark` action.
+    -   **Model Export Signature for Batch Prediction**: When creating a custom
+        training pipeline in PySpark followed by a Agent Platform
+        batch inference action (`agentPlatform.batchInference`) reading from
+        BigQuery:
+        -  Agent Platform Batch Prediction passes input instances wrapped in a key
+            named `"instances"` (e.g., `{"instances": [...]}`).
+        -   Standard TensorFlow / Keras models exported with default
+            `model.save()` name their input signature after layer names (e.g.,
+            `dense_input`), which causes Agent Platform batch prediction jobs to
+            fail with input signature mismatch errors.
+        -   You **must export the model with an explicit serving signature**
+            expecting `instances` as the input name and returning a dictionary
+            with `"prediction"`:
+
+            ```python
+            class ExportModel(tf.Module):
+
+              def __init__(self, model):
+                super().__init__()
+                self.model = model
+
+              @tf.function(
+                  input_signature=[
+                      tf.TensorSpec(
+                          shape=[None, num_features],
+                          dtype=tf.float32,
+                          name="instances",
+                      )
+                  ]
+              )
+              def __call__(self, instances):
+                predictions = self.model(instances)
+                return {"prediction": predictions}
+
+
+            tf.saved_model.save(
+                ExportModel(model),
+                export_path,
+                signatures={"serving_default": ExportModel(model).__call__},
+            )
+            ```
+
 -   Before creating or updating the `deployment.yaml` file, you **must** first
     run the following command to get the list of available Composer environments
     for the user's project.

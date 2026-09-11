@@ -584,6 +584,9 @@ message AgentPlatformBatchInference {
   string model_name = 2 [(pipeline_models.validation.is_required) = true];
   string instances_format = 3;
   string predictions_format = 4;
+  // BigQuery table source (e.g. "bq://project.dataset.table").
+  // Note: Custom TensorFlow models used for batch prediction with BigQuery source must be exported
+  // with a serving signature expecting input named "instances" and returning a dictionary output (e.g. {"prediction": ...}).
   string bigquery_source = 5;
   repeated string gcs_source = 6;
   string bigquery_destination_prefix = 7;
@@ -659,3 +662,6 @@ actions:
 5. **SQL Action Location & Query Guidelines**:
    - **BigQuery (`engine.bigquery`)**: Always set `location` to match the dataset's region/multi-region. Specify the target table via `destinationTable` and use pure `SELECT` queries without DDL statements (do NOT use `CREATE TABLE` or `CREATE OR REPLACE TABLE`).
    - **Dataproc (`engine.dataprocServerless` / `engine.dataprocOnGce`)**: Dataproc engines do not have a `destinationTable` field; include DDL/DML statements (`CREATE TABLE ... AS SELECT ...` or `INSERT OVERWRITE ...`) directly within the SQL query text to persist tables.
+6. **Agent Platform (Vertex AI) Scope & Serving Signature**:
+   - **Supported Scope**: Support for Agent Platform (`Vertex AI`) is currently limited to uploading a trained custom model to the agent platform Registry (`agentPlatform.modelUpload`) and running batch predictions (`agentPlatform.batchInference`). Model training (e.g. Keras/TensorFlow models) is executed in a `pyspark` action.
+   - **Batch Prediction Serving Signature**: When training custom TensorFlow/Keras models in a `pyspark` action for downstream Agent Platform batch prediction (`agentPlatform.batchInference`) with BigQuery sources, the model must be saved with an explicit serving signature accepting `instances` (e.g. `tf.TensorSpec(..., name="instances")`) and returning a dictionary (e.g. `{"prediction": ...}`) to match Agent Platform's batch payload format.
