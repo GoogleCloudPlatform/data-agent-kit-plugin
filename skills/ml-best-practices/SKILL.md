@@ -15,7 +15,7 @@ description: |
   SQL/BigQuery ML HANDOFF: If the user requires a SQL solution, use this skill to dictate the ANALYSIS STEPS (e.g., markdown analysis cells, visualization logic), but defer to `bigquery` for all SQL syntax.
 license: Apache-2.0
 metadata:
-  version: v1
+  version: v2
   publisher: google
 ---
 
@@ -200,6 +200,14 @@ production based on predictive power, robustness, and viability.
 ## Essential ML Practices
 
 [!IMPORTANT] ALWAYS follow these ML practices
+
+-   **Library Selection for BigQuery Data**: When the data lives in BigQuery,
+    **ALWAYS** default to BigFrames — `bigframes.pandas` for dataframe work and
+    `bigframes.ml` (or BQML SQL) for modeling — rather than pandas and
+    scikit-learn on top of the `google-cloud-bigquery` client library.
+    Execution stays in BigQuery, so the analysis scales past the memory of the
+    local machine. Do not pull a whole table in with `.to_pandas()`; aggregate,
+    filter, or sample in BigQuery first. See `@skill:bigquery-bigframes`.
 
 -   **Strict Featurization Ordering**: For supervised learning **ALWAYS** split
     the dataset into training and test data **BEFORE** fitting preprocessing
