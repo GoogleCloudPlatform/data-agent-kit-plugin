@@ -167,25 +167,111 @@ following fields:
     > `sparkHistoryServerConfig`. It is better to omit this configuration if a
     > dedicated Spark History Server is not available.
 
--   If you want to schedule the python job, check the content of Python content
-    to determine if it's a spark job. If it is, use `pyspark` as type instead of
-    script as type.
+-   **Python Actions (`python`)**:
+    -   Check the content of the Python script to determine if it is a Spark
+        job. If it is, use `pyspark` action instead of `python`.
+    -   **Environment & Dependencies**: The `environment` field on a `python`
+        action is **optional**.
+        -   When `environment` or `requirements` is **omitted**, the action runs
+            as a standard `PythonOperator` directly in the Airflow worker's host
+            environment (using pre-installed Composer packages). Do **not**
+            add `environment.requirements` unnecessarily when standard
+            libraries or existing Composer packages are sufficient.
+        -   Only specify `environment.requirements` (via `path: requirements.txt`
+            or `inline: { list: [...] }`) when custom, isolated third-party
+            packages not available in Composer are needed. This compiles to
+            `PythonVirtualenvOperator` to create an isolated virtual
+            environment.
 
--   **BigQuery Dataset Location**: When creating a `sql` action with the `bigquery` engine, you **must inspect the location of any referenced BigQuery
-    datasets** (e.g., whether it is multi-region `US`/`EU` or a specific region
-    like `us-central1`).
-    Run:
+-   **SQL Actions (`sql`)**:
+    -   **BigQuery Dataset Location**: When creating a `sql` action with the `bigquery` engine, you **must inspect the location of any referenced BigQuery
+        datasets** (e.g., whether it is multi-region `US`/`EU` or a specific region
+        like `us-central1`).
+        Run:
 
-    ```
-    # Replace <PROJECT_ID> and <DATASET_ID> with the actual project and dataset ID
-    bq show --format=prettyjson <PROJECT_ID>:<DATASET_ID>
-    ```
+        ```
+        # Replace <PROJECT_ID> and <DATASET_ID> with the actual project and dataset ID
+        bq show --format=prettyjson <PROJECT_ID>:<DATASET_ID>
+        ```
 
-    Extract the `location` field (e.g., `US`, `EU`, `us-central1`) and set
-    `actions[].sql.engine.bigquery.location: <LOCATION>` (or
-    `actions[].dataIngestion.bigqueryDts.location: <LOCATION>`). Do NOT omit the
-    location or assume `defaults.location` matches the BigQuery dataset
-    location.
+        Extract the `location` field (e.g., `US`, `EU`, `us-central1`) and set
+        `actions[].sql.engine.bigquery.location: <LOCATION>` (or
+        `actions[].dataIngestion.bigqueryDts.location: <LOCATION>`). Do NOT omit the
+        location or assume `defaults.location` matches the BigQuery dataset
+        location.
+    -   **BigQuery vs Dataproc Query Syntax**:
+        -   **For BigQuery (`engine.bigquery`)**: Specify the output table via
+            `destinationTable: project.dataset.table_name`. The query
+            (`query.inline` or `query.path`) must be a standard **`SELECT`**
+            query without DDL/DML statements (do **not** use `CREATE TABLE`,
+            `CREATE OR REPLACE TABLE`, or `INSERT INTO` as BigQuery will fail).
+        -   **For Dataproc (`engine.dataprocServerless` / `engine.dataprocOnGce`)**:
+            Dataproc engines do not support `destinationTable`; include DDL/DML
+            statements (`CREATE TABLE ... AS SELECT ...` or `INSERT OVERWRITE`)
+            directly in the SQL query text to materialize output tables.
+
+-   **AI / Vertex AI Actions (`ai`)**:
+    -   **Scope & Capabilities**: Support for Agent Platform (`Vertex AI`) is currently limited to uploading a trained custom model to the Vertex AI Model Registry (`agentPlatform.modelUpload`) and running batch predictions (`agentPlatform.batchInference`). Model training (e.g. Keras/TensorFlow models) is executed in a `pyspark` action.
+    -   **Model Export Signature for Batch Prediction**: When creating a custom
+        training pipeline in PySpark followed by a Agent Platform
+        batch inference action (`agentPlatform.batchInference`) reading from
+        BigQuery:
+        -  Agent Platform Batch Prediction passes input instances wrapped in a key
+            named `"instances"` (e.g., `{"instances": [...]}`).
+        -   Standard TensorFlow / Keras models exported with default
+            `model.save()` name their input signature after layer names (e.g.,
+            `dense_input`), which causes Agent Platform batch prediction jobs to
+            fail with input signature mismatch errors.
+        -   You **must export the model with an explicit serving signature**
+            expecting `instances` as the input name and returning a dictionary
+            with `"prediction"`:
+
+            ```python
+            class ExportModel(tf.Module):
+
+              def __init__(self, model):
+                super().__init__()
+                self.model = model
+
+              @tf.function(
+                  input_signature=[
+                      tf.TensorSpec(
+                          shape=[None, num_features],
+                          dtype=tf.float32,
+                          name="instances",
+                      )
+                  ]
+              )
+              def __call__(self, instances):
+                predictions = self.model(instances)
+                return {"prediction": predictions}
+
+
+            tf.saved_model.save(
+                ExportModel(model),
+                export_path,
+                signatures={"serving_default": ExportModel(model).__call__},
+            )
+            ```
+
+    -   **Consuming Batch Prediction Outputs in Downstream Actions (dbt / SQL)**:
+        -   When Vertex AI writes batch predictions to BigQuery, regression or
+            single-value scalar predictions are serialized as scalar columns
+            (e.g., `STRING` or `FLOAT64`), **not** arrays (`REPEATED`).
+        -   Do **not** use array offset syntax (such as
+            `prediction[OFFSET(0)]`) when querying scalar prediction results in
+            downstream dbt models or BigQuery SQL actions, as this causes type
+            mismatch errors.
+        -   Instead, access the scalar column directly using
+            `SAFE_CAST(prediction AS FLOAT64)`:
+
+            ```sql
+            SELECT
+              id,
+              SAFE_CAST(prediction AS FLOAT64) AS predicted_value,
+              actual_value
+            FROM {{ source('vertex_ai_predictions', 'batch_predictions') }}
+            ```
 
 -   Before creating or updating the `deployment.yaml` file, you **must** first
     run the following command to get the list of available Composer environments
