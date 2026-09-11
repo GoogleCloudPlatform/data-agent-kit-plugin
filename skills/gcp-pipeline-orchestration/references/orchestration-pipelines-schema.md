@@ -589,6 +589,9 @@ message AgentPlatformBatchInference {
   // with a serving signature expecting input named "instances" and returning a dictionary output (e.g. {"prediction": ...}).
   string bigquery_source = 5;
   repeated string gcs_source = 6;
+  // BigQuery table prefix for prediction results.
+  // Note: For regression/scalar models, predictions are saved in BigQuery as scalar columns (STRING/FLOAT64).
+  // Downstream dbt/SQL queries should access them directly with SAFE_CAST(prediction AS FLOAT64) without [OFFSET(0)].
   string bigquery_destination_prefix = 7;
   string gcs_destination_prefix = 8;
   repeated string impersonation_chain = 12;
@@ -665,3 +668,6 @@ actions:
 6. **Agent Platform (Vertex AI) Scope & Serving Signature**:
    - **Supported Scope**: Support for Agent Platform (`Vertex AI`) is currently limited to uploading a trained custom model to the agent platform Registry (`agentPlatform.modelUpload`) and running batch predictions (`agentPlatform.batchInference`). Model training (e.g. Keras/TensorFlow models) is executed in a `pyspark` action.
    - **Batch Prediction Serving Signature**: When training custom TensorFlow/Keras models in a `pyspark` action for downstream Agent Platform batch prediction (`agentPlatform.batchInference`) with BigQuery sources, the model must be saved with an explicit serving signature accepting `instances` (e.g. `tf.TensorSpec(..., name="instances")`) and returning a dictionary (e.g. `{"prediction": ...}`) to match Agent Platform's batch payload format.
+6. **Vertex AI Batch Prediction Serving Signature & Output Schema**:
+   - **Model Export**: When training custom TensorFlow/Keras models for Vertex AI batch prediction (`agentPlatform.batchInference`) with BigQuery sources, the model must be saved with an explicit serving signature accepting `instances` (e.g. `tf.TensorSpec(..., name="instances")`) and returning a dictionary (e.g. `{"prediction": ...}`) to match Vertex AI's batch payload format.
+   - **Downstream Querying (dbt / SQL)**: For regression/scalar predictions, Vertex AI writes the output column as a scalar (not an array). Access it directly using `SAFE_CAST(prediction AS FLOAT64)` rather than array indexing `prediction[OFFSET(0)]`.

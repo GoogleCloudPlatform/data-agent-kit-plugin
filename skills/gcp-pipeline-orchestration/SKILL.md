@@ -254,6 +254,25 @@ following fields:
             )
             ```
 
+    -   **Consuming Batch Prediction Outputs in Downstream Actions (dbt / SQL)**:
+        -   When Vertex AI writes batch predictions to BigQuery, regression or
+            single-value scalar predictions are serialized as scalar columns
+            (e.g., `STRING` or `FLOAT64`), **not** arrays (`REPEATED`).
+        -   Do **not** use array offset syntax (such as
+            `prediction[OFFSET(0)]`) when querying scalar prediction results in
+            downstream dbt models or BigQuery SQL actions, as this causes type
+            mismatch errors.
+        -   Instead, access the scalar column directly using
+            `SAFE_CAST(prediction AS FLOAT64)`:
+
+            ```sql
+            SELECT
+              id,
+              SAFE_CAST(prediction AS FLOAT64) AS predicted_value,
+              actual_value
+            FROM {{ source('vertex_ai_predictions', 'batch_predictions') }}
+            ```
+
 -   Before creating or updating the `deployment.yaml` file, you **must** first
     run the following command to get the list of available Composer environments
     for the user's project.
