@@ -205,8 +205,50 @@ compile`, manual SQL inspection, and `bq query --dry_run`.
 | **Schema alignment**      | Column names and types in `SELECT` must match    |
 :                           : the target table schema. Fetch the schema if     :
 :                           : unknown.                                         :
-| **No target declaration** | Do **not** create a `declaration` file for the   |
-:                           : target table when using `type\: "incremental"`.  :
+### Incremental Loading with Schema Evolution
+
+When handling incoming data with new columns or schema evolution in incremental tables:
+-   Set `onSchemaChange: "EXTEND"` in the `config` block so Dataform automatically adds newly detected columns to the target BigQuery table.
+-   Use `${when(incremental(), ...)}` to distinguish full initial loads from incremental batches.
+-   For incompatible schema changes (e.g. data type change requiring column addition and data migration), use `pre_operations` and `post_operations`:
+
+```sqlx
+config {
+  type: "incremental",
+  name: "customer_orders",
+  onSchemaChange: "EXTEND"
+}
+
+pre_operations {
+  ${when(incremental(),
+    `
+    ALTER TABLE ${self()} ADD COLUMN IF NOT EXISTS order_value_new NUMERIC;
+    UPDATE ${self()} SET order_value_new = SAFE_CAST(order_value AS NUMERIC) WHERE order_value_new IS NULL;
+    `
+  )}
+}
+
+SELECT
+  ${when(
+    incremental(),
+    `* EXCEPT(order_value), order_value AS order_value_new`,
+    `*`
+  )}
+FROM
+  ${when(
+    incremental(),
+    ref("customer_orders_incr_external"),
+    ref("customer_orders_external")
+  )}
+
+post_operations {
+  ${when(incremental(),
+    `
+    ALTER TABLE ${self()} DROP COLUMN IF EXISTS order_value;
+    `
+  )}
+}
+```
 
 ## Coding Standards
 
@@ -226,7 +268,24 @@ config {
 
 ### GCS Ingestion
 
--   Create an external table in a SQLX `operations` file.
+-   Create an external table in a SQLX `operations` file with `hasOutput: true` so it can be referenced downstream using `${ref("...")}`:
+
+```sqlx
+config {
+  type: "operations",
+  hasOutput: true,
+  name: "customer_orders_external",
+  description: "External table pointing to customer_orders Parquet files in Google Cloud Storage",
+  tags: ["raw", "gcs", "customer_orders"]
+}
+
+CREATE OR REPLACE EXTERNAL TABLE ${self()}
+OPTIONS (
+  format = 'PARQUET',
+  uris = ['gs://bucket_name/path/*.parquet']
+);
+```
+
 -   Use `rawData` from schema detection if needed.
 -   For CSVs, use `STRING` for all columns and set:
 
