@@ -199,10 +199,17 @@ You MUST set the `--deps-bucket` to a root GCS bucket URI (`gs://<BUCKET_NAME>`)
 
 #### Checking batch completion
 
-When batch is submitted synchronously, you can wait for the command to return.
-For asynchronous execution, you must poll the batch status until state is
-`SUCCEEDED`, `FAILED` or `CANCELLED`. You can check the batch status using
-`gcloud dataproc batches describe <BATCH_ID>`.
+Wait for the batch with a SINGLE blocking call: submit synchronously and let the
+command return, or, if it was submitted asynchronously, block with `gcloud
+dataproc batches wait <BATCH_ID> --region=<GCP_REGION>`. Both return once the
+batch reaches a terminal state (`SUCCEEDED`, `FAILED` or `CANCELLED`). (The
+Dataproc MCP surface is read-only: it can describe a batch but cannot block on
+one.)
+
+> [!CAUTION] NEVER hand-roll polling. Do not write shell retry loops (`for i in
+> {1..40}` / `sleep` / repeated `gcloud dataproc batches describe`) or custom
+> `poll_*.py` scripts: every round trip re-sends the whole context and wastes
+> tokens. Use `describe` only for a single one-off status check.
 
 ### Connector Dependencies & Properties
 
@@ -215,10 +222,14 @@ For asynchronous execution, you must poll the batch status until state is
 -   **Dependency**: `--jars=gs://spark-lib/spanner/spark-3.5-spanner-1.4.0.jar`
 -   **Notes**: Pass `.option("projectId", ...)` in PySpark
 
-#### PostgreSQL
+#### PostgreSQL & JDBC Databases
 
--   **Dependency**: `spark.jars.packages=org.postgresql:postgresql:42.6.0`
--   **Notes**: Pass `--subnet=...` for private IP
+-   **Dependency**:
+    -   **GCS-Staged Driver JAR (`gs://...`)**: Pass `--jars=gs://<BUCKET_NAME>/<PATH_TO_DRIVER>.jar` on the `gcloud` CLI or set `spark.jars` (for `ManagedSparkSession`, set `session_config.runtime_config.properties["spark.jars"] = "gs://<BUCKET_NAME>/<PATH_TO_DRIVER>.jar"`). Never pass `gs://` URIs to `spark.jars.packages`.
+    -   **Maven Coordinates (requires outbound internet/Cloud NAT)**: `--properties="spark.jars.packages=<GROUP_ID>:<ARTIFACT_ID>:<VERSION>"`
+-   **Notes**:
+    -   Pass `--subnet=<SUBNET>` when connecting to a database on a VPC Private IP.
+    -   Retrieve database passwords from Google Cloud Secret Manager (either via the pre-installed `google.auth` + `urllib.request` REST API or by passing `--properties="spark.dataproc.pip.packages=google-cloud-secret-manager==<VERSION>"` on Dataproc Serverless, where `google-cloud-secret-manager` is not pre-installed).
 
 #### Iceberg REST
 
