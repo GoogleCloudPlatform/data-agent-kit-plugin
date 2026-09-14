@@ -115,6 +115,22 @@ Tips:
 -   Add a `--filter` to limit results, e.g. `status.state = ACTIVE AND
     labels.env = staging AND labels.starred = *`
 
+### Submitting jobs
+
+Prefer MCP if available. If using gcloud, use this command template:
+
+```
+gcloud dataproc jobs submit pyspark <LOCAL_SCRIPT_PATH> \
+    --project=<PROJECT_ID> \
+    --cluster=<CLUSTER> \
+    --region=<REGION>
+```
+
+> [!WARNING] The `gcloud dataproc jobs submit pyspark` command directly accepts
+> local file paths and automatically stages them. You MUST NOT attempt to
+> manually create GCS staging buckets or manually use `gcloud storage cp` to
+> upload your scripts before submission.
+
 ## Dataproc Serverless
 
 Use this section if the user requests:
@@ -163,7 +179,9 @@ executing the command for Job Submission
 Prefer MCP if available. If using gcloud, use this command template:
 
 Augment the basic command with iceberg, spanner or xgboost related arguments as
-needed by the script to be executed.
+needed by the script to be executed. When submitting batches with multiple
+java dependencies, you must combine them with commas (e.g.
+`spark.jars.packages=pkg1,pkg2`).
 
 ```
 gcloud dataproc batches submit pyspark <SCRIPT_PATH.py> \
@@ -178,6 +196,13 @@ You MUST set the `--deps-bucket` to a GCS path to upload workload dependencies.
 > [!IMPORTANT] Dataproc Serverless batches can be expected to take a very long
 > time. **Typical initial execution time:** 10-15 minutes. This is **NORMAL**
 > behavior. [!WARNING] **DO NOT CANCEL PREMATURELY!**
+
+#### Checking batch completion
+
+When batch is submitted synchronously, you can wait for the command to return.
+For asynchronous execution, you must poll the batch status until state is
+`SUCCEEDED`, `FAILED` or `CANCELLED`. You can check the batch status using
+`gcloud dataproc batches describe <BATCH_ID>`.
 
 ### Connector Dependencies & Properties
 
@@ -195,11 +220,26 @@ You MUST set the `--deps-bucket` to a GCS path to upload workload dependencies.
 -   **Dependency**: `spark.jars.packages=org.postgresql:postgresql:42.6.0`
 -   **Notes**: Pass `--subnet=...` for private IP
 
-#### Iceberg REST
+#### Iceberg REST (BigLake / Lakehouse catalogs)
 
--   **Dependency**:
+-   **Attach catalogs with properties (preferred)**: the runtime wires the
+    Iceberg REST catalog, so the code needs no `spark.sql.catalog.*` settings.
+    -   Clusters (also pass `--optional-components=ICEBERG`):
+        `--properties="dataproc:dataproc.lakehouse.catalog.<CATALOG_NAME>=projects/<PROJECT_ID>/catalogs/<CATALOG_ID>"`
+    -   Batches and sessions: same key **without** the `dataproc:` prefix, e.g.
+        `--properties="dataproc.lakehouse.catalog.<CATALOG_NAME>=projects/<PROJECT_ID>/catalogs/<CATALOG_ID>"`
+    -   Add
+        `...lakehouse.defaultCatalog=projects/<PROJECT_ID>/catalogs/<CATALOG_ID>`
+        to set the default; comma-separate entries to attach several catalogs.
+-   **No property enumerates existing catalogs**: nothing lists a project's
+    catalogs, so any catalog you want attached must be named explicitly. Say so
+    and stop; do NOT search for a "discovery" flag. On image 3.1+ Dataproc
+    auto-injects `...lakehouse.defaultCatalog=standard-lh-catalog-<REGION>` when
+    none is set, so a starter catalog may already be attached.
+-   **Manual alternative**:
     `spark.jars.packages=org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:1.5.0`
--   **Notes**: In code use `<CATALOG>.<DATASET>.<TABLE>` (not project ID)
+    plus explicit catalog configs (see `read_write_data.md`). In code use
+    `<CATALOG>.<DATASET>.<TABLE>` (not project ID)
 
 #### Pub/Sub
 
@@ -240,20 +280,33 @@ Python scripts, follow these steps:
 2.  **UV environment**:
 
     ```bash
-    uv venv spark_env --python 3.12
-    source spark_env/bin/activate
+    uv venv venv --python 3.12
+    source venv/bin/activate
     uv pip install -U google-cloud-spark-connect
     ```
 
 3.  **Pip environment**:
 
     ```bash
-    python3 -m venv spark_env
-    source spark_env/bin/activate
+    python3 -m venv venv
+    source venv/bin/activate
     pip install -U google-cloud-spark-connect
     ```
 
-4.  **Initialize `ManagedSparkSession` & Execute**: Use `ManagedSparkSession`
+4.  **Project and region settings**:
+
+    You SHOULD specify project and region in the code. When not set by the user,
+    project and region MUST be retrieved **BEFORE** writing any code, in the
+    following order:
+
+    -   IDE configuration: `google.cloud.project`, `google.cloud.region`
+    -   Environment variables: `GOOGLE_CLOUD_PROJECT`, `GOOGLE_CLOUD_REGION`
+    -   GCloud config: `gcloud config get project`, `gcloud config get-value
+        dataproc/region`
+
+    Retrieve those values and put them using builder methods.
+
+5.  **Initialize `ManagedSparkSession` & Execute**: Use `ManagedSparkSession`
     from `google.cloud.managed_spark_connect` to connect to Dataproc Serverless.
     Session provisioning takes **2–3 minutes**; execute scripts in the
     foreground (e.g. `python3 script.py | tee driver_log.txt`):
@@ -261,7 +314,11 @@ Python scripts, follow these steps:
     ```python
     from google.cloud.managed_spark_connect import ManagedSparkSession
 
-    spark = ManagedSparkSession.builder.getOrCreate()
+    spark = (
+        ManagedSparkSession.builder.projectId("<PROJECT_ID>")
+        .location("<REGION>")
+        .getOrCreate()
+    )
 
     # Run Spark DataFrame or SQL operations
     df = spark.sql("SELECT 'Hello from Spark Connect' AS message")
@@ -283,13 +340,17 @@ Python scripts, follow these steps:
     )
     ```
 
-    For advanced configuration, use the `Session` class:
+    For advanced configuration e.g. when using session templates, use the
+    `Session` class:
 
     ```python
     from google.cloud.dataproc_v1 import Session
     from google.cloud.managed_spark_connect import ManagedSparkSession
 
     session_config = Session()
+    session_config.session_template = (
+        "projects/<PROJECT_ID>/locations/<REGION>/sessionTemplates/<TEMPLATE_ID>"
+    )
     session_config.environment_config.execution_config.subnetwork_uri = (
         "<SUBNET_URI>"
     )
@@ -302,11 +363,11 @@ Python scripts, follow these steps:
     )
     ```
 
-5.  **Local Environment Cleanup**:
+6.  **Local Environment Cleanup**:
 
     ```bash
     deactivate
-    rm -rf spark_env
+    rm -rf venv
     ```
 
 ### Listing sessions
