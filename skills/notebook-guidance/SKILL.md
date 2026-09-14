@@ -9,7 +9,7 @@ description: |-
     4. You need to query BigQuery from within a notebook. DO NOT use the Python BigQuery client library; instead, you MUST use the `%%bqsql` magics explained in this skill.
 license: Apache-2.0
 metadata:
-  version: v5
+  version: v6
   publisher: google
 ---
 
@@ -81,6 +81,13 @@ comparison is involved, favor a notebook and a visualization. A notebook is the
 5.  **GENERATE VISUALIZATIONS**: Always accompany data insights with
     visualizations; charts are often more effective than raw numbers for
     communicating trends and comparisons.
+6.  **READ NOTEBOOKS CELL-SCOPED**: To inspect or describe an existing `.ipynb`,
+    use `list_cells` first, then `read_cell` / `get_cell_range` /
+    `get_cell_outputs` for only the cells you need. You MUST NOT read a whole
+    `.ipynb` with `read_file`, `cat`, or similar: executed notebooks embed
+    base64 images and large result blobs, so a single whole-file read can cost
+    hundreds of thousands of tokens. Never re-read a cell you already read and
+    have not changed.
 
 ## Kernel & Environment Management
 
