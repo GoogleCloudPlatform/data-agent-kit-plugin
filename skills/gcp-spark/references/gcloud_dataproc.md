@@ -62,6 +62,13 @@ use case, use `gcloud` to interact with Dataproc.
 In general, Dataproc Clusters and Serverless Batches commands accept `--region`.
 Dataproc Serverless Sessions commands accept `--location`.
 
+### Saving driver logs locally
+
+> [!TIP] `gcloud dataproc jobs submit`, `gcloud dataproc batches submit`, and
+> local `ManagedSparkSession` scripts stream driver output directly to
+> stdout/stderr. When asked to save driver logs to a local file, pipe the output
+> to a `.txt` file in the current directory (e.g., `2>&1 | tee driver_log.txt`).
+
 ## Dataproc Clusters
 
 Use this section if the user requests "spark jobs", "spark clusters",
@@ -215,10 +222,10 @@ For asynchronous execution, you must poll the batch status until state is
 -   **Dependency**: `--jars=gs://spark-lib/spanner/spark-3.5-spanner-1.4.0.jar`
 -   **Notes**: Pass `.option("projectId", ...)` in PySpark
 
-#### PostgreSQL
+#### PostgreSQL & JDBC Databases
 
--   **Dependency**: `spark.jars.packages=org.postgresql:postgresql:42.6.0`
--   **Notes**: Pass `--subnet=...` for private IP
+-   **Dependency**: `--jars=gs://<BUCKET_NAME>/<PATH_TO_DRIVER>.jar`
+-   **Notes**: Pass `--subnet=<SUBNET>` for private IP. See `references/jdbc_cloudsql.md`.
 
 #### Iceberg REST
 
@@ -297,7 +304,7 @@ Python scripts, follow these steps:
 5.  **Initialize `ManagedSparkSession` & Execute**: Use `ManagedSparkSession`
     from `google.cloud.managed_spark_connect` to connect to Dataproc Serverless.
     Session provisioning takes **2–3 minutes**; execute scripts in the
-    foreground (e.g. `python3 script.py | tee driver_log.txt`):
+    foreground (e.g. `python3 script.py`):
 
     ```python
     from google.cloud.managed_spark_connect import ManagedSparkSession
@@ -348,6 +355,26 @@ Python scripts, follow these steps:
         .location("<REGION>")
         .dataprocSessionConfig(session_config)
         .getOrCreate()
+    )
+    ```
+
+    **End-user credentials**: Spark Connect sessions run as the end user unless
+    an authentication type is set. Failure with `Dataproc does not have the
+    necessary permissions to run your workload using end user credentials` means
+    the user has not granted OAuth consent to Dataproc; the error body carries
+    the consent link. Surface that link to the user and STOP. Do NOT search the
+    filesystem for credential files, guess service account names, create service
+    account keys, enable APIs, or modify IAM policy bindings.
+
+    To run as a service account instead, set both the account and the
+    authentication type -- a service account is rejected while the type is
+    `END_USER_CREDENTIALS`:
+
+    ```python
+    exec_config = session_config.environment_config.execution_config
+    exec_config.service_account = "<SERVICE_ACCOUNT_EMAIL>"
+    exec_config.authentication_config.user_workload_authentication_type = (
+        "SERVICE_ACCOUNT"
     )
     ```
 
