@@ -15,7 +15,7 @@ description: |
   SQL/BigQuery ML HANDOFF: If the user requires a SQL solution, use this skill to dictate the ANALYSIS STEPS (e.g., markdown analysis cells, visualization logic), but defer to `bigquery` for all SQL syntax.
 license: Apache-2.0
 metadata:
-  version: v1
+  version: v2
   publisher: google
 ---
 
@@ -63,7 +63,9 @@ How might different modeling approaches impact the prediction accuracy?
 -   Always perform a chronological split on the data to create training,
     validation, and test sets.
 -   Are there seasonal trends?
--   Test for stationarity.
+-   Perform formal statistical stationarity tests (e.g., ADF / `adfuller`, KPSS)
+    rather than relying solely on visual or rolling statistics. Discuss test
+    results, p-values, and modeling implications (e.g., need for differencing).
 -   Discuss possible modeling approaches. How might different modeling
     approaches impact the prediction accuracy?
 -   Train two time series forecasting models to predict the target feature. Use
