@@ -58,3 +58,31 @@ xgb = SparkXGBClassifier(
 See [XGBoost PySpark documentation]
 (https://xgboost.readthedocs.io/en/stable/python/python_api.html#module-xgboost.spark)
 for allowed parameters.
+
+--------------------------------------------------------------------------------
+
+## PySpark ML Vector Probability Slicing Syntax
+
+> [!IMPORTANT] **Vector to Array Conversion Required**: `SparkXGBClassifier`,
+> `RandomForestClassifier`, and Spark ML models output a `Vector` column named
+> `probability`. You **CANNOT** index a Vector directly (`col("probability")[1]`
+> causes a runtime crash). You MUST use `vector_to_array` from
+> `pyspark.ml.functions` before filtering or slicing probabilities:
+
+```python
+from pyspark.ml.functions import vector_to_array
+from pyspark.sql.functions import col
+
+# ✅ CORRECT: Convert Vector column to Array before indexing
+df_with_array = df.withColumn("prob_array", vector_to_array("probability"))
+fraudulent_df = df_with_array.filter(col("prob_array")[1] >= 0.70)
+```
+
+--------------------------------------------------------------------------------
+
+## PySpark Feature Assembly & Null/Unseen Label Handling
+
+> [!IMPORTANT] **Null & Unseen Label Protection**: Always set
+> `handleInvalid="keep"` or `handleInvalid="skip"` when initializing
+> `VectorAssembler` and `StringIndexer` to prevent pipeline crashes when
+> processing missing values or unseen categories.

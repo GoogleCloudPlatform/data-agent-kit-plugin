@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${PLUGIN_ROOT}/.agents/hooks/telemetry_hook.js\" --agent_name codex --install_source data-agent-kit-starter-pack ; exit 0",
+            "command": "node \"${PLUGIN_ROOT}/.agents/hooks/telemetry_hook.js\" --agent_name codex --install_source data-agent-kit-plugin ; exit 0",
             "timeout": 30
           }
         ]
