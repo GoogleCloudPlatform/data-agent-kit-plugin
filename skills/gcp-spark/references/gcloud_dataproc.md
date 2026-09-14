@@ -220,11 +220,26 @@ For asynchronous execution, you must poll the batch status until state is
 -   **Dependency**: `spark.jars.packages=org.postgresql:postgresql:42.6.0`
 -   **Notes**: Pass `--subnet=...` for private IP
 
-#### Iceberg REST
+#### Iceberg REST (BigLake / Lakehouse catalogs)
 
--   **Dependency**:
+-   **Attach catalogs with properties (preferred)**: the runtime wires the
+    Iceberg REST catalog, so the code needs no `spark.sql.catalog.*` settings.
+    -   Clusters (also pass `--optional-components=ICEBERG`):
+        `--properties="dataproc:dataproc.lakehouse.catalog.<CATALOG_NAME>=projects/<PROJECT_ID>/catalogs/<CATALOG_ID>"`
+    -   Batches and sessions: same key **without** the `dataproc:` prefix, e.g.
+        `--properties="dataproc.lakehouse.catalog.<CATALOG_NAME>=projects/<PROJECT_ID>/catalogs/<CATALOG_ID>"`
+    -   Add
+        `...lakehouse.defaultCatalog=projects/<PROJECT_ID>/catalogs/<CATALOG_ID>`
+        to set the default; comma-separate entries to attach several catalogs.
+-   **No property enumerates existing catalogs**: nothing lists a project's
+    catalogs, so any catalog you want attached must be named explicitly. Say so
+    and stop; do NOT search for a "discovery" flag. On image 3.1+ Dataproc
+    auto-injects `...lakehouse.defaultCatalog=standard-lh-catalog-<REGION>` when
+    none is set, so a starter catalog may already be attached.
+-   **Manual alternative**:
     `spark.jars.packages=org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:1.5.0`
--   **Notes**: In code use `<CATALOG>.<DATASET>.<TABLE>` (not project ID)
+    plus explicit catalog configs (see `read_write_data.md`). In code use
+    `<CATALOG>.<DATASET>.<TABLE>` (not project ID)
 
 #### Pub/Sub
 
