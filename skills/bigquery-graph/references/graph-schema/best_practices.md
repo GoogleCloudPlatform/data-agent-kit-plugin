@@ -83,10 +83,6 @@ NODE TABLES ( `my-project.my_dataset.user_profiles` KEY(id) ... )
 NODE TABLES ( `my-project.my_dataset.user_profiles` AS User KEY(id) ... )
 ```
 
-*   **TODO**: This explicit safe alias requirement can be omitted
-    once the BigQuery engine natively resolves default column names containing
-    dots/hyphens.
-
 --------------------------------------------------------------------------------
 
 ## 5. Reusing the Same Physical Table as Node and Edge Tables
