@@ -8,6 +8,14 @@ segment is the **Catalog Name**, NOT a GCP project ID.
 Prefer using `@skill:discovering-gcp-data-assets` skill to find and lookup
 schema and use the following examples as a fallback mechanisms:
 
+> [!CAUTION]
+>
+> Resolve schemas with structured metadata calls ONLY: the commands below, or
+> the `list_table_ids` and `get_table_info` BigQuery MCP tools. Probing with
+> queries (`SELECT *`, `LIMIT 1`, `INFORMATION_SCHEMA`) is PROHIBITED because
+> each returns a result set into context. If a metadata call fails, try the next
+> fallback below or report the failure to the user; MUST NOT retry as SQL.
+
 ### 1. Cloud Spanner
 
 ```sh
