@@ -16,7 +16,7 @@ description: |
   - Troubleshooting failed Spark workloads or analyzing logs (use @skill:gcp-spark-troubleshooting).
 license: Apache-2.0
 metadata:
-  version: v20
+  version: v21
   publisher: google
 ---
 
@@ -172,6 +172,13 @@ metadata:
     `references/gcloud_dataproc.md` on how to execute code on Dataproc
     Serverless using Spark Connect or Dataproc jobs.
 8.  **Follow up with the user**: If a brand new notebook was generated, instruct the user to select the appropriate kernel in the dropdown for cell execution.
+
+    *NO FABRICATED SUCCESS RULE*: Report a read, write, or computed result as
+    successful ONLY if the execution output you actually read shows it. If a
+    read did not resolve the table (e.g. `AnalysisException`,
+    `TABLE_OR_VIEW_NOT_FOUND`, `NoSuchTableException`), do NOT retry with a
+    guessed name and do NOT substitute another table: run `SHOW TABLES IN
+    <catalog>.<namespace>` and apply the *STRICT HALT RULE* from step 1.
 
 --------------------------------------------------------------------------------
 
