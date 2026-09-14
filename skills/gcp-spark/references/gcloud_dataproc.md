@@ -115,6 +115,22 @@ Tips:
 -   Add a `--filter` to limit results, e.g. `status.state = ACTIVE AND
     labels.env = staging AND labels.starred = *`
 
+### Submitting jobs
+
+Prefer MCP if available. If using gcloud, use this command template:
+
+```
+gcloud dataproc jobs submit pyspark <LOCAL_SCRIPT_PATH> \
+    --project=<PROJECT_ID> \
+    --cluster=<CLUSTER> \
+    --region=<REGION>
+```
+
+> [!WARNING] The `gcloud dataproc jobs submit pyspark` command directly accepts
+> local file paths and automatically stages them. You MUST NOT attempt to
+> manually create GCS staging buckets or manually use `gcloud storage cp` to
+> upload your scripts before submission.
+
 ## Dataproc Serverless
 
 Use this section if the user requests:
@@ -163,7 +179,9 @@ executing the command for Job Submission
 Prefer MCP if available. If using gcloud, use this command template:
 
 Augment the basic command with iceberg, spanner or xgboost related arguments as
-needed by the script to be executed.
+needed by the script to be executed. When submitting batches with multiple
+java dependencies, you must combine them with commas (e.g.
+`spark.jars.packages=pkg1,pkg2`).
 
 ```
 gcloud dataproc batches submit pyspark <SCRIPT_PATH.py> \
@@ -178,6 +196,13 @@ You MUST set the `--deps-bucket` to a GCS path to upload workload dependencies.
 > [!IMPORTANT] Dataproc Serverless batches can be expected to take a very long
 > time. **Typical initial execution time:** 10-15 minutes. This is **NORMAL**
 > behavior. [!WARNING] **DO NOT CANCEL PREMATURELY!**
+
+#### Checking batch completion
+
+When batch is submitted synchronously, you can wait for the command to return.
+For asynchronous execution, you must poll the batch status until state is
+`SUCCEEDED`, `FAILED` or `CANCELLED`. You can check the batch status using
+`gcloud dataproc batches describe <BATCH_ID>`.
 
 ### Connector Dependencies & Properties
 
@@ -253,7 +278,20 @@ Python scripts, follow these steps:
     pip install -U google-cloud-spark-connect
     ```
 
-4.  **Initialize `ManagedSparkSession` & Execute**: Use `ManagedSparkSession`
+4.  **Project and region settings**:
+
+    You SHOULD specify project and region in the code. When not set by the user,
+    project and region MUST be retrieved **BEFORE** writing any code, in the
+    following order:
+
+    -   IDE configuration: `google.cloud.project`, `google.cloud.region`
+    -   Environment variables: `GOOGLE_CLOUD_PROJECT`, `GOOGLE_CLOUD_REGION`
+    -   GCloud config: `gcloud config get project`, `gcloud config get-value
+        dataproc/region`
+
+    Retrieve those values and put them using builder methods.
+
+5.  **Initialize `ManagedSparkSession` & Execute**: Use `ManagedSparkSession`
     from `google.cloud.managed_spark_connect` to connect to Dataproc Serverless.
     Session provisioning takes **2–3 minutes**; execute scripts in the
     foreground (e.g. `python3 script.py | tee driver_log.txt`):
@@ -261,7 +299,11 @@ Python scripts, follow these steps:
     ```python
     from google.cloud.managed_spark_connect import ManagedSparkSession
 
-    spark = ManagedSparkSession.builder.getOrCreate()
+    spark = (
+        ManagedSparkSession.builder.projectId("<PROJECT_ID>")
+        .location("<REGION>")
+        .getOrCreate()
+    )
 
     # Run Spark DataFrame or SQL operations
     df = spark.sql("SELECT 'Hello from Spark Connect' AS message")
@@ -302,7 +344,27 @@ Python scripts, follow these steps:
     )
     ```
 
-5.  **Local Environment Cleanup**:
+    **End-user credentials**: Spark Connect sessions run as the end user unless
+    an authentication type is set. Failure with `Dataproc does not have the
+    necessary permissions to run your workload using end user credentials` means
+    the user has not granted OAuth consent to Dataproc; the error body carries
+    the consent link. Surface that link to the user and STOP. Do NOT search the
+    filesystem for credential files, guess service account names, create service
+    account keys, enable APIs, or modify IAM policy bindings.
+
+    To run as a service account instead, set both the account and the
+    authentication type -- a service account is rejected while the type is
+    `END_USER_CREDENTIALS`:
+
+    ```python
+    exec_config = session_config.environment_config.execution_config
+    exec_config.service_account = "<SERVICE_ACCOUNT_EMAIL>"
+    exec_config.authentication_config.user_workload_authentication_type = (
+        "SERVICE_ACCOUNT"
+    )
+    ```
+
+6.  **Local Environment Cleanup**:
 
     ```bash
     deactivate
