@@ -131,6 +131,15 @@ gcloud dataproc jobs submit pyspark <LOCAL_SCRIPT_PATH> \
 > manually create GCS staging buckets or manually use `gcloud storage cp` to
 > upload your scripts before submission.
 
+> [!CAUTION] If submission fails with a storage permission error (e.g. `403
+> Forbidden`, `AccessDenied`), the active principal lacks
+> `storage.objects.create` on the cluster's staging bucket. `--bucket` already
+> defaults to that same bucket, so retrying with `--bucket=<configBucket>` fails
+> identically; do not retry that way. Either pass `--bucket=<a different bucket
+> the principal can write to>`, or report the denied bucket and the missing
+> permission and stop. NEVER smuggle code onto the cluster by base64-encoding
+> it, by `jobs submit pig -e 'sh ...'`, by generated wrapper shell scripts, or
+> by `gcloud compute ssh`.
 ## Dataproc Serverless
 
 Use this section if the user requests:
