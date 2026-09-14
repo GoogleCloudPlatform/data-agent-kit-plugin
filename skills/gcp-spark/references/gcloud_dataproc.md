@@ -215,10 +215,14 @@ For asynchronous execution, you must poll the batch status until state is
 -   **Dependency**: `--jars=gs://spark-lib/spanner/spark-3.5-spanner-1.4.0.jar`
 -   **Notes**: Pass `.option("projectId", ...)` in PySpark
 
-#### PostgreSQL
+#### PostgreSQL & JDBC Databases
 
--   **Dependency**: `spark.jars.packages=org.postgresql:postgresql:42.6.0`
--   **Notes**: Pass `--subnet=...` for private IP
+-   **Dependency**:
+    -   **GCS-Staged Driver JAR (`gs://...`)**: Pass `--jars=gs://<BUCKET_NAME>/<PATH_TO_DRIVER>.jar` on the `gcloud` CLI or set `spark.jars` (for `ManagedSparkSession`, set `session_config.runtime_config.properties["spark.jars"] = "gs://<BUCKET_NAME>/<PATH_TO_DRIVER>.jar"`). Never pass `gs://` URIs to `spark.jars.packages`.
+    -   **Maven Coordinates (requires outbound internet/Cloud NAT)**: `--properties="spark.jars.packages=<GROUP_ID>:<ARTIFACT_ID>:<VERSION>"`
+-   **Notes**:
+    -   Pass `--subnet=<SUBNET>` when connecting to a database on a VPC Private IP.
+    -   Retrieve database passwords from Google Cloud Secret Manager (either via the pre-installed `google.auth` + `urllib.request` REST API or by passing `--properties="spark.dataproc.pip.packages=google-cloud-secret-manager==<VERSION>"` on Dataproc Serverless, where `google-cloud-secret-manager` is not pre-installed).
 
 #### Iceberg REST
 
@@ -348,6 +352,26 @@ Python scripts, follow these steps:
         .location("<REGION>")
         .dataprocSessionConfig(session_config)
         .getOrCreate()
+    )
+    ```
+
+    **End-user credentials**: Spark Connect sessions run as the end user unless
+    an authentication type is set. Failure with `Dataproc does not have the
+    necessary permissions to run your workload using end user credentials` means
+    the user has not granted OAuth consent to Dataproc; the error body carries
+    the consent link. Surface that link to the user and STOP. Do NOT search the
+    filesystem for credential files, guess service account names, create service
+    account keys, enable APIs, or modify IAM policy bindings.
+
+    To run as a service account instead, set both the account and the
+    authentication type -- a service account is rejected while the type is
+    `END_USER_CREDENTIALS`:
+
+    ```python
+    exec_config = session_config.environment_config.execution_config
+    exec_config.service_account = "<SERVICE_ACCOUNT_EMAIL>"
+    exec_config.authentication_config.user_workload_authentication_type = (
+        "SERVICE_ACCOUNT"
     )
     ```
 
