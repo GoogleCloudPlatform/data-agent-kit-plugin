@@ -167,9 +167,37 @@ following fields:
     > `sparkHistoryServerConfig`. It is better to omit this configuration if a
     > dedicated Spark History Server is not available.
 
--   If you want to schedule the python job, check the content of Python content
-    to determine if it's a spark job. If it is, use `pyspark` as type instead of
-    script as type.
+-   **Python Actions (`python`)**:
+    -   Check the content of the Python script to determine if it is a Spark
+        job. If it is, use `pyspark` action instead of `python`.
+    -   **Environment & Dependencies**: The `environment` field on a `python`
+        action is **optional**.
+        -   When `environment` or `requirements` is **omitted**, the action runs
+            as a standard `PythonOperator` directly in the Airflow worker's host
+            environment (using pre-installed Composer packages). Do **not**
+            add `environment.requirements` unnecessarily when standard
+            libraries or existing Composer packages are sufficient.
+        -   Only specify `environment.requirements` (via `path: requirements.txt`
+            or `inline: { list: [...] }`) when custom, isolated third-party
+            packages not available in Composer are needed. This compiles to
+            `PythonVirtualenvOperator` to create an isolated virtual
+            environment.
+
+-   **BigQuery Dataset Location**: When creating a `sql` action with the `bigquery` engine, you **must inspect the location of any referenced BigQuery
+    datasets** (e.g., whether it is multi-region `US`/`EU` or a specific region
+    like `us-central1`).
+    Run:
+
+    ```
+    # Replace <PROJECT_ID> and <DATASET_ID> with the actual project and dataset ID
+    bq show --format=prettyjson <PROJECT_ID>:<DATASET_ID>
+    ```
+
+    Extract the `location` field (e.g., `US`, `EU`, `us-central1`) and set
+    `actions[].sql.engine.bigquery.location: <LOCATION>` (or
+    `actions[].dataIngestion.bigqueryDts.location: <LOCATION>`). Do NOT omit the
+    location or assume `defaults.location` matches the BigQuery dataset
+    location.
 
 -   **BigQuery Dataset Location**: When creating a `sql` action with the `bigquery` engine, you **must inspect the location of any referenced BigQuery
     datasets** (e.g., whether it is multi-region `US`/`EU` or a specific region
