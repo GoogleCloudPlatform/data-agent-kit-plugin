@@ -1,6 +1,6 @@
 {
   "name": "data-agent-kit-starter-pack",
-  "version": "0.10.1",
+  "version": "0.11.0",
   "description": "Developer toolkit for Data Cloud and AI integrations.",
   "bin": {
     "mcp-proxy": "mcp/bin/mcp_proxy_bundle.cjs",

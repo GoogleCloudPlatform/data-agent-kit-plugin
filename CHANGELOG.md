@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.11.0](https://github.com/gemini-cli-extensions/data-agent-kit-starter-pack/compare/0.10.1...0.11.0) (2026-09-11)
+
+
+### Features
+
+* **mcp:** Add MCP support for Antigravity (agy) CLI. ([856d2f2](https://github.com/gemini-cli-extensions/data-agent-kit-starter-pack/commit/856d2f2a78cb28b8359cd038e7c71686b3b6b02a))
+* **mcp:** replace npx git dependency with relative bundle paths for our plugin MCP servers. ([e502daa](https://github.com/gemini-cli-extensions/data-agent-kit-starter-pack/commit/e502daa24fcb0065f076452c4986dccc524db196))
+* Switched managed spark skills to use spark connect to execute cells by default ([fdd2b2a](https://github.com/gemini-cli-extensions/data-agent-kit-starter-pack/commit/fdd2b2ab416772f37dedd4fbfca83b8fc13e8bb5))
+* Update mcp proxy and telemetry hook script as part of release ([b5484f3](https://github.com/gemini-cli-extensions/data-agent-kit-starter-pack/commit/b5484f3e2da64a8e8beb6cac7d827017261ec285))
+
+
+### Bug Fixes
+
+* Add BigQuery dataset location discovery to gcp_pipeline_orchestration skill. ([43a6f04](https://github.com/gemini-cli-extensions/data-agent-kit-starter-pack/commit/43a6f04741f9c5ce7f7a6625e1557f4d33cf1799))
+* **mcp:** inline cross-spawn into standalone bundle ([#316](https://github.com/gemini-cli-extensions/data-agent-kit-starter-pack/issues/316)) ([22c27d5](https://github.com/gemini-cli-extensions/data-agent-kit-starter-pack/commit/22c27d5ea7d2695ae042aa7605daee97bfad7237))
+
+
+### Miscellaneous Chores
+
+* force release 0.11.0 ([#334](https://github.com/gemini-cli-extensions/data-agent-kit-starter-pack/issues/334)) ([c05d738](https://github.com/gemini-cli-extensions/data-agent-kit-starter-pack/commit/c05d738a327be2f3a517c8767f3c65596bb6bf06))
+
 ## [0.10.1](https://github.com/gemini-cli-extensions/data-agent-kit-starter-pack/compare/0.10.0...0.10.1) (2026-09-04)
 
 
