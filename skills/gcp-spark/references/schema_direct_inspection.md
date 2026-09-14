@@ -14,6 +14,13 @@ schema and use the following examples as a fallback mechanisms:
 gcloud spanner databases ddl describe <DATABASE_ID> --instance=<INSTANCE_ID> --project=<PROJECT_ID>
 ```
 
+If the instance or project is unknown, resolve it with at most one `gcloud
+spanner instances list --project=<PROJECT_ID> --format='value(name)'` per
+candidate project, trying any project named in the request before the default
+one. NEVER dump the environment (`env`, `env | sort`) to hunt for identifiers,
+and NEVER use `gcloud spanner databases execute-sql` to learn a schema: `ddl
+describe` returns it in a single call.
+
 ### 2. BigQuery/Biglake
 
 ```bash
