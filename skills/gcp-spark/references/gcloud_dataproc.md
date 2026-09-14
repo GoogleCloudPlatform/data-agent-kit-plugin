@@ -163,7 +163,9 @@ executing the command for Job Submission
 Prefer MCP if available. If using gcloud, use this command template:
 
 Augment the basic command with iceberg, spanner or xgboost related arguments as
-needed by the script to be executed.
+needed by the script to be executed. When submitting batches with multiple
+java dependencies, you must combine them with commas (e.g.
+`spark.jars.packages=pkg1,pkg2`).
 
 ```
 gcloud dataproc batches submit pyspark <SCRIPT_PATH.py> \
@@ -178,6 +180,13 @@ You MUST set the `--deps-bucket` to a GCS path to upload workload dependencies.
 > [!IMPORTANT] Dataproc Serverless batches can be expected to take a very long
 > time. **Typical initial execution time:** 10-15 minutes. This is **NORMAL**
 > behavior. [!WARNING] **DO NOT CANCEL PREMATURELY!**
+
+#### Checking batch completion
+
+When batch is submitted synchronously, you can wait for the command to return.
+For asynchronous execution, you must poll the batch status until state is
+`SUCCEEDED`, `FAILED` or `CANCELLED`. You can check the batch status using
+`gcloud dataproc batches describe <BATCH_ID>`.
 
 ### Connector Dependencies & Properties
 
