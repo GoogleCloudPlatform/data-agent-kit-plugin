@@ -220,13 +220,26 @@ For asynchronous execution, you must poll the batch status until state is
 -   **Dependency**: `spark.jars.packages=org.postgresql:postgresql:42.6.0`
 -   **Notes**: Pass `--subnet=...` for private IP
 
-#### Iceberg REST
+#### Iceberg REST (BigLake / Lakehouse catalogs)
 
--   **Dependency**:
+-   **Attach catalogs with properties (preferred)**: the runtime wires the
+    Iceberg REST catalog, so the code needs no `spark.sql.catalog.*` settings.
+    -   Clusters (also pass `--optional-components=ICEBERG`):
+        `--properties="dataproc:dataproc.lakehouse.catalog.<CATALOG_NAME>=projects/<PROJECT_ID>/catalogs/<CATALOG_ID>"`
+    -   Batches and sessions: same key **without** the `dataproc:` prefix, e.g.
+        `--properties="dataproc.lakehouse.catalog.<CATALOG_NAME>=projects/<PROJECT_ID>/catalogs/<CATALOG_ID>"`
+    -   Add
+        `...lakehouse.defaultCatalog=projects/<PROJECT_ID>/catalogs/<CATALOG_ID>`
+        to set the default; comma-separate entries to attach several catalogs.
+-   **No property enumerates existing catalogs**: nothing lists a project's
+    catalogs, so any catalog you want attached must be named explicitly. Say so
+    and stop; do NOT search for a "discovery" flag. On image 3.1+ Dataproc
+    auto-injects `...lakehouse.defaultCatalog=standard-lh-catalog-<REGION>` when
+    none is set, so a starter catalog may already be attached.
+-   **Manual alternative**:
     -   **Dataproc Serverless**: Pre-installed on the default Spark classpath (`/usr/lib/spark/jars/`). Do **NOT** pass `spark.jars.packages=org.apache.iceberg:...` (which risks Scala binary mismatches or missing `GCSFileIO` classes).
     -   **Dataproc on GCE Clusters**: Enable `--optional-components=ICEBERG` at cluster creation (which adds `/usr/lib/iceberg/lib/*` to `SPARK_DIST_CLASSPATH`), or pass the local VM JARs from `/usr/lib/iceberg/lib/` via `--jars` if submitting to an existing cluster without the optional component.
--   **Notes**:
-    -   In code use `<CATALOG>.<DATASET>.<TABLE>` (not project ID).
+    -   In code use `<CATALOG>.<DATASET>.<TABLE>` (not project ID). See `read_write_data.md` for explicit catalog configs.
     -   Before running a batch job that creates or writes to a BigLake Iceberg REST catalog, ensure the catalog exists on the GCS bucket (`gcloud biglake iceberg catalogs create <BUCKET_NAME> --catalog-type=gcs-bucket --project=<PROJECT_ID>`) and that the catalog name matches the GCS bucket name (`gs://<BUCKET_NAME>`).
 
 #### Pub/Sub
