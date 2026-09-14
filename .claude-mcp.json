@@ -29,7 +29,8 @@
         "https://bigquery.googleapis.com/mcp"
       ],
       "env": {
-        "X_GOOG_PROXY_HEADERS": "{\"User-Agent\": \"datacloud.claude\"}"
+        "X_GOOG_PROXY_HEADERS": "{\"User-Agent\": \"datacloud.claude\"}",
+        "BILLING_PROJECT_ID": "${user_config.BILLING_PROJECT_ID}"
       }
     },
     "spanner": {
@@ -39,7 +40,8 @@
         "https://spanner.googleapis.com/mcp"
       ],
       "env": {
-        "X_GOOG_PROXY_HEADERS": "{\"User-Agent\": \"datacloud.claude\"}"
+        "X_GOOG_PROXY_HEADERS": "{\"User-Agent\": \"datacloud.claude\"}",
+        "BILLING_PROJECT_ID": "${user_config.BILLING_PROJECT_ID}"
       }
     },
     "alloydb-postgres": {
@@ -49,7 +51,8 @@
         "https://alloydb.googleapis.com/mcp"
       ],
       "env": {
-        "X_GOOG_PROXY_HEADERS": "{\"User-Agent\": \"datacloud.claude\"}"
+        "X_GOOG_PROXY_HEADERS": "{\"User-Agent\": \"datacloud.claude\"}",
+        "BILLING_PROJECT_ID": "${user_config.BILLING_PROJECT_ID}"
       }
     },
     "cloud-sql-postgresql": {
@@ -59,7 +62,8 @@
         "https://sqladmin.googleapis.com/mcp"
       ],
       "env": {
-        "X_GOOG_PROXY_HEADERS": "{\"User-Agent\": \"datacloud.claude\"}"
+        "X_GOOG_PROXY_HEADERS": "{\"User-Agent\": \"datacloud.claude\"}",
+        "BILLING_PROJECT_ID": "${user_config.BILLING_PROJECT_ID}"
       }
     },
     "knowledge_catalog": {
@@ -69,7 +73,8 @@
         "https://dataplex.googleapis.com/mcp"
       ],
       "env": {
-        "X_GOOG_PROXY_HEADERS": "{\"User-Agent\": \"datacloud.claude\"}"
+        "X_GOOG_PROXY_HEADERS": "{\"User-Agent\": \"datacloud.claude\"}",
+        "BILLING_PROJECT_ID": "${user_config.BILLING_PROJECT_ID}"
       }
     },
     "dataproc": {
@@ -79,7 +84,8 @@
         "https://dataproc-${user_config.GCP_REGION}.googleapis.com/mcp"
       ],
       "env": {
-        "X_GOOG_PROXY_HEADERS": "{\"User-Agent\": \"datacloud.claude\"}"
+        "X_GOOG_PROXY_HEADERS": "{\"User-Agent\": \"datacloud.claude\"}",
+        "BILLING_PROJECT_ID": "${user_config.BILLING_PROJECT_ID}"
       }
     },
     "bigtable": {
@@ -89,7 +95,8 @@
         "https://bigtableadmin.googleapis.com/mcp"
       ],
       "env": {
-        "X_GOOG_PROXY_HEADERS": "{\"User-Agent\": \"datacloud.claude\"}"
+        "X_GOOG_PROXY_HEADERS": "{\"User-Agent\": \"datacloud.claude\"}",
+        "BILLING_PROJECT_ID": "${user_config.BILLING_PROJECT_ID}"
       }
     },
     "cloud-storage": {
@@ -99,7 +106,8 @@
         "https://storage.googleapis.com/storage/mcp"
       ],
       "env": {
-        "X_GOOG_PROXY_HEADERS": "{\"User-Agent\": \"datacloud.claude\"}"
+        "X_GOOG_PROXY_HEADERS": "{\"User-Agent\": \"datacloud.claude\"}",
+        "BILLING_PROJECT_ID": "${user_config.BILLING_PROJECT_ID}"
       }
     }
   }

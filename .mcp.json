@@ -30,7 +30,10 @@
       ],
       "env": {
         "X_GOOG_PROXY_HEADERS": "{\"User-Agent\": \"datacloud.codex\"}"
-      }
+      },
+      "env_vars": [
+        "BILLING_PROJECT_ID"
+      ]
     },
     "spanner": {
       "command": "node",
@@ -40,7 +43,10 @@
       ],
       "env": {
         "X_GOOG_PROXY_HEADERS": "{\"User-Agent\": \"datacloud.codex\"}"
-      }
+      },
+      "env_vars": [
+        "BILLING_PROJECT_ID"
+      ]
     },
     "alloydb-postgres": {
       "command": "node",
@@ -50,7 +56,10 @@
       ],
       "env": {
         "X_GOOG_PROXY_HEADERS": "{\"User-Agent\": \"datacloud.codex\"}"
-      }
+      },
+      "env_vars": [
+        "BILLING_PROJECT_ID"
+      ]
     },
     "cloud-sql-postgresql": {
       "command": "node",
@@ -60,7 +69,10 @@
       ],
       "env": {
         "X_GOOG_PROXY_HEADERS": "{\"User-Agent\": \"datacloud.codex\"}"
-      }
+      },
+      "env_vars": [
+        "BILLING_PROJECT_ID"
+      ]
     },
     "knowledge_catalog": {
       "command": "node",
@@ -70,7 +82,10 @@
       ],
       "env": {
         "X_GOOG_PROXY_HEADERS": "{\"User-Agent\": \"datacloud.codex\"}"
-      }
+      },
+      "env_vars": [
+        "BILLING_PROJECT_ID"
+      ]
     },
     "dataproc": {
       "command": "node",
@@ -80,7 +95,10 @@
       ],
       "env": {
         "X_GOOG_PROXY_HEADERS": "{\"User-Agent\": \"datacloud.codex\"}"
-      }
+      },
+      "env_vars": [
+        "BILLING_PROJECT_ID"
+      ]
     },
     "bigtable": {
       "command": "node",
@@ -90,7 +108,10 @@
       ],
       "env": {
         "X_GOOG_PROXY_HEADERS": "{\"User-Agent\": \"datacloud.codex\"}"
-      }
+      },
+      "env_vars": [
+        "BILLING_PROJECT_ID"
+      ]
     },
     "cloud-storage": {
       "command": "node",
@@ -100,7 +121,10 @@
       ],
       "env": {
         "X_GOOG_PROXY_HEADERS": "{\"User-Agent\": \"datacloud.codex\"}"
-      }
+      },
+      "env_vars": [
+        "BILLING_PROJECT_ID"
+      ]
     }
   }
 }
