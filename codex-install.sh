@@ -60,7 +60,7 @@ echo "Applying configuration..."
 node -e "
 const fs = require('fs');
 const path = require('path');
-const mcpFilePath = path.join(process.argv[1], '.mcp.json');
+const mcpFilePath = path.join(process.argv[1], 'mcp.json');
 let mcpContent = fs.readFileSync(mcpFilePath, 'utf8');
 mcpContent = mcpContent.replace(/\\\$PROJECT_ID/g, process.argv[2]);
 mcpContent = mcpContent.replace(/\\\$GCP_REGION/g, process.argv[3]);
