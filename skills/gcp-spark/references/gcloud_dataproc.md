@@ -278,7 +278,20 @@ Python scripts, follow these steps:
     pip install -U google-cloud-spark-connect
     ```
 
-4.  **Initialize `ManagedSparkSession` & Execute**: Use `ManagedSparkSession`
+4.  **Project and region settings**:
+
+    You SHOULD specify project and region in the code. When not set by the user,
+    project and region MUST be retrieved **BEFORE** writing any code, in the
+    following order:
+
+    -   IDE configuration: `google.cloud.project`, `google.cloud.region`
+    -   Environment variables: `GOOGLE_CLOUD_PROJECT`, `GOOGLE_CLOUD_REGION`
+    -   GCloud config: `gcloud config get project`, `gcloud config get-value
+        dataproc/region`
+
+    Retrieve those values and put them using builder methods.
+
+5.  **Initialize `ManagedSparkSession` & Execute**: Use `ManagedSparkSession`
     from `google.cloud.managed_spark_connect` to connect to Dataproc Serverless.
     Session provisioning takes **2–3 minutes**; execute scripts in the
     foreground (e.g. `python3 script.py | tee driver_log.txt`):
@@ -286,7 +299,11 @@ Python scripts, follow these steps:
     ```python
     from google.cloud.managed_spark_connect import ManagedSparkSession
 
-    spark = ManagedSparkSession.builder.getOrCreate()
+    spark = (
+        ManagedSparkSession.builder.projectId("<PROJECT_ID>")
+        .location("<REGION>")
+        .getOrCreate()
+    )
 
     # Run Spark DataFrame or SQL operations
     df = spark.sql("SELECT 'Hello from Spark Connect' AS message")
@@ -327,7 +344,7 @@ Python scripts, follow these steps:
     )
     ```
 
-5.  **Local Environment Cleanup**:
+6.  **Local Environment Cleanup**:
 
     ```bash
     deactivate
