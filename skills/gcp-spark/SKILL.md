@@ -13,7 +13,7 @@ description: |
   - Performing simple SQL queries that can be done directly in BigQuery.
 license: Apache-2.0
 metadata:
-  version: v12
+  version: v14
   publisher: google
 ---
 
@@ -21,7 +21,7 @@ metadata:
 
 > [!IMPORTANT]
 >
-> You MUST ALWAYS follow the Task Execution Workflow when writing spark code.
+> You MUST follow the Task Execution Workflow when writing spark code.
 
 ## Task Execution Workflow
 
@@ -59,22 +59,30 @@ metadata:
 
     *   **Output Format**: **ALWAYS** generate code in **Python Notebooks
         (.ipynb)** format. Generate scripts (.py) only if explicitly requested.
-    *   **Spark Connect for Notebooks**:
+    *   **Spark Session Initialization**:
 
-        > [!IMPORTANT] When writing PySpark notebooks (.ipynb), you **MUST**
-        > initialize the Spark session using Google Cloud Managed Spark Connect
-        > (`google-cloud-spark-connect` library) to execute against Dataproc
-        > Serverless. Do **NOT** import or use
-        > `pyspark.sql.SparkSession.builder.getOrCreate()` or create local Spark
-        > clusters in notebooks.
+        > [!IMPORTANT] Initializing a Spark session on Google Cloud can take 2-3
+        > minutes. You MUST inform the user about the potential delay.
+
+        > [!CAUTION] **NEVER** create a local Spark session. The following are
+        > **BANNED**: - `SparkSession.builder.master("local")` -
+        > `pyspark.sql.SparkSession.builder.getOrCreate()` when used without
+        > `ManagedSparkSession` - Any `try/except` fallbacks that revert to a
+        > local `SparkSession`.
+        >
+        > You **MUST ALWAYS** use `ManagedSparkSession` from
+        > `google-cloud-spark-connect` to connect to **Managed Spark
+        > Serverless**. No exceptions.
 
         Refer to `references/gcloud_dataproc.md` for detailed configuration.
-        Minimal initialization snippet:
+        Minimal initialization:
 
         ```python
         from google.cloud.managed_spark_connect import ManagedSparkSession
 
-        spark = ManagedSparkSession.builder.getOrCreate()
+        spark = ManagedSparkSession.builder.projectId("<PROJECT_ID>")
+            .location("<REGION>")
+            .getOrCreate()
         ```
     *   **Read and Write data**: **ALWAYS** Refer to
         `references/read_write_data.md` when reading or writing data.
@@ -95,6 +103,15 @@ metadata:
     session, or execute notebook cells against Managed Spark, refer to
     `references/gcloud_dataproc.md` on how to execute code on Dataproc
     Serverless using Spark Connect or Dataproc jobs.
+7.  **Notebook operations**:
+
+    *   **PROHIBITED**: Do NOT use `read_file` or generic whole-file reading
+        tools on executed `.ipynb` notebooks. Executed notebooks often contain
+        massive base64-encoded image outputs that cause excessive token
+        consumption.
+    *   **REQUIRED**: To inspect execution outputs, you MUST use cell-scoped
+        reading tools (such as `notebook__read_cell`, `jupyter__read_cell`, or
+        specific line slices) rather than reading the entire file at once.
 
 --------------------------------------------------------------------------------
 
