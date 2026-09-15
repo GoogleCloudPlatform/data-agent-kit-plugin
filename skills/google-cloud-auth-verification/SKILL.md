@@ -6,7 +6,7 @@ description: >-
   Use whenever interacting with GCP resources, running Spark/PySpark pipelines, BigQuery queries, GCS paths (gs://), or creating/running notebooks.
 license: Apache-2.0
 metadata:
-  version: v2
+  version: v3
   publisher: google
 ---
 
@@ -17,10 +17,22 @@ metadata:
 > [!IMPORTANT] **Pre-Flight Execution Priority Order**: Before generating code,
 > implementation plans, or executing tasks for any GCP or Notebook workload:
 >
-> 1.  **Verify Shell, Script & Notebook Credentials**: If shell-based commands,
->     local Python scripts, or notebook kernels (`gs://...`, BigQuery, Dataproc)
->     are required, verify credentials via bundled probe (`gcloud auth list &&
->     gcloud config list`) or Application Default Credentials (ADC).
+> 1.  **Skip Pre-Flight Shell Probes When Live Notebook Execution or MCP Tools**
+>         **Are Available**:
+>     -   When a live notebook cell execution tool (`execute_cell` /
+>         `notebook_execute_cell` / `notebook__execute_cell`) is available, or
+>         when the task is handled directly by a connected MCP tool
+>         (`bigquery__execute_sql`, `bigquery__get_table_info`,
+>         `bigquery__list_table_ids`, etc.), **do NOT run a pre-flight
+>         `gcloud auth list && gcloud config list` shell probe**. Instead,
+>         verify authentication reactively only if a cell execution or MCP tool
+>         call returns an authentication or credentials error (`401`, `403`,
+>         `DefaultCredentialsError`, `Reauthentication is needed`).
+>     -   When `gcloud` or `bq` shell commands are required, or when generating
+>         standalone scripts or notebooks without a live cell execution tool
+>         (`execute_cell`), verify credentials upfront via the single bundled
+>         probe (`gcloud auth list && gcloud config list`) or Application
+>         Default Credentials (ADC).
 > 2.  **Distinguish Authentication vs. IAM Permissions**:
 >     -   If `gcloud auth list` returns `No credentialed accounts`, **HARD
 >         STOP** immediately and instruct the user to run `gcloud auth login`

@@ -19,7 +19,8 @@ CLI or building HTTP requests. It comes in two forms:
 > Installing this repository as a plugin (rather than as skills alone) already
 > configures the local MCP Toolbox server, named `cloud-storage`. If those tools
 > are available to you, skip the setup below and just call them. The only
-> setting is `CLOUD_STORAGE_PROJECT`.
+> setting is `CLOUD_STORAGE_PROJECT`, and it is required: if the plugin's
+> `cloud-storage` server fails to connect, the project ID is most likely unset.
 
 ## Choosing a Server
 
@@ -139,19 +140,14 @@ MCP Toolbox is Google's open-source MCP server (formerly Gen AI Toolbox for
 Databases). It ships a prebuilt `cloud-storage` tool source that exposes the
 full set of bucket and object operations.
 
-1.  **Download the binary.** The Toolbox also ships as a standalone binary (or
-    container image), which avoids the Node dependency of the `npx` command this
-    plugin uses. Replace `VERSION` with the
-    [latest release](https://github.com/googleapis/mcp-toolbox/releases) and
-    pick your OS/architecture path:
+If you installed these skills individually (for example via `npx skills add` or
+from a skills-only collection), you can either install the full
+[Google Cloud Storage plugin](https://github.com/gemini-cli-extensions/google-cloud-storage)
+(which registers the `cloud-storage` MCP Toolbox server automatically) or add
+the server directly to your MCP client using `npx` (Option A) or the standalone
+binary (Option B).
 
-    ```bash
-    curl -L -o toolbox \
-      https://storage.googleapis.com/mcp-toolbox-for-databases/VERSION/linux/amd64/toolbox
-    chmod +x toolbox
-    ```
-
-2.  **Configure credentials.** The Toolbox uses Application Default Credentials
+1.  **Configure credentials.** The Toolbox uses Application Default Credentials
     (ADC) in every environment: locally via the command below, on GCP compute
     via the attached service account, and elsewhere (CI, on-prem) via workload
     identity federation. **Never download a service-account key file or set
@@ -162,20 +158,95 @@ full set of bucket and object operations.
     gcloud auth application-default login
     ```
 
-3.  **Add it to your MCP client.** For example, in a Claude Code `.mcp.json`
-    (the same `command`/`args` work for other clients such as Gemini CLI):
+2.  **Option A — Add via `npx` (no binary download; requires Node.js).** For
+    **Antigravity**, add the server to `~/.gemini/config/mcp_config.json`. For
+    **Claude Code**, add it to `.mcp.json` at your project root. Merge the
+    `cloud-storage` entry into any existing `mcpServers` object, and replace
+    `PROJECT_ID` with your project:
+
+    ```json
+    {
+      "mcpServers": {
+        "cloud-storage": {
+          "command": "npx",
+          "args": [
+            "-y",
+            "@toolbox-sdk/server@1.13.0",
+            "--prebuilt",
+            "cloud-storage",
+            "--stdio",
+            "--user-agent-metadata",
+            "gcs-skills/1.0 (skill:gcs-skills-mcp-traffic)"
+          ],
+          "env": {"CLOUD_STORAGE_PROJECT": "PROJECT_ID"}
+        }
+      }
+    }
+    ```
+
+    For **Codex**, add the equivalent server to `~/.codex/config.toml` (or a
+    trusted project's `.codex/config.toml`):
+
+    ```toml
+    [mcp_servers.cloud-storage]
+    command = "npx"
+    args = [
+      "-y",
+      "@toolbox-sdk/server@1.13.0",
+      "--prebuilt",
+      "cloud-storage",
+      "--stdio",
+      "--user-agent-metadata",
+      "gcs-skills/1.0 (skill:gcs-skills-mcp-traffic)",
+    ]
+
+    [mcp_servers.cloud-storage.env]
+    CLOUD_STORAGE_PROJECT = "PROJECT_ID"
+    ```
+
+3.  **Option B — Add via standalone binary (no Node.js dependency).** Download
+    the standalone binary (or container image), replacing `VERSION` with the
+    [latest release](https://github.com/googleapis/mcp-toolbox/releases) and
+    picking your OS/architecture path:
+
+    ```bash
+    curl -L -o toolbox \
+      https://storage.googleapis.com/mcp-toolbox-for-databases/VERSION/linux/amd64/toolbox
+    chmod +x toolbox
+    ```
+
+    Then point `command` at the downloaded binary:
 
     ```json
     {
       "mcpServers": {
         "cloud-storage": {
           "command": "./PATH/TO/toolbox",
-          "args": ["--prebuilt", "cloud-storage", "--stdio"],
+          "args": [
+            "--prebuilt",
+            "cloud-storage",
+            "--stdio",
+            "--user-agent-metadata",
+            "gcs-skills/1.0 (skill:gcs-skills-mcp-traffic)"
+          ],
           "env": {"CLOUD_STORAGE_PROJECT": "PROJECT_ID"}
         }
       }
     }
     ```
+
+    Always include `"--user-agent-metadata", "gcs-skills/1.0
+    (skill:gcs-skills-mcp-traffic)"` in `args` as shown so local MCP Toolbox
+    requests carry the required attribution header.
+
+`CLOUD_STORAGE_PROJECT` is required for both options. If it is unset or empty,
+the Toolbox exits at startup with `Field validation for 'Project' failed on the
+'required' tag`, which MCP clients typically surface only as a generic
+connection failure (for example, `Connection closed`). The Toolbox does not fall
+back to `GOOGLE_CLOUD_PROJECT` or the gcloud default project. With the plugin,
+set the **Project ID** option in Claude Code, Gemini CLI, or Antigravity; in
+Codex, `export CLOUD_STORAGE_PROJECT=PROJECT_ID` in the shell before launching
+Codex. Then reconnect the server.
 
 The identity behind ADC needs the `roles/storage.*` roles for the operations you
 intend to call (for example, `roles/storage.objectAdmin` for copy, move, and

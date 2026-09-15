@@ -13,23 +13,15 @@
 
 ### Spark Session Configuration
 
-On Managed Spark on Google Cloud, BigQuery connector jars are pre-installed.
-When initializing local session, set the BigQuery package coordinates and
-dependencies:
+On Managed Spark on Google Cloud (Dataproc Serverless and Dataproc Clusters),
+BigQuery connector JARs (`spark-bigquery-with-dependencies`) are pre-installed
+in the runtime environment. Do **NOT** pass `com.google.cloud.spark:spark-*-bigquery`
+via `spark.jars.packages` when running on Dataproc.
 
-```python
-from pyspark.sql import SparkSession
-
-# For Spark 4.0 environments
-spark = (
-    SparkSession.builder.appName("<APP_NAME>")
-    .config(
-        "spark.jars.packages",
-        "com.google.cloud.spark:spark-4.0-bigquery:0.45.0,javax.inject:javax.inject:1",
-    )
-    .getOrCreate()
-)
-```
+-   **Interactive Notebooks (`.ipynb`) & Spark Connect**: Initialize with
+    `ManagedSparkSession` (see `SKILL.md`).
+-   **Dataproc Batch & Cluster Jobs (`.py`)**: Initialize with standard
+    `SparkSession.builder` (see `SKILL.md`).
 
 ### Reading from BigQuery
 #### Basic example to read a Big Query table
@@ -43,7 +35,9 @@ df = spark.read.format("bigquery") \
 #### Executing a BigQuery SQL query
 The Spark BigQuery connector allows you to run Standard SQL SELECT queries
 directly on BigQuery and load the results into a spark dataframe.
-> [!IMPORTANT] You must enable views option to run direct queries
+> [!IMPORTANT] You must set `viewsEnabled` to `"true"` and specify a writable
+> `materializationDataset` in your project to run direct SQL queries or read
+> BigQuery views.
 
 ```python
 # Define Standard SQL query
@@ -54,7 +48,12 @@ sql = """
   LIMIT 10
 """
 
-df = spark.read.format("bigquery").option("viewsEnabled", "true").load(sql)
+df = (
+    spark.read.format("bigquery")
+    .option("viewsEnabled", "true")
+    .option("materializationDataset", "<DATASET_NAME>")
+    .load(sql)
+)
 ```
 
 #### BigQuery Join Patterns
@@ -242,6 +241,13 @@ cluster and batch jobs, or environments without a pre-configured profile). You
 session template instead. Multiple Iceberg catalogs can be configured in the
 same spark session.
 
+> [!IMPORTANT]
+> - **Runtime JARs**:
+>   - **Dataproc Serverless**: Iceberg and `iceberg-gcp` (`GCSFileIO`) JARs are pre-installed on `/usr/lib/spark/jars/` by default. Do **NOT** pass `spark.jars.packages=org.apache.iceberg:...` when submitting serverless batches.
+>   - **Dataproc on GCE Clusters**: Enable `--optional-components=ICEBERG` at cluster creation (which adds `/usr/lib/iceberg/lib/*` to `SPARK_DIST_CLASSPATH`), or pass `/usr/lib/iceberg/lib/*` via `--jars` if submitting to a cluster without the optional component.
+> - **Warehouse URI & Catalog Name**: For a GCS-backed BigLake catalog, the catalog name `<BUCKET_NAME>` must match the GCS bucket name, and `spark.sql.catalog.<BUCKET_NAME>.warehouse` **MUST** be the root GCS bucket URI (`gs://<BUCKET_NAME>`) without any subfolder path. Passing a subfolder (e.g. `gs://<BUCKET_NAME>/warehouse`) causes `BadRequestException: Bucket name is invalid`.
+> - **Catalog Provisioning & IAM**: Before creating namespaces or writing tables, ensure the BigLake Iceberg catalog exists (`gcloud biglake iceberg catalogs create <BUCKET_NAME> --catalog-type=gcs-bucket --project=<CATALOG_PROJECT_ID>`) and the execution service account has `roles/biglake.admin` and `roles/storage.objectUser` on the catalog bucket.
+
 Example with GCS storage:
 
 ```python
@@ -253,28 +259,28 @@ spark = (
         "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions",
     )
     .config(
-        "spark.sql.catalog.<GCS_CATALOG_NAME>",
+        "spark.sql.catalog.<BUCKET_NAME>",
         "org.apache.iceberg.spark.SparkCatalog",
     )
-    .config("spark.sql.catalog.<GCS_CATALOG_NAME>.type", "rest")
+    .config("spark.sql.catalog.<BUCKET_NAME>.type", "rest")
     .config(
-        "spark.sql.catalog.<GCS_CATALOG_NAME>.uri",
+        "spark.sql.catalog.<BUCKET_NAME>.uri",
         "https://biglake.googleapis.com/iceberg/v1/restcatalog",
     )
     .config(
-        "spark.sql.catalog.<GCS_CATALOG_NAME>.warehouse",
-        "gs://<GCS_CATALOG_NAME>",
+        "spark.sql.catalog.<BUCKET_NAME>.warehouse",
+        "gs://<BUCKET_NAME>",
     )
     .config(
-        "spark.sql.catalog.<GCS_CATALOG_NAME>.header.x-goog-user-project",
+        "spark.sql.catalog.<BUCKET_NAME>.header.x-goog-user-project",
         "<CATALOG_PROJECT_ID>",
     )
     .config(
-        "spark.sql.catalog.<GCS_CATALOG_NAME>.rest.auth.type",
+        "spark.sql.catalog.<BUCKET_NAME>.rest.auth.type",
         "org.apache.iceberg.gcp.auth.GoogleAuthManager",
     )
     .config(
-        "spark.sql.catalog.<GCS_CATALOG_NAME>.io-impl",
+        "spark.sql.catalog.<BUCKET_NAME>.io-impl",
         "org.apache.iceberg.gcp.gcs.GCSFileIO",
     )
     .getOrCreate()
@@ -486,30 +492,61 @@ model.write().overwrite().save(model_path)
 
 ## Spanner
 ### Spark Session Configuration
-The spanner jar must be configured in the spark session before tables can be
-read. In the notebook code we can ONLY validate the spanner connector is
-configured.
-Example:
+The Spanner connector JAR is not pre-installed and must be attached at session
+creation (`gs://` JAR URIs cannot be passed to `spark.jars.packages`, which only
+accepts Maven coordinates). Ensure the Spanner JAR's Spark version prefix
+(e.g., `spark-3.5-spanner-*` for Dataproc runtime `2.3` / Spark 3.5, or
+`spark-4.0-spanner-*` for Dataproc runtime `3.0` / Spark 4.0) matches the
+Dataproc runtime version:
 
-```python
-spark = SparkSession.builder \
-    .appName("<APP_NAME>") \
-    .config(
-        "spark.jars.packages",
-        "gs://spark-lib/spanner/spark-3.5-spanner-1.3.0.jar",
-    ) \
-    .getOrCreate()
-```
+-   **Interactive Notebooks (`.ipynb`) & Spark Connect**: Attach the JAR via a
+    Session Template or `session_config.runtime_config.properties["spark.jars"]`
+    (and ensure `session_config.runtime_config.version` matches the JAR's Spark
+    version, as `ManagedSparkSession` defaults to runtime `3.0`):
+
+    ```python
+    from google.cloud.dataproc_v1 import Session
+    from google.cloud.managed_spark_connect import ManagedSparkSession
+
+    session_config = Session()
+    session_config.runtime_config.version = "2.3"
+    session_config.runtime_config.properties["spark.jars"] = (
+        "gs://spark-lib/spanner/spark-3.5-spanner-1.4.0.jar"
+    )
+    spark = (
+        ManagedSparkSession.builder.projectId("<PROJECT_ID>")
+        .location("<REGION>")
+        .dataprocSessionConfig(session_config)
+        .getOrCreate()
+    )
+    ```
+
+-   **Dataproc Batch & Cluster Jobs (`.py`)**: Pass
+    `--jars=gs://spark-lib/spanner/spark-3.5-spanner-1.4.0.jar` on the `gcloud`
+    CLI (see `references/gcloud_dataproc.md`), or set `spark.jars`:
+
+    ```python
+    spark = (
+        SparkSession.builder.appName("<APP_NAME>")
+        .config(
+            "spark.jars",
+            "gs://spark-lib/spanner/spark-3.5-spanner-1.4.0.jar",
+        )
+        .getOrCreate()
+    )
+    ```
 
 #### Reading Spanner tables
 
 ```python
-df = spark.read.format('cloud-spanner') \
-  .option("projectId", "<PROJECT_ID>") \
-  .option("instanceId", "<INSTANCE_ID>") \
-  .option("databaseId", "<DATABASE_ID>") \
-  .option("table", "<TABLE_NAME>")
-  .load()
+df = (
+    spark.read.format("cloud-spanner")
+    .option("projectId", "<PROJECT_ID>")
+    .option("instanceId", "<INSTANCE_ID>")
+    .option("databaseId", "<DATABASE_ID>")
+    .option("table", "<TABLE_NAME>")
+    .load()
+)
 ```
 
 ### Writing to Spanner
