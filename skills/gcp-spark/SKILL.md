@@ -13,7 +13,7 @@ description: |
   - Performing simple SQL queries that can be done directly in BigQuery.
 license: Apache-2.0
 metadata:
-  version: v13
+  version: v14
   publisher: google
 ---
 
@@ -103,6 +103,15 @@ metadata:
     session, or execute notebook cells against Managed Spark, refer to
     `references/gcloud_dataproc.md` on how to execute code on Dataproc
     Serverless using Spark Connect or Dataproc jobs.
+7.  **Notebook operations**:
+
+    *   **PROHIBITED**: Do NOT use `read_file` or generic whole-file reading
+        tools on executed `.ipynb` notebooks. Executed notebooks often contain
+        massive base64-encoded image outputs that cause excessive token
+        consumption.
+    *   **REQUIRED**: To inspect execution outputs, you MUST use cell-scoped
+        reading tools (such as `notebook__read_cell`, `jupyter__read_cell`, or
+        specific line slices) rather than reading the entire file at once.
 
 --------------------------------------------------------------------------------
 
