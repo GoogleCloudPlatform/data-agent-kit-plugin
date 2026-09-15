@@ -223,7 +223,7 @@ For asynchronous execution, you must poll the batch status until state is
 #### Iceberg REST
 
 -   **Dependency**:
-    `spark.jars.packages=org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:1.5.0`
+    `spark.jars.packages=org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:1.10.0,org.apache.iceberg:iceberg-gcp-bundle:1.10.0`
 -   **Notes**: In code use `<CATALOG>.<DATASET>.<TABLE>` (not project ID)
 
 #### Pub/Sub
