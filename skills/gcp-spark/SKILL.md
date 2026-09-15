@@ -34,6 +34,13 @@ metadata:
     table does not exist, use `@skill:discovering-gcp-data-assets` to discover
     all similar tables in the namespace or project.
 
+    > [!IMPORTANT] **Short-Circuit Data Asset Discovery**: If the user prompt
+    > contains a direct GCS path (`gs://...`), a raw file path, or targets a new
+    > table/directory being created, **SKIP** Dataplex/BigQuery catalog metadata
+    > searches (`gcloud dataplex`, `bq ls`). Use direct schema inspection
+    > (`gcloud storage cat` or Spark `load().schema`). Cap all asset discovery
+    > attempts at **2 retries max**.
+
     *MINOR TYPO RULE*: If there is a minor typo (e.g. `employees` vs
     `employee`), you can fix the error and proceed.
 

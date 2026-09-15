@@ -124,6 +124,14 @@ kernel’s Python environment contains the necessary libraries (`bigframes`,
 > confirmation that a kernel is active before proceeding with notebook
 > execution.
 
+> [!IMPORTANT]
+>
+> **2-Retry Setup Circuit Breaker**: Cap environment setup, kernel connection,
+> or library installation retries at a maximum of **2 attempts**. If setup or
+> kernel connection fails twice, **HARD STOP** immediately and prompt the user
+> to pivot runtimes: *"Environment setup encountered errors twice. Would you
+> like to pivot to Dataproc Serverless Spark, or help resolve the local setup?"*
+
 ### Proper Library Installation
 
 #### 1. Local Kernels
