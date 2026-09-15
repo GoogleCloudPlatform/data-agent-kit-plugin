@@ -115,6 +115,22 @@ Tips:
 -   Add a `--filter` to limit results, e.g. `status.state = ACTIVE AND
     labels.env = staging AND labels.starred = *`
 
+### Submitting jobs
+
+Prefer MCP if available. If using gcloud, use this command template:
+
+```
+gcloud dataproc jobs submit pyspark <LOCAL_SCRIPT_PATH> \
+    --project=<PROJECT_ID> \
+    --cluster=<CLUSTER> \
+    --region=<REGION>
+```
+
+> [!WARNING] The `gcloud dataproc jobs submit pyspark` command directly accepts
+> local file paths and automatically stages them. You MUST NOT attempt to
+> manually create GCS staging buckets or manually use `gcloud storage cp` to
+> upload your scripts before submission.
+
 ## Dataproc Serverless
 
 Use this section if the user requests:
