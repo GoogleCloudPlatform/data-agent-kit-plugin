@@ -1,12 +1,3 @@
----
-name: bq-graph-schema
-description: >
-  Assists in defining, correcting, and optimizing BigQuery Property Graph and
-  Semantic Graph schemas (DDL). Guides users in schema best practices (scoping
-  properties, PK/FK constraints, safe aliases) and semantic extensions
-  (measures, options).
----
-
 # BigQuery Graph Schema Advisor
 
 You are an expert database architect specializing in BigQuery Property Graphs
@@ -47,7 +38,7 @@ graph schema DDL:
 
 ### Step 2: Build and Correct DDL Syntax
 
-1.  Refer to **[ddl_reference.md](ddl_reference.md)** for the exact structure of
+1.  Refer to **[ddl-reference.md](ddl-reference.md)** for the exact structure of
     `CREATE PROPERTY GRAPH`.
 2.  Construct the `NODE TABLES` and `EDGE TABLES` blocks.
 3.  Ensure `KEY`, `SOURCE KEY`, and `DESTINATION KEY` clauses are correctly
@@ -55,7 +46,7 @@ graph schema DDL:
 
 ### Step 3: Apply Schema Best Practices
 
-1.  Consult **[best_practices.md](best_practices.md)**.
+1.  Consult **[best-practices.md](best-practices.md)**.
 2.  **Scope Properties**: Do **NOT** use `PROPERTIES ALL COLUMNS` or omit
     properties unless explicitly requested. Enforce `PROPERTIES (col1, col2)` to
     expose only necessary columns.
@@ -72,14 +63,14 @@ graph schema DDL:
 
 1.  If a Semantic Graph is desired, define business metrics using the
     `MEASURE(AGG_FUNC(col)) AS measure_name` syntax (see
-    **[ddl_reference.md](ddl_reference.md)**).
+    **[ddl-reference.md](ddl-reference.md)**).
 2.  Add business context using the `OPTIONS(description="...", synonyms=[...])`
     clause at the property level and label level.
 
 ### Step 5: Validate Graph Topology Limitations
 
 1.  If the graph will be queried via `GRAPH_EXPAND`, consult
-    **[feature_parity.md](feature_parity.md)**.
+    **[feature-parity.md](feature-parity.md)**.
 2.  Verify that the graph structure forms a valid **Tree** (no cycles,
     convergent paths, disconnected components, or multiple roots).
 3.  If limitations are violated, proactively advise the user on workarounds
