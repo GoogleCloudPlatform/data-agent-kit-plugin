@@ -22,8 +22,8 @@ The core logic for this extension is handled by a pre-built `toolbox` binary. Th
 1.  **Clone the Repository:**
 
     ```bash
-    git clone https://github.com/gemini-cli-extensions/data-agent-kit-starter-pack.git
-    cd data-agent-kit-starter-pack
+    git clone https://github.com/GoogleCloudPlatform/data-agent-kit-plugin.git
+    cd data-agent-kit-plugin
     ```
 
 2.  **Download the Toolbox Binary:** The required version of the `toolbox` binary
