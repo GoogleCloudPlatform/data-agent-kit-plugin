@@ -1,5 +1,16 @@
 {
   "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/skills/setup/scripts/dak-setup.js\" sync"
+          }
+        ]
+      }
+    ],
     "PreToolUse": [
       {
         "matcher": "*",
