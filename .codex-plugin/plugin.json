@@ -8,6 +8,6 @@
     "shortDescription": "Data Agent Kit Starter Pack",
     "category": "Productivity"
   },
-  "mcp": "./.mcp.json",
+  "mcp": "./mcp.json",
   "hooks": "./.codex-plugin/hooks.json"
 }
