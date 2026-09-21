@@ -1,7 +1,9 @@
 ---
 name: bigquery-sql
+license: Apache-2.0
 metadata:
-  version: v1
+  version: v2
+  publisher: google
 description: >-
   Provides BigQuery SQL query optimization techniques, execution best practices, and performance tuning rules for high-efficiency querying. Use when optimizing BigQuery SQL queries, reducing query costs, or designing performant SQL transformations.
 ---
