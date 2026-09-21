@@ -6,7 +6,7 @@ Present your assessment in a scannable, action-oriented format.
 
 The target user is a Storage Admin with limited security expertise who needs to
 quickly understand: what's wrong, how bad is it, and how to fix it. They may
-action remediations via the Cloud Console (Pantheon) or gcloud CLI — both paths
+action remediations via the Google Cloud Console or gcloud CLI — both paths
 should be clear.
 
 ## Output Structure
