@@ -11,9 +11,10 @@ description: |
   Don't use when:
   - Writing generic Python scripts that don't use Spark.
   - Performing simple SQL queries that can be done directly in BigQuery.
+  - Troubleshooting failed Spark workloads or analyzing logs (use @skill:gcp-spark-troubleshooting).
 license: Apache-2.0
 metadata:
-  version: v15
+  version: v16
   publisher: google
 ---
 
@@ -161,3 +162,11 @@ The Managed Spark (Dataproc) service account needs:
 
 Refer to `references/gcloud_dataproc.md` for detailed guidelines on managing
 Spark clusters, jobs, batches, interactive sessions, and Spark Connect sessions.
+
+--------------------------------------------------------------------------------
+
+## Troubleshooting & Root Cause Analysis
+
+For troubleshooting failed Spark jobs or Dataproc batches, inspecting/tailing
+GCS driver output logs, analyzing Spark event logs, or performing Root Cause
+Analysis (RCA), use the `@skill:gcp-spark-troubleshooting` skill.
