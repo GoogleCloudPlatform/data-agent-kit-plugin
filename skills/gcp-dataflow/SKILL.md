@@ -27,7 +27,7 @@ description: >
 
 license: Apache-2.0
 metadata:
-  version: v4
+  version: v5
   publisher: google
 ---
 
@@ -364,8 +364,10 @@ Use this section to monitor the progress of a running Dataflow job.
         *   Identify Issues.
 
 5.  **Output**: Provide a synthesized diagnosis containing symptoms, root
-    causes, and target code links (using `file:///...` format). Strictly follow
-    the response structure appropriate for the job type:
+    causes, and target code links (using `file:///...` format). Refer to
+    [reporting_findings.md][reporting-findings] for report structure, evidence
+    standards, and verification guidelines. Strictly follow the appropriate
+    response structure for the job type:
 
     **For Streaming Jobs:**
 
@@ -416,3 +418,4 @@ Use this section to monitor the progress of a running Dataflow job.
 [diag-ref]: references/dataflow_diagnostics_reference.md
 [bottlenecks-context]: references/bottlenecks_and_parallelism_context.md
 [autoscaling-analysis-link]: references/streaming_horizontal_autoscaling_analysis.md
+[reporting-findings]: references/reporting_findings.md
