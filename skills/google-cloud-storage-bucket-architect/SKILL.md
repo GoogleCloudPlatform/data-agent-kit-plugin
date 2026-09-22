@@ -93,11 +93,11 @@ snippets.
 
 ## Phase Summary Table
 
-Phase                              | Inputs                      | Outputs                               | Reference
-:--------------------------------- | :-------------------------- | :------------------------------------ | :--------
-**1. Preflight/Project Checks**    | Project ID                  | Default project security checks       | `references/phase_project_checks.md`
-**2. Draft Bucket Create Plan**    | User use case, requirements | Recommended bucket configuration plan | `references/phase_draft_plan.md`
-**3. Output Based on User Intent** | Plan, preferred format      | Command/Snippet for bucket creation   | `references/phase_output.md`
+Phase                              | Inputs                      | Outputs                                                                    | Reference
+:--------------------------------- | :-------------------------- | :------------------------------------------------------------------------- | :--------
+**1. Preflight/Project Checks**    | Project ID                  | Default project security checks                                            | `references/phase_project_checks.md`
+**2. Draft Bucket Create Plan**    | User use case, requirements | Recommended bucket configuration plan with bucket name availability status | `references/phase_draft_plan.md`
+**3. Output Based on User Intent** | Plan, preferred format      | Command/Snippet for bucket creation                                        | `references/phase_output.md`
 
 ## Workflow Execution
 
@@ -118,10 +118,12 @@ When invoked, the agent **MUST follow this exact sequence**:
 
 2.  **Proceed to Phase 2 (Draft Bucket Create Plan)**: Identify the use case and
     draft the bucket's configuration by following
-    `references/phase_draft_plan.md`. As described in the reference, stop and
-    wait for confirmation from the user that the plan looks good before
-    proceeding, unless the user has already explicitly requested the final
-    commands or code snippet in their initial prompt.
+    `references/phase_draft_plan.md`. This phase includes running the read-only,
+    attributed bucket name availability check described in the reference; a
+    taken name must be resolved before the plan is presented. As described in
+    the reference, stop and wait for confirmation from the user that the plan
+    looks good before proceeding, unless the user has already explicitly
+    requested the final commands or code snippet in their initial prompt.
 
 3.  **Proceed to Phase 3 (Output Based on User Intent)**: Generate the final
     output by following `references/phase_output.md` but DO NOT execute any
@@ -137,9 +139,10 @@ When invoked, the agent **MUST follow this exact sequence**:
 
 ## Error Handling
 
-Problem                           | Cause                                           | Fix
---------------------------------- | ----------------------------------------------- | ---
-Execution failure during creation | Network issue, permission error during API call | Report the error details to the user and suggest manual execution with the generated command/snippet.
+Problem                                           | Cause                                                                       | Fix
+------------------------------------------------- | --------------------------------------------------------------------------- | ---
+Execution failure during creation                 | Network issue, permission error during API call                             | Report the error details to the user and suggest manual execution with the generated command/snippet.
+Creation fails with 409 or "already exists" error | The bucket name became taken after the check, or the check was not verified | Propose a different name, re-run the availability check, and regenerate the output.
 
 ## References
 

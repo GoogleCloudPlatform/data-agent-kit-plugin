@@ -166,7 +166,60 @@ sensitive data use case), the agent MUST consider the following limitations:
 
 --------------------------------------------------------------------------------
 
-## Step 3: Present the Draft Plan
+## Step 3: Verify Bucket Name Availability
+
+Cloud Storage bucket names are globally unique. Before presenting the draft plan
+or generating creation commands, the agent runs a read-only bucket name
+availability check against the proposed name. This catches name collisions early
+before the user applies any configuration or command.
+
+> [!IMPORTANT]
+>
+> Run this check after determining the use case (Step 2) once the bucket name is
+> known (either supplied by the user or proposed by the agent), and before the
+> draft plan is presented (Step 4).
+>
+> **Skip Rule**: If the user has instructed the agent not to run commands or
+> tools (the same condition that skips Step 1 of Phase 1 in
+> `references/phase_project_checks.md`), the agent MUST NOT run the check and
+> reports the status as ⚠️ Not verified, giving the user's instruction as the
+> reason. An instruction not to execute bucket creation or modification commands
+> does NOT trigger this skip: the check is read-only and is still run.
+
+Execute the following `gcloud` command to check bucket name availability (no
+`--project` flag is used because bucket names are global and lookup does not
+depend on a project):
+
+```bash
+CLOUDSDK_METRICS_ENVIRONMENT="${CLOUDSDK_METRICS_ENVIRONMENT:+$CLOUDSDK_METRICS_ENVIRONMENT }gcs-skills gcs-skills/1.0 (skill:google-cloud-storage-bucket-architect)" \
+gcloud storage buckets describe gs://[bucket-name] --format=json
+```
+
+### Status Interpretation Table
+
+Outcome of the Command                                                                                         | HTTP Result | Status                                                                           | Agent Action
+:------------------------------------------------------------------------------------------------------------- | :---------- | :------------------------------------------------------------------------------- | :-----------
+Succeeds and prints bucket metadata                                                                            | 200         | ❌ Name taken: the bucket already exists and is readable by the caller            | Tell the user the bucket already exists. This skill only creates new buckets: if they want to reconfigure the existing bucket, refer them to `google-cloud-storage-basics`. Otherwise ask for, or propose, a different name and re-run the check. Do not present a plan or generate creation output for the taken name.
+Error text contains `not found: 404`                                                                           | 404         | ✅ Available                                                                      | Proceed to present the draft plan.
+Error text contains `does not have permission to access` or `Permission 'storage.buckets.get' denied`          | 403         | ❌ Name taken: a bucket with this name exists in a project the caller cannot read | Tell the user the name is already in use elsewhere. Ask for, or propose, a different name and re-run the check. Do not present a plan or generate creation output for the taken name.
+Any other failure (auth token refresh error, network error, VPC Service Controls denial, gcloud not installed) | none        | ⚠️ Not verified                                                                  | Proceed with the plan, state the reason it could not be verified, and warn that creation will fail with a 409 error if the name is taken.
+
+### Re-Run Rule
+
+Run the check once per distinct bucket name. Re-run it whenever the name
+changes, whether because the user edits it during plan review or because the
+agent proposes a replacement after a collision. Do not re-run it for an
+unchanged name.
+
+### Presentation Blocking Rule
+
+A plan is only presented for a name whose status is ✅ Available or ⚠️ Not
+verified. A ❌ name must be replaced first before presenting the draft plan or
+generating creation output.
+
+--------------------------------------------------------------------------------
+
+## Step 4: Present the Draft Plan
 
 The agent MUST present the draft plan to the user in a structured format and
 explicitly ask for confirmation before proceeding, unless the user has already
@@ -195,7 +248,7 @@ Based on your requirements, we will configure a bucket optimized for **[Use Case
 
 **Proposed Configurations:**
 
-*   **Bucket Name**: `[proposed-bucket-name]`
+*   **Bucket Name**: `[proposed-bucket-name]` (✅ Available | ❌ Already exists | ⚠️ Not verified: [reason])
 *   **Project**: `[project-id]`
 *   **Location**: `[location]` (Default: Multi-region US if unspecified by user and use case reference)
 *   **Storage Class**: `[storage-class]` (Default: STANDARD)
