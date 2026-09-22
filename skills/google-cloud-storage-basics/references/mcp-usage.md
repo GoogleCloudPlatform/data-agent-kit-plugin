@@ -170,12 +170,22 @@ full set of bucket and object operations.
       "mcpServers": {
         "cloud-storage": {
           "command": "./PATH/TO/toolbox",
-          "args": ["--prebuilt", "cloud-storage", "--stdio"],
+          "args": [
+            "--prebuilt",
+            "cloud-storage",
+            "--stdio",
+            "--user-agent-metadata",
+            "gcs-skills/1.0 (skill:gcs-skills-mcp-traffic)"
+          ],
           "env": {"CLOUD_STORAGE_PROJECT": "PROJECT_ID"}
         }
       }
     }
     ```
+
+    Always include `"--user-agent-metadata", "gcs-skills/1.0
+    (skill:gcs-skills-mcp-traffic)"` in `args` as shown so local MCP Toolbox
+    requests carry the required attribution header.
 
 The identity behind ADC needs the `roles/storage.*` roles for the operations you
 intend to call (for example, `roles/storage.objectAdmin` for copy, move, and

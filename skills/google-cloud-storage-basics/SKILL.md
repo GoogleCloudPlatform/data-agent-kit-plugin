@@ -3,17 +3,17 @@ name: google-cloud-storage-basics
 description: >-
   Stores, retrieves, and manages data as objects in Cloud Storage (Google
   Cloud Storage, or GCS) buckets. Use when you need to interact with Cloud
-  Storage — create or configure buckets, upload, download, stream, or transfer
-  data, organize objects with folders, generate signed URLs, control access
-  (IAM, ACLs, public access prevention), set storage classes and tiering
-  (Standard, Nearline, Coldline, Archive), manage cost and lifecycle, protect
-  data (versioning, encryption/CMEK, retention and Bucket Lock, object holds,
-  soft delete), host static websites, trigger Pub/Sub notifications on object
-  changes, mount buckets as a file system (gcsfuse), or optimize storage
-  performance at any scale. Covers the gcloud storage / gsutil CLI, JSON and
-  XML APIs, client libraries, Terraform, and Cloud Storage MCP servers. Don't
-  use for block storage (Persistent Disk), data warehousing/analytics
-  (BigQuery), or databases (Cloud SQL, Spanner, Bigtable, Firestore).
+  Storage — set up a Storage MCP server (remote or local Toolbox), create or
+  configure buckets, upload, download, stream, or transfer data, organize
+  objects with folders, generate signed URLs, control access (IAM, ACLs,
+  public access prevention), set storage classes (Standard, Nearline,
+  Coldline, Archive), manage lifecycle and cost, protect data (versioning,
+  CMEK, retention, Bucket Lock, holds, soft delete), host static websites,
+  trigger Pub/Sub notifications, mount buckets (gcsfuse), or optimize
+  performance. Covers gcloud storage / gsutil, JSON/XML APIs, client
+  libraries, Terraform, and Cloud Storage MCP servers. Don't use for
+  non-Storage MCP servers, block storage (Persistent Disk), BigQuery, or
+  databases (Cloud SQL, Spanner, Bigtable, Firestore).
 metadata:
     version: v2
     publisher: google
@@ -118,10 +118,13 @@ npx skills add gemini-cli-extensions/google-cloud-storage --skill <skill-name>
 
 ## Quick Start
 
-If a Cloud Storage MCP server is connected, prefer its structured tools (such as
+To set up, configure, or choose between the Google-hosted remote Cloud Storage
+MCP server (`https://storage.googleapis.com/storage/mcp`) and the local MCP
+Toolbox (`cloud-storage`), read [MCP Usage](references/mcp-usage.md). If a Cloud
+Storage MCP server is already connected, prefer its structured tools (such as
 `create_bucket`, `list_objects`, `read_object`, and `upload_object`) over the
-CLI and API commands below — see [MCP Usage](references/mcp-usage.md). Fall back
-to `gcloud storage` and the JSON API when no MCP server is available.
+CLI and API commands below, and fall back to `gcloud storage` and the JSON API
+when no MCP server is available.
 
 1.  **Enable the Cloud Storage API:**
 
