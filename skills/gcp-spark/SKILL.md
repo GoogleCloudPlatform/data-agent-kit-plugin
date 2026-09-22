@@ -1,19 +1,23 @@
 ---
 name: gcp-spark
 description: |
-  Develops and executes Spark code on Managed Spark on Google Cloud (Dataproc Clusters and Serverless).
+  Develops, optimizes and executes Spark code on Managed Spark on Google Cloud (Dataproc Clusters and Serverless).
   Reads and writes data using BigLake Iceberg catalogs, BigQuery and Spanner.
+  Eliminates PySpark anti-patterns (actions in loops, lineage explosion, row-wise UDFs, unbounded driver memory, needless shuffles) and enforces pre-submission refactoring verification.
   Debugs execution failures.
   Use when:
   - Writing Spark ETL pipelines on Google Cloud Platform.
+  - Optimizing PySpark or Spark SQL code for performance, memory, or OOM risks.
+  - Preparing Spark workloads for production submission.
   - Training or running inference with Machine Learning models with spark on Google Cloud Platform.
   - Managing Spark clusters, jobs, batches, and interactive sessions.
   Don't use when:
   - Writing generic Python scripts that don't use Spark.
   - Performing simple SQL queries that can be done directly in BigQuery.
+  - Troubleshooting failed Spark workloads or analyzing logs (use @skill:gcp-spark-troubleshooting).
 license: Apache-2.0
 metadata:
-  version: v12
+  version: v17
   publisher: google
 ---
 
@@ -21,14 +25,15 @@ metadata:
 
 > [!IMPORTANT]
 >
-> You MUST ALWAYS follow the Task Execution Workflow when writing spark code.
+> You MUST follow the Task Execution Workflow when writing spark code.
 
 ## Task Execution Workflow
 
 1.  **Understand schemas**: **ALWAYS** use `@skill:discovering-gcp-data-assets`
     skill or `references/schema_direct_inspection.md` to understand input and
     output schemas. Include the schema in your thought process BEFORE generating
-    any code. Do NOT guess column names. Unless explicitly specified, assume
+    any code. Do NOT guess column names. Cap GCP data asset discovery attempts
+    at **3 retries max**. Unless explicitly specified, assume
     that the assets are located in the same project. Avoid scanning for assets
     across other projects as it can take a long time. If an expected dataset or
     table does not exist, use `@skill:discovering-gcp-data-assets` to discover
@@ -59,30 +64,39 @@ metadata:
 
     *   **Output Format**: **ALWAYS** generate code in **Python Notebooks
         (.ipynb)** format. Generate scripts (.py) only if explicitly requested.
-    *   **Spark Connect for Notebooks**:
+    *   **Spark Session Initialization**:
 
-        > [!IMPORTANT] When writing PySpark notebooks (.ipynb), you **MUST**
-        > initialize the Spark session using Google Cloud Managed Spark Connect
-        > (`google-cloud-spark-connect` library) to execute against Dataproc
-        > Serverless. Do **NOT** import or use
-        > `pyspark.sql.SparkSession.builder.getOrCreate()` or create local Spark
-        > clusters in notebooks.
+        > [!IMPORTANT] Initializing a Spark session on Google Cloud can take 2-3
+        > minutes. You MUST inform the user about the potential delay.
+
+        > [!CAUTION] **NEVER** create a local Spark session. The following are
+        > **BANNED**: - `SparkSession.builder.master("local")` -
+        > `pyspark.sql.SparkSession.builder.getOrCreate()` when used without
+        > `ManagedSparkSession` - Any `try/except` fallbacks that revert to a
+        > local `SparkSession`.
+        >
+        > You **MUST ALWAYS** use `ManagedSparkSession` from
+        > `google-cloud-spark-connect` to connect to **Managed Spark
+        > Serverless**. No exceptions.
 
         Refer to `references/gcloud_dataproc.md` for detailed configuration.
-        Minimal initialization snippet:
+        Minimal initialization:
 
         ```python
         from google.cloud.managed_spark_connect import ManagedSparkSession
 
-        spark = ManagedSparkSession.builder.getOrCreate()
+        spark = ManagedSparkSession.builder.projectId("<PROJECT_ID>")
+            .location("<REGION>")
+            .getOrCreate()
         ```
     *   **Read and Write data**: **ALWAYS** Refer to
         `references/read_write_data.md` when reading or writing data.
     *   **Machine Learning Tasks**: Refer to `@skill:ml-best-practices` skill and
         `references/ml_tasks.md` when generating Machine Learning code.
     *   **Spark Optimizations**: **ALWAYS** refer to
-        `references/spark_optimizations.md` when generating spark code and apply
-        optimization whenever applicable.
+        `references/spark_optimizations.md` and
+        `references/pyspark_anti_patterns.md` when generating spark code and
+        apply optimization whenever applicable.
 4.  **Verify schema before write**: **ALWAYS** verify that the dataframe and
     destination schema match, use `df.printSchema()` for dataframe schema and
     refer to `@skill:discovering-gcp-data-assets` skill or
@@ -95,6 +109,15 @@ metadata:
     session, or execute notebook cells against Managed Spark, refer to
     `references/gcloud_dataproc.md` on how to execute code on Dataproc
     Serverless using Spark Connect or Dataproc jobs.
+7.  **Notebook operations**:
+
+    *   **PROHIBITED**: Do NOT use `read_file` or generic whole-file reading
+        tools on executed `.ipynb` notebooks. Executed notebooks often contain
+        massive base64-encoded image outputs that cause excessive token
+        consumption.
+    *   **REQUIRED**: To inspect execution outputs, you MUST use cell-scoped
+        reading tools (such as `notebook__read_cell`, `jupyter__read_cell`, or
+        specific line slices) rather than reading the entire file at once.
 
 --------------------------------------------------------------------------------
 
@@ -124,6 +147,11 @@ Before submitting a job, verify:
     using --properties=spark.jars.packages=...,
     --archives=gs://.../env.tar.gz#environment, --py-files, or a custom
     --container-image.
+-   [ ] **Optimization & Pre-Submission Refactoring** Verify compliance with
+    `references/spark_optimizations.md` (no action amplification in loops, no
+    iterative lineage explosion, no unbounded driver memory, prefer
+    native/vectorized functions, coalesce partitions, and prune intermediate
+    exploratory checks).
 
 --------------------------------------------------------------------------------
 
@@ -143,3 +171,21 @@ The Managed Spark (Dataproc) service account needs:
 
 Refer to `references/gcloud_dataproc.md` for detailed guidelines on managing
 Spark clusters, jobs, batches, interactive sessions, and Spark Connect sessions.
+
+--------------------------------------------------------------------------------
+
+## Code Optimization & Pre-Submission Verification
+
+Before submitting any Spark job or Dataproc batch, enforce the pre-submission
+verification protocol defined in `references/spark_optimizations.md`. Walk the
+checklist in `references/spark_refactoring_guide.md`, inspect the code for the
+anti-patterns catalogued in `references/pyspark_anti_patterns.md`, and obtain
+explicit user confirmation before applying refactoring.
+
+--------------------------------------------------------------------------------
+
+## Troubleshooting & Root Cause Analysis
+
+For troubleshooting failed Spark jobs or Dataproc batches, inspecting/tailing
+GCS driver output logs, analyzing Spark event logs, or performing Root Cause
+Analysis (RCA), use the `@skill:gcp-spark-troubleshooting` skill.
