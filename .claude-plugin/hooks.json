@@ -2,11 +2,11 @@
   "hooks": {
     "SessionStart": [
       {
-        "matcher": "startup",
+        "matcher": "startup|resume",
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/skills/setup/scripts/dak-setup.js\" sync"
+            "command": "node ${CLAUDE_PLUGIN_ROOT}/skills/setup/scripts/dak-setup.js sync"
           }
         ]
       }

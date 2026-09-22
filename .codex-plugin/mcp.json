@@ -3,7 +3,7 @@
     "notebook": {
       "command": "node",
       "args": [
-        "${CLAUDE_PLUGIN_ROOT}/mcp/dist/index.js",
+        "${PLUGIN_ROOT}/mcp/dist/index.js",
         "--mode=notebook"
       ],
       "env": {},
@@ -14,7 +14,7 @@
     "visualization": {
       "command": "node",
       "args": [
-        "${CLAUDE_PLUGIN_ROOT}/mcp/dist/index.js",
+        "${PLUGIN_ROOT}/mcp/dist/index.js",
         "--mode=visualization"
       ],
       "env": {},
@@ -25,83 +25,81 @@
     "bigquery": {
       "command": "node",
       "args": [
-        "${CLAUDE_PLUGIN_ROOT}/mcp/bin/mcp_proxy_bundle.cjs",
+        "${PLUGIN_ROOT}/mcp/bin/mcp_proxy_bundle.cjs",
         "https://bigquery.googleapis.com/mcp"
       ],
       "env": {
-        "X_GOOG_PROXY_HEADERS": "{\"User-Agent\": \"datacloud.claude\"}"
+        "X_GOOG_PROXY_HEADERS": "{\"User-Agent\": \"datacloud.codex\"}"
       }
     },
     "spanner": {
       "command": "node",
       "args": [
-        "${CLAUDE_PLUGIN_ROOT}/mcp/bin/mcp_proxy_bundle.cjs",
+        "${PLUGIN_ROOT}/mcp/bin/mcp_proxy_bundle.cjs",
         "https://spanner.googleapis.com/mcp"
       ],
       "env": {
-        "X_GOOG_PROXY_HEADERS": "{\"User-Agent\": \"datacloud.claude\"}",
-        "BILLING_QUOTA_PROJECT_ID": "${user_config.BILLING_QUOTA_PROJECT_ID}"
+        "X_GOOG_PROXY_HEADERS": "{\"User-Agent\": \"datacloud.codex\"}"
       }
     },
     "alloydb-postgres": {
       "command": "node",
       "args": [
-        "${CLAUDE_PLUGIN_ROOT}/mcp/bin/mcp_proxy_bundle.cjs",
+        "${PLUGIN_ROOT}/mcp/bin/mcp_proxy_bundle.cjs",
         "https://alloydb.googleapis.com/mcp"
       ],
       "env": {
-        "X_GOOG_PROXY_HEADERS": "{\"User-Agent\": \"datacloud.claude\"}"
+        "X_GOOG_PROXY_HEADERS": "{\"User-Agent\": \"datacloud.codex\"}"
       }
     },
     "cloud-sql-postgresql": {
       "command": "node",
       "args": [
-        "${CLAUDE_PLUGIN_ROOT}/mcp/bin/mcp_proxy_bundle.cjs",
+        "${PLUGIN_ROOT}/mcp/bin/mcp_proxy_bundle.cjs",
         "https://sqladmin.googleapis.com/mcp"
       ],
       "env": {
-        "X_GOOG_PROXY_HEADERS": "{\"User-Agent\": \"datacloud.claude\"}",
-        "BILLING_QUOTA_PROJECT_ID": "${user_config.BILLING_QUOTA_PROJECT_ID}"
+        "X_GOOG_PROXY_HEADERS": "{\"User-Agent\": \"datacloud.codex\"}"
       }
     },
     "knowledge_catalog": {
       "command": "node",
       "args": [
-        "${CLAUDE_PLUGIN_ROOT}/mcp/bin/mcp_proxy_bundle.cjs",
+        "${PLUGIN_ROOT}/mcp/bin/mcp_proxy_bundle.cjs",
         "https://dataplex.googleapis.com/mcp"
       ],
       "env": {
-        "X_GOOG_PROXY_HEADERS": "{\"User-Agent\": \"datacloud.claude\"}"
+        "X_GOOG_PROXY_HEADERS": "{\"User-Agent\": \"datacloud.codex\"}"
       }
     },
     "dataproc": {
       "command": "node",
       "args": [
-        "${CLAUDE_PLUGIN_ROOT}/mcp/bin/mcp_proxy_bundle.cjs",
-        "https://dataproc-${user_config.GCP_REGION}.googleapis.com/mcp"
+        "${PLUGIN_ROOT}/mcp/bin/mcp_proxy_bundle.cjs",
+        "https://dataproc-$GCP_REGION.googleapis.com/mcp"
       ],
       "env": {
-        "X_GOOG_PROXY_HEADERS": "{\"User-Agent\": \"datacloud.claude\"}"
+        "X_GOOG_PROXY_HEADERS": "{\"User-Agent\": \"datacloud.codex\"}"
       }
     },
     "bigtable": {
       "command": "node",
       "args": [
-        "${CLAUDE_PLUGIN_ROOT}/mcp/bin/mcp_proxy_bundle.cjs",
+        "${PLUGIN_ROOT}/mcp/bin/mcp_proxy_bundle.cjs",
         "https://bigtableadmin.googleapis.com/mcp"
       ],
       "env": {
-        "X_GOOG_PROXY_HEADERS": "{\"User-Agent\": \"datacloud.claude\"}"
+        "X_GOOG_PROXY_HEADERS": "{\"User-Agent\": \"datacloud.codex\"}"
       }
     },
     "cloud-storage": {
       "command": "node",
       "args": [
-        "${CLAUDE_PLUGIN_ROOT}/mcp/bin/mcp_proxy_bundle.cjs",
+        "${PLUGIN_ROOT}/mcp/bin/mcp_proxy_bundle.cjs",
         "https://storage.googleapis.com/storage/mcp"
       ],
       "env": {
-        "X_GOOG_PROXY_HEADERS": "{\"User-Agent\": \"datacloud.claude\"}"
+        "X_GOOG_PROXY_HEADERS": "{\"User-Agent\": \"datacloud.codex\"}"
       }
     }
   }
