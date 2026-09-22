@@ -4,9 +4,10 @@
   "description": "This plugin provides a specialized suite of skills for data engineers and database practitioners working on Google Cloud. It acts as an expert assistant, allowing you to use natural language prompts in your preferred coding agent to architect complex data pipelines, transform data with dbt, write Spark and BigQuery SQL notebooks, and orchestrate end-to-end workflows across GCP's data ecosystem.",
   "author": {
     "name": "Google LLC",
-    "email": "data-cloud-ai-integrations@google.com"
+    "email": "data-agent-kit@google.com"
   },
-  "mcpServers": "./.claude-mcp.json",
+  "homepage": "https://cloud.google.com/products/data-agent-kit",
+  "mcpServers": "./.claude-plugin/mcp.json",
   "hooks": "./.claude-plugin/hooks.json",
   "userConfig": {
     "GCP_REGION": {
@@ -14,6 +15,12 @@
       "title": "GCP Region",
       "description": "Region for GCP services (e.g. us-west1)",
       "required": true
+    },
+    "BILLING_QUOTA_PROJECT_ID": {
+      "type": "string",
+      "title": "Billing / Quota Project ID",
+      "description": "Optional GCP project ID for API quota and billing attribution (X-Goog-User-Project)",
+      "required": false
     }
   }
 }
