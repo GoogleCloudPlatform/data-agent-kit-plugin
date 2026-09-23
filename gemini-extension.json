@@ -99,17 +99,5 @@
         "X_GOOG_PROXY_HEADERS": "{\"User-Agent\": \"datacloud.gemini-cli\"}"
       }
     }
-  },
-  "settings": [
-    {
-      "name": "GCP Region",
-      "description": "Region for GCP services (e.g. us-west1)",
-      "envVar": "GCP_REGION"
-    },
-    {
-      "name": "GCP Billing / Quota Project ID",
-      "description": "Optional GCP project ID for API quota and billing attribution (X-Goog-User-Project)",
-      "envVar": "BILLING_QUOTA_PROJECT_ID"
-    }
-  ]
+  }
 }
