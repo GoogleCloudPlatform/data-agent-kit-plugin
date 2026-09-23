@@ -14,7 +14,7 @@ description: |
   - Troubleshooting failed Spark workloads or analyzing logs (use @skill:gcp-spark-troubleshooting).
 license: Apache-2.0
 metadata:
-  version: v16
+  version: v17
   publisher: google
 ---
 
@@ -82,17 +82,38 @@ metadata:
         ```python
         from google.cloud.managed_spark_connect import ManagedSparkSession
 
-        spark = ManagedSparkSession.builder.projectId("<PROJECT_ID>")
-            .location("<REGION>")
+        spark = ManagedSparkSession.builder.projectId(<PROJECT_ID>)
+            .location(<REGION>)
             .getOrCreate()
         ```
+    *   **Production Logging**: In all production PySpark jobs and scripts,
+        you MUST use the standard Python `logging` module instead of `print()`
+        statements for job lifecycle, progress, and record counts. Configure it
+        with timestamps:
+
+        ```python
+        import logging
+
+        logging.basicConfig(
+            level=logging.INFO,
+            format="%(asctime)s [%(levelname)s] %(message)s",
+        )
+        ```
+    *   **Security & Dynamic Variables**: You MUST NOT hardcode plaintext
+        credentials, passwords, or tokens (use Secret Manager). You MUST NOT
+        hardcode environment-specific variables; parameterize project IDs,
+        dataset IDs, table names, and bucket paths via `os.environ.get(...)` or
+        arguments.
     *   **Read and Write data**: **ALWAYS** Refer to
         `references/read_write_data.md` when reading or writing data.
     *   **Machine Learning Tasks**: Refer to `@skill:ml-best-practices` skill and
         `references/ml_tasks.md` when generating Machine Learning code.
-    *   **Spark Optimizations**: **ALWAYS** refer to
-        `references/spark_optimizations.md` when generating spark code and apply
-        optimization whenever applicable.
+    *   **Spark Optimizations & Broadcast Joins**: **ALWAYS** refer to
+        `references/spark_optimizations.md`. When joining a large DataFrame with
+        a small lookup or dimension table, you MUST use `broadcast()` (`from
+        pyspark.sql.functions import broadcast`) on the small table. Treat about
+        10 MB (Spark's default `spark.sql.autoBroadcastJoinThreshold`) as a
+        guide to what counts as small, not a hard limit.
 4.  **Verify schema before write**: **ALWAYS** verify that the dataframe and
     destination schema match, use `df.printSchema()` for dataframe schema and
     refer to `@skill:discovering-gcp-data-assets` skill or
@@ -125,7 +146,7 @@ metadata:
 
 Before submitting a job, verify:
 
--   [ ] **All imports present** (`col`, `when`, `lit`, etc. from
+-   [ ] **All imports present** (`col`, `when`, `lit`, `broadcast`, etc. from
     `pyspark.sql.functions`)
 -   [ ] **`vector_to_array` from correct module** use `from pyspark.ml.functions
     import vector_to_array` (NOT `pyspark.sql.functions`)
