@@ -11,9 +11,10 @@ description: |
   Don't use when:
   - Writing generic Python scripts that don't use Spark.
   - Performing simple SQL queries that can be done directly in BigQuery.
+  - Troubleshooting failed Spark workloads or analyzing logs (use @skill:gcp-spark-troubleshooting).
 license: Apache-2.0
 metadata:
-  version: v12
+  version: v17
   publisher: google
 ---
 
@@ -21,14 +22,15 @@ metadata:
 
 > [!IMPORTANT]
 >
-> You MUST ALWAYS follow the Task Execution Workflow when writing spark code.
+> You MUST follow the Task Execution Workflow when writing spark code.
 
 ## Task Execution Workflow
 
 1.  **Understand schemas**: **ALWAYS** use `@skill:discovering-gcp-data-assets`
     skill or `references/schema_direct_inspection.md` to understand input and
     output schemas. Include the schema in your thought process BEFORE generating
-    any code. Do NOT guess column names. Unless explicitly specified, assume
+    any code. Do NOT guess column names. Cap GCP data asset discovery attempts
+    at **3 retries max**. Unless explicitly specified, assume
     that the assets are located in the same project. Avoid scanning for assets
     across other projects as it can take a long time. If an expected dataset or
     table does not exist, use `@skill:discovering-gcp-data-assets` to discover
@@ -59,30 +61,59 @@ metadata:
 
     *   **Output Format**: **ALWAYS** generate code in **Python Notebooks
         (.ipynb)** format. Generate scripts (.py) only if explicitly requested.
-    *   **Spark Connect for Notebooks**:
+    *   **Spark Session Initialization**:
 
-        > [!IMPORTANT] When writing PySpark notebooks (.ipynb), you **MUST**
-        > initialize the Spark session using Google Cloud Managed Spark Connect
-        > (`google-cloud-spark-connect` library) to execute against Dataproc
-        > Serverless. Do **NOT** import or use
-        > `pyspark.sql.SparkSession.builder.getOrCreate()` or create local Spark
-        > clusters in notebooks.
+        > [!IMPORTANT] Initializing a Spark session on Google Cloud can take 2-3
+        > minutes. You MUST inform the user about the potential delay.
+
+        > [!CAUTION] **NEVER** create a local Spark session. The following are
+        > **BANNED**: - `SparkSession.builder.master("local")` -
+        > `pyspark.sql.SparkSession.builder.getOrCreate()` when used without
+        > `ManagedSparkSession` - Any `try/except` fallbacks that revert to a
+        > local `SparkSession`.
+        >
+        > You **MUST ALWAYS** use `ManagedSparkSession` from
+        > `google-cloud-spark-connect` to connect to **Managed Spark
+        > Serverless**. No exceptions.
 
         Refer to `references/gcloud_dataproc.md` for detailed configuration.
-        Minimal initialization snippet:
+        Minimal initialization:
 
         ```python
         from google.cloud.managed_spark_connect import ManagedSparkSession
 
-        spark = ManagedSparkSession.builder.getOrCreate()
+        spark = ManagedSparkSession.builder.projectId(<PROJECT_ID>)
+            .location(<REGION>)
+            .getOrCreate()
         ```
+    *   **Production Logging**: In all production PySpark jobs and scripts,
+        you MUST use the standard Python `logging` module instead of `print()`
+        statements for job lifecycle, progress, and record counts. Configure it
+        with timestamps:
+
+        ```python
+        import logging
+
+        logging.basicConfig(
+            level=logging.INFO,
+            format="%(asctime)s [%(levelname)s] %(message)s",
+        )
+        ```
+    *   **Security & Dynamic Variables**: You MUST NOT hardcode plaintext
+        credentials, passwords, or tokens (use Secret Manager). You MUST NOT
+        hardcode environment-specific variables; parameterize project IDs,
+        dataset IDs, table names, and bucket paths via `os.environ.get(...)` or
+        arguments.
     *   **Read and Write data**: **ALWAYS** Refer to
         `references/read_write_data.md` when reading or writing data.
     *   **Machine Learning Tasks**: Refer to `@skill:ml-best-practices` skill and
         `references/ml_tasks.md` when generating Machine Learning code.
-    *   **Spark Optimizations**: **ALWAYS** refer to
-        `references/spark_optimizations.md` when generating spark code and apply
-        optimization whenever applicable.
+    *   **Spark Optimizations & Broadcast Joins**: **ALWAYS** refer to
+        `references/spark_optimizations.md`. When joining a large DataFrame with
+        a small lookup or dimension table, you MUST use `broadcast()` (`from
+        pyspark.sql.functions import broadcast`) on the small table. Treat about
+        10 MB (Spark's default `spark.sql.autoBroadcastJoinThreshold`) as a
+        guide to what counts as small, not a hard limit.
 4.  **Verify schema before write**: **ALWAYS** verify that the dataframe and
     destination schema match, use `df.printSchema()` for dataframe schema and
     refer to `@skill:discovering-gcp-data-assets` skill or
@@ -95,6 +126,15 @@ metadata:
     session, or execute notebook cells against Managed Spark, refer to
     `references/gcloud_dataproc.md` on how to execute code on Dataproc
     Serverless using Spark Connect or Dataproc jobs.
+7.  **Notebook operations**:
+
+    *   **PROHIBITED**: Do NOT use `read_file` or generic whole-file reading
+        tools on executed `.ipynb` notebooks. Executed notebooks often contain
+        massive base64-encoded image outputs that cause excessive token
+        consumption.
+    *   **REQUIRED**: To inspect execution outputs, you MUST use cell-scoped
+        reading tools (such as `notebook__read_cell`, `jupyter__read_cell`, or
+        specific line slices) rather than reading the entire file at once.
 
 --------------------------------------------------------------------------------
 
@@ -106,7 +146,7 @@ metadata:
 
 Before submitting a job, verify:
 
--   [ ] **All imports present** (`col`, `when`, `lit`, etc. from
+-   [ ] **All imports present** (`col`, `when`, `lit`, `broadcast`, etc. from
     `pyspark.sql.functions`)
 -   [ ] **`vector_to_array` from correct module** use `from pyspark.ml.functions
     import vector_to_array` (NOT `pyspark.sql.functions`)
@@ -143,3 +183,11 @@ The Managed Spark (Dataproc) service account needs:
 
 Refer to `references/gcloud_dataproc.md` for detailed guidelines on managing
 Spark clusters, jobs, batches, interactive sessions, and Spark Connect sessions.
+
+--------------------------------------------------------------------------------
+
+## Troubleshooting & Root Cause Analysis
+
+For troubleshooting failed Spark jobs or Dataproc batches, inspecting/tailing
+GCS driver output logs, analyzing Spark event logs, or performing Root Cause
+Analysis (RCA), use the `@skill:gcp-spark-troubleshooting` skill.
