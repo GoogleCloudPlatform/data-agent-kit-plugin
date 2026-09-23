@@ -8,6 +8,6 @@
     "email": "data-cloud-ai-integrations@google.com"
   },
   "homepage": "https://docs.cloud.google.com/data-cloud-extension",
-  "repository": "https://github.com/gemini-cli-extensions/data-agent-kit-starter-pack",
+  "repository": "https://github.com/GoogleCloudPlatform/data-agent-kit-plugin",
   "license": "Apache-2.0"
 }
