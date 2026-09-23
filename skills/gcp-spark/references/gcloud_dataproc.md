@@ -325,13 +325,17 @@ Python scripts, follow these steps:
     )
     ```
 
-    For advanced configuration, use the `Session` class:
+    For advanced configuration e.g. when using session templates, use the
+    `Session` class:
 
     ```python
     from google.cloud.dataproc_v1 import Session
     from google.cloud.managed_spark_connect import ManagedSparkSession
 
     session_config = Session()
+    session_config.session_template = (
+        "projects/<PROJECT_ID>/locations/<REGION>/sessionTemplates/<TEMPLATE_ID>"
+    )
     session_config.environment_config.execution_config.subnetwork_uri = (
         "<SUBNET_URI>"
     )

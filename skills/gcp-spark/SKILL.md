@@ -16,7 +16,7 @@ description: |
   - Troubleshooting failed Spark workloads or analyzing logs (use @skill:gcp-spark-troubleshooting).
 license: Apache-2.0
 metadata:
-  version: v18
+  version: v19
   publisher: google
 ---
 
@@ -28,7 +28,9 @@ metadata:
 
 ## Task Execution Workflow
 
-1.  **Understand schemas**: **ALWAYS** use `@skill:discovering-gcp-data-assets`
+1.  **Understand user request**:
+    - When asked to generate a new spark notebook you **MUST** clarify with the user which kernel type will be used: "Local Python" (Spark Connect) or "Remote Spark". If the user selects "Local Python", you MUST additionally clarify which dataprocSessionConfig should be used (scan for existing serverless session templates), and **MUST** use spark connect initialization instructions from `references/gcloud_dataproc.md` with `ManagedSparkSession`.
+2.  **Understand schemas**: **ALWAYS** use `@skill:discovering-gcp-data-assets`
     skill or `references/schema_direct_inspection.md` to understand input and
     output schemas. Include the schema in your thought process BEFORE generating
     any code. Do NOT guess column names. Cap GCP data asset discovery attempts
@@ -50,7 +52,7 @@ metadata:
     Do NOT proceed with code generation, do NOT add fallback logic to code, and
     do NOT automatically substitute any alternative table (even if its schema
     seems to match) without explicit user permission.
-2.  **Verify source accessibility**: verify access/existence using `gcloud
+3.  **Verify source accessibility**: verify access/existence using `gcloud
     storage ls gs://<path-to-dataset>`. If accessing or reading a GCS path fails
     with a storage error e.g., permission errors like `403
     Forbidden`/`Forbidden`/`PermissionDenied`, or location errors like `404 Not
@@ -59,7 +61,7 @@ metadata:
     execute a notebook, save the notebook with the error output and recommend
     next steps to resolve the issue. Do NOT scan all buckets for alternative
     fallback datasets when encountering GCS errors.
-3.  **Generate spark code**:
+4.  **Generate spark code**:
 
     *   **Output Format**: **ALWAYS** generate code in **Python Notebooks
         (.ipynb)** format. Generate scripts (.py) only if explicitly requested.
@@ -108,35 +110,26 @@ metadata:
         arguments.
     *   **Read and Write data**: **ALWAYS** Refer to
         `references/read_write_data.md` when reading or writing data.
-    *   **Machine Learning Tasks**: Refer to `@skill:ml-best-practices` skill and
-        `references/ml_tasks.md` when generating Machine Learning code.
+    *   **Machine Learning Tasks**: Refer to `@skill:ml-best-practices` skill and `references/ml_tasks.md` when generating Machine Learning code.
     *   **Spark Optimizations & Broadcast Joins**: **ALWAYS** refer to
         `references/spark_optimizations.md`. When joining a large DataFrame with
         a small lookup or dimension table, you MUST use `broadcast()` (`from
         pyspark.sql.functions import broadcast`) on the small table. Treat about
         10 MB (Spark's default `spark.sql.autoBroadcastJoinThreshold`) as a
         guide to what counts as small, not a hard limit.
-4.  **Verify schema before write**: **ALWAYS** verify that the dataframe and
+5.  **Verify schema before write**: **ALWAYS** verify that the dataframe and
     destination schema match, use `df.printSchema()` for dataframe schema and
     refer to `@skill:discovering-gcp-data-assets` skill or
     `references/schema_direct_inspection.md` to verify destination schema.
-5.  **Compile code before executing**: For notebooks convert them to python
+6.  **Compile code before executing**: For notebooks convert them to python
     script using `jupyter nbconvert --to script your-notebook.ipynb` first. Then
     compile the resulting python script using `python3 -m py_compile
     your-script.py`. The same can be done for pyspark source code.
-6.  **Execute script or notebook**: When requested to run a job, script,
+7.  **Execute script or notebook**: When requested to run a job, script,
     session, or execute notebook cells against Managed Spark, refer to
     `references/gcloud_dataproc.md` on how to execute code on Dataproc
     Serverless using Spark Connect or Dataproc jobs.
-7.  **Notebook operations**:
-
-    *   **PROHIBITED**: Do NOT use `read_file` or generic whole-file reading
-        tools on executed `.ipynb` notebooks. Executed notebooks often contain
-        massive base64-encoded image outputs that cause excessive token
-        consumption.
-    *   **REQUIRED**: To inspect execution outputs, you MUST use cell-scoped
-        reading tools (such as `notebook__read_cell`, `jupyter__read_cell`, or
-        specific line slices) rather than reading the entire file at once.
+8.  **Follow up with the user**: If a brand new notebook was generated, instruct the user to select the appropriate kernel in the dropdown for cell execution.
 
 --------------------------------------------------------------------------------
 
@@ -169,6 +162,12 @@ Before submitting a job, verify:
 -   [ ] **Optimization & Pre-Submission Refactoring** Verify the job against
     `references/spark_optimizations.md` and follow the confirmation protocol in
     `references/spark_refactoring_guide.md`.
+-   [ ] **No full file reads of executed notebooks**: You MUST NOT use `read_file` or
+    generic full file reading tools on executed `.ipynb` notebooks; they often
+    contain massive base64-encoded image outputs that cause excessive token
+    consumption. You MUST inspect execution outputs with cell-scoped reading tools
+    (such as `notebook__read_cell`, `jupyter__read_cell`, or specific line
+    slices).
 
 --------------------------------------------------------------------------------
 
