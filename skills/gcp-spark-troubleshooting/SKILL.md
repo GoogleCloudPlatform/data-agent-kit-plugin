@@ -3,7 +3,7 @@ name: gcp-spark-troubleshooting
 description: "Provides expert guidance for troubleshooting Google Cloud Spark and Dataproc workloads (Dataproc Serverless batches and standard Dataproc clusters), and inspecting, streaming, searching, tailing, or summarizing Spark driver outputs and event logs in Cloud Storage. Use when the user asks to debug, troubleshoot, diagnose, or perform Root Cause Analysis (RCA) on failed Spark jobs, PySpark batches, or Spark event logs."
 license: Apache-2.0
 metadata:
-  version: v1
+  version: v2
   publisher: google
 ---
 
@@ -385,6 +385,15 @@ diagnostic plan or run any script before it passes.**
         -   **Cluster Jobs**: spot/preemptible VM eviction, YARN container
             memory bounds, local scratch-disk exhaustion, and master/worker
             machine sizing.
+    -   For code-level refactoring, driver/executor OOM prevention, memory
+        spill mitigation, or partition layout optimizations, apply the Spark
+        optimization protocols: no terminal actions inside loops, no iterative
+        lineage chaining, no unbounded `.collect()`/`.toPandas()` on the driver,
+        native or vectorized (`@pandas_udf`) functions over row-wise Python
+        UDFs, and `.coalesce()` rather than `.repartition()` when reducing
+        partitions. The full catalog and the pre-submission refactoring protocol
+        ship with the gcp-spark skill, in its `references/spark_optimizations.md`
+        and `references/spark_refactoring_guide.md`.
     -   Propose concrete fixes (code optimizations, Spark tuning properties such
         as `spark.driver.memory` or `spark.sql.shuffle.partitions`).
     -   **Check preconditions before recommending a setting.** Do not advise

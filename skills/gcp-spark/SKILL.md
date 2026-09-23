@@ -1,11 +1,13 @@
 ---
 name: gcp-spark
 description: |
-  Develops and executes Spark code on Managed Spark on Google Cloud (Dataproc Clusters and Serverless).
+  Develops, optimizes and executes Spark code on Managed Spark on Google Cloud (Dataproc Clusters and Serverless).
   Reads and writes data using BigLake Iceberg catalogs, BigQuery and Spanner.
   Debugs execution failures.
   Use when:
   - Writing Spark ETL pipelines on Google Cloud Platform.
+  - Optimizing PySpark or Spark SQL code for performance, memory, or OOM risks.
+  - Preparing Spark workloads for production submission.
   - Training or running inference with Machine Learning models with spark on Google Cloud Platform.
   - Managing Spark clusters, jobs, batches, and interactive sessions.
   Don't use when:
@@ -14,7 +16,7 @@ description: |
   - Troubleshooting failed Spark workloads or analyzing logs (use @skill:gcp-spark-troubleshooting).
 license: Apache-2.0
 metadata:
-  version: v17
+  version: v18
   publisher: google
 ---
 
@@ -164,6 +166,9 @@ Before submitting a job, verify:
     using --properties=spark.jars.packages=...,
     --archives=gs://.../env.tar.gz#environment, --py-files, or a custom
     --container-image.
+-   [ ] **Optimization & Pre-Submission Refactoring** Verify the job against
+    `references/spark_optimizations.md` and follow the confirmation protocol in
+    `references/spark_refactoring_guide.md`.
 
 --------------------------------------------------------------------------------
 
@@ -183,6 +188,15 @@ The Managed Spark (Dataproc) service account needs:
 
 Refer to `references/gcloud_dataproc.md` for detailed guidelines on managing
 Spark clusters, jobs, batches, interactive sessions, and Spark Connect sessions.
+
+--------------------------------------------------------------------------------
+
+## Code Optimization & Pre-Submission Verification
+
+Before submitting any Spark job or Dataproc batch, enforce the pre-submission
+verification protocol in `references/spark_refactoring_guide.md`: inspect the
+code for the anti-patterns catalogued in `references/spark_optimizations.md` and
+obtain explicit user confirmation before applying refactoring.
 
 --------------------------------------------------------------------------------
 
