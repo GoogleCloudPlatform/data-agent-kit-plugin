@@ -7,7 +7,7 @@ description: >-
   Trigger: an expected mcp__*_{service}_* tool is missing entirely (not just failing), or a call to one fails/hangs on a malformed host. Check via ToolSearch/deferred-tools listing before falling back to gcloud/bq CLI. Asks the user for a region, patches the live MCP config file(s), and tells the user how to restart without losing session context.
 license: Apache-2.0
 metadata:
-  version: v2
+  version: v3
   publisher: google
 ---
 
@@ -23,8 +23,8 @@ metadata:
 > `mcp__*__dataproc__*`) are registered in the current environment (`ToolSearch`
 > or deferred tools). 2. **If tools are missing or calls fail/hang on a
 > malformed host**: Do **NOT** immediately fall back to `gcloud`/`bq` CLI.
-> Inspect the live MCP configuration files (below) for unreplaced `$GCP_REGION`,
-> `${REGION}`, or `${user_config.GCP_REGION}` placeholders. 3. **If the region
+> Inspect the live MCP configuration files (below) for unreplaced `$GCP_REGION`
+> or `${REGION}` placeholders. 3. **If the region
 > placeholder is already replaced with a valid region (e.g. `us-central1`)**:
 > This skill does not apply — proceed normally with the task.
 
@@ -42,8 +42,8 @@ call — that's the most common way this skill gets skipped in favor of a
     matching `mcp__*` tools aren't present — check `ToolSearch` or the
     deferred-tools listing first — or a call to one fails/hangs on a malformed
     host.
--   Then inspect the live config (below) for `$GCP_REGION`, `${REGION}`, or
-    `${user_config.GCP_REGION}`. If found, run the procedure. If the region is
+-   Then inspect the live config (below) for `$GCP_REGION` or
+    `${REGION}`. If found, run the procedure. If the region is
     already set, this skill doesn't apply — investigate normally instead.
 
 ### Supported services
@@ -57,13 +57,14 @@ not just any workspace copy — edit that one (and the source copy, best-effort,
 so the fix survives a reinstall):
 
 -   **Claude Code**:
-    `~/.claude/plugins/cache/<marketplace>/dak/<version>/.claude-mcp.json` (get
-    `<marketplace>`/`<version>` from
-    `~/.claude/plugins/installed_plugins.json`). Also check `./.claude-mcp.json`
-    and `claude_desktop_config.json`.
--   **Codex**: `~/.codex/plugins/cache/**/dak/**/.mcp.json` (or `mcp.json`).
-    Also check `~/.agents/plugins/dak/.mcp.json`, `./.mcp.json`, and
-    `~/.codex/config.toml` (`[mcp_servers.<name>]`).
+    `~/.claude/plugins/cache/<marketplace>/dak/<version>/.claude-plugin/mcp.json`
+    (get `<marketplace>`/`<version>` from
+    `~/.claude/plugins/installed_plugins.json`). Also check
+    `./.claude-plugin/mcp.json` and `claude_desktop_config.json`.
+-   **Codex**: `~/.codex/plugins/cache/**/dak/**/.codex-plugin/mcp.json` (or
+    `mcp.json`). Also check `~/.agents/plugins/dak/.codex-plugin/mcp.json`,
+    `./.codex-plugin/mcp.json`, `./mcp.json`, and `~/.codex/config.toml`
+    (`[mcp_servers.<name>]`).
 -   **Antigravity**: `./mcp_config.json` or
     `~/.gemini/antigravity/mcp_config.json`.
 
