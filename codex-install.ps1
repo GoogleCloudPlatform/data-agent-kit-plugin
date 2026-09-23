@@ -24,7 +24,7 @@ if (-not $Tag -and $env:CODEX_TAG) {
 $ErrorActionPreference = "Stop"
 
 $pluginName = "data-agent-kit-starter-pack"
-$repoUrl = "https://github.com/gemini-cli-extensions/data-agent-kit-starter-pack"
+$repoUrl = 'https://github.com/GoogleCloudPlatform/data-agent-kit-plugin'
 $pluginsRoot = Join-Path $HOME ".agents\plugins"
 $installDir = Join-Path $pluginsRoot $pluginName
 $marketplaceFile = Join-Path $pluginsRoot "marketplace.json"

@@ -18,7 +18,7 @@ set -e
 TAG=$1
 
 PLUGIN_NAME="data-agent-kit-starter-pack"
-REPO_URL="https://github.com/gemini-cli-extensions/data-agent-kit-starter-pack"
+REPO_URL="https://github.com/GoogleCloudPlatform/data-agent-kit-plugin"
 INSTALL_DIR="$HOME/.agents/plugins/$PLUGIN_NAME"
 MARKETPLACE_FILE="$HOME/.agents/plugins/marketplace.json"
 
