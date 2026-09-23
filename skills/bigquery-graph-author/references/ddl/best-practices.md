@@ -83,10 +83,6 @@ NODE TABLES ( `my-project.my_dataset.user_profiles` KEY(id) ... )
 NODE TABLES ( `my-project.my_dataset.user_profiles` AS User KEY(id) ... )
 ```
 
-*   **TODO**: This explicit safe alias requirement can be omitted
-    once the BigQuery engine natively resolves default column names containing
-    dots/hyphens.
-
 --------------------------------------------------------------------------------
 
 ## 5. Reusing the Same Physical Table as Node and Edge Tables
@@ -158,3 +154,16 @@ SELECT `My-Node_property` FROM GRAPH_EXPAND(...)
 *   **Pitfall**: Omitting backticks (e.g., `SELECT My-Node_property`) causes the
     query engine to interpret the hyphen as a subtraction operator (`My` minus
     `Node_property`), throwing syntax errors.
+
+--------------------------------------------------------------------------------
+
+## 7. Pre-Validation Checks
+
+Before running `validate_ddl` on a composed `CREATE PROPERTY GRAPH` statement:
+
+*   **Type mismatch across a key**: create a view exposing the cast column — no
+    inline `CAST` inside `SOURCE KEY`. The view is its own statement, executed
+    in its own call (one statement per execution).
+*   **Alias wiring**: confirm every node alias is referenced by at least one
+    edge — wire it or drop it and say which. Never drop a table the user named;
+    report it as an isolated node instead.
