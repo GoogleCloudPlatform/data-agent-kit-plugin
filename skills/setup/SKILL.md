@@ -9,7 +9,7 @@ metadata:
 
 # Data Agent Kit setup
 
-Walk the user through configuring the Data Agent Kit plugin, run the setup command, and tell them to restart Claude Code so the new configuration loads.
+Walk the user through configuring the Data Agent Kit plugin, run the setup command, and tell them to restart their agent so the new configuration loads.
 
 This skill is usually triggered by a SessionStart hook rather than by the user, so the user may not be expecting it. Open with one short sentence explaining what's happening and why ("The Data Agent Kit plugin isn't configured yet — let me get that sorted, it'll take a minute"), then start at step 1.
 
@@ -122,7 +122,7 @@ The configuration is only picked up when the plugin loads, which happens at sess
 
 Tell the user plainly, as the last thing you say:
 
-> The Data Agent Kit is configured. Restart Claude Code for the changes to take effect — the plugin's tools won't be available until this session ends and a new one starts.
+> The Data Agent Kit is configured. Restart your agent for the changes to take effect — the plugin's tools won't be available until this session ends and a new one starts.
 
 This applies to you as well, not just to the user. For the remainder of this session:
 
