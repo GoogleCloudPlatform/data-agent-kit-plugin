@@ -1,4 +1,4 @@
-# Data Agent Kit Starter Pack
+# Data Agent Kit
 
 > [!NOTE]
 > This extension is currently in beta (pre-v1.0), and may see breaking changes until the first stable release (v1.0).
@@ -52,7 +52,7 @@ Choose the installation method for your preferred coding agent. Run the commands
 
 Install the plugin directly from GitHub:
 ```bash
-agy plugin install https://github.com/gemini-cli-extensions/data-agent-kit-starter-pack
+agy plugin install https://github.com/GoogleCloudPlatform/data-agent-kit-plugin
 ```
 </details>
 
@@ -88,7 +88,7 @@ Codex utilizes a marketplace system for plugins. Install the Data Agent Kit Star
 codex plugin marketplace add https://github.com/gemini-cli-extensions/data-agent-kit-starter-pack
 
 # Step 2. Add the plugin
-codex plugin add dak@data-agent-kit-starter-pack-marketplace
+codex plugin add dak@dak-marketplace
 ```
 
 #### Option 2: Script Installation (Alternative)

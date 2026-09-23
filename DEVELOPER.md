@@ -1,7 +1,7 @@
 # DEVELOPER.md
 
 This document provides instructions for setting up your development environment
-and contributing to the Data Agent Kit Starter Pack project.
+and contributing to the Data Agent Kit project.
 
 ## Prerequisites
 
@@ -22,8 +22,8 @@ The core logic for this extension is handled by a pre-built `toolbox` binary. Th
 1.  **Clone the Repository:**
 
     ```bash
-    git clone https://github.com/gemini-cli-extensions/data-agent-kit-starter-pack.git
-    cd data-agent-kit-starter-pack
+    git clone https://github.com/GoogleCloudPlatform/data-agent-kit-plugin.git
+    cd data-agent-kit-plugin
     ```
 
 2.  **Download the Toolbox Binary:** The required version of the `toolbox` binary
@@ -48,7 +48,7 @@ The core logic for this extension is handled by a pre-built `toolbox` binary. Th
     The CLI will prompt you to confirm the installation. Accept it to proceed.
 
 4.  **Testing Changes:** After installation, start the Gemini CLI (`gemini`).
-    You can now interact with the `data-agent-kit-starter-pack` tools to manually test your changes
+    You can now interact with the `dak` tools to manually test your changes
     against your connected database.
 
 ### Adding or Updating Skills
