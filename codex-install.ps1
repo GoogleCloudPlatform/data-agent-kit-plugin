@@ -24,7 +24,7 @@ if (-not $Tag -and $env:CODEX_TAG) {
 $ErrorActionPreference = "Stop"
 
 $pluginName = "data-agent-kit-starter-pack"
-$repoUrl = "https://github.com/gemini-cli-extensions/data-agent-kit-starter-pack"
+$repoUrl = 'https://github.com/GoogleCloudPlatform/data-agent-kit-plugin'
 $pluginsRoot = Join-Path $HOME ".agents\plugins"
 $installDir = Join-Path $pluginsRoot $pluginName
 $marketplaceFile = Join-Path $pluginsRoot "marketplace.json"
@@ -94,7 +94,7 @@ if ($Tag) {
 Write-Host "Removing git metadata..."
 Remove-Item -LiteralPath (Join-Path $installDir ".git") -Recurse -Force
 
-$targetMcp = Join-Path $installDir ".mcp.json"
+$targetMcp = Join-Path $installDir "mcp.json"
 
 # Apply configuration
 Write-Host "Applying configuration..."
