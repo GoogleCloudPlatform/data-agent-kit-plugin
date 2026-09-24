@@ -265,16 +265,16 @@ Python scripts, follow these steps:
 2.  **UV environment**:
 
     ```bash
-    uv venv spark_env --python 3.12
-    source spark_env/bin/activate
+    uv venv venv --python 3.12
+    source venv/bin/activate
     uv pip install -U google-cloud-spark-connect
     ```
 
 3.  **Pip environment**:
 
     ```bash
-    python3 -m venv spark_env
-    source spark_env/bin/activate
+    python3 -m venv venv
+    source venv/bin/activate
     pip install -U google-cloud-spark-connect
     ```
 
@@ -352,7 +352,7 @@ Python scripts, follow these steps:
 
     ```bash
     deactivate
-    rm -rf spark_env
+    rm -rf venv
     ```
 
 ### Listing sessions
