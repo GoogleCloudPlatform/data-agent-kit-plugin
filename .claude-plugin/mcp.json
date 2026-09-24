@@ -76,7 +76,7 @@
       "command": "node",
       "args": [
         "${CLAUDE_PLUGIN_ROOT}/mcp/bin/mcp_proxy_bundle.cjs",
-        "https://dataproc-${user_config.GCP_REGION}.googleapis.com/mcp"
+        "https://dataproc-$GCP_REGION.googleapis.com/mcp"
       ],
       "env": {
         "X_GOOG_PROXY_HEADERS": "{\"User-Agent\": \"datacloud.claude\"}"

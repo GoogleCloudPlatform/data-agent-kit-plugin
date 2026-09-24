@@ -52,7 +52,7 @@ Choose the installation method for your preferred coding agent. Run the commands
 
 Install the plugin directly from GitHub:
 ```bash
-agy plugin install https://github.com/gemini-cli-extensions/data-agent-kit-starter-pack
+agy plugin install https://github.com/GoogleCloudPlatform/data-agent-kit-plugin
 ```
 </details>
 
@@ -85,7 +85,7 @@ Codex utilizes a marketplace system for plugins. Install the Data Agent Kit Star
 
 ```bash
 # Step 1. Add marketplace
-codex plugin marketplace add https://github.com/gemini-cli-extensions/data-agent-kit-starter-pack
+codex plugin marketplace add https://github.com/GoogleCloudPlatform/data-agent-kit-plugin
 
 # Step 2. Add the plugin
 codex plugin add dak@data-agent-kit-starter-pack-marketplace
@@ -119,7 +119,7 @@ Use the interactive options to install the plugin with the name `Data Agent Kit 
 
 This repository is a valid [Agent Plugins](https://github.com/agentplugins/agent-plugins-spec) (v1) plugin. Any [compatible client](https://agent-plugins.org/compatible-clients) (VS Code, Cursor, GitHub Copilot, Codex, Kiro, …) can install it directly using its own built-in plugin command — skills and MCP servers included — by pointing at this repository:
 ```
-https://github.com/gemini-cli-extensions/data-agent-kit-starter-pack
+https://github.com/GoogleCloudPlatform/data-agent-kit-plugin
 ```
 See your agent's documentation for its exact install command.
 </details>
