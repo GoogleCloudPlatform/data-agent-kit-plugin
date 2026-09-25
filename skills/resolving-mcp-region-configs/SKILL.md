@@ -7,7 +7,7 @@ description: >-
   Trigger: an expected mcp__*_{service}_* tool is missing entirely (not just failing), or a call to one fails/hangs on a malformed host. Check via ToolSearch/deferred-tools listing before falling back to gcloud/bq CLI. Asks the user for a region, patches the live MCP config file(s), and tells the user how to restart without losing session context.
 license: Apache-2.0
 metadata:
-  version: v3
+  version: v4
   publisher: google
 ---
 
@@ -61,10 +61,7 @@ so the fix survives a reinstall):
     (get `<marketplace>`/`<version>` from
     `~/.claude/plugins/installed_plugins.json`). Also check
     `./.claude-plugin/mcp.json` and `claude_desktop_config.json`.
--   **Codex**: `~/.codex/plugins/cache/**/dak/**/.codex-plugin/mcp.json` (or
-    `mcp.json`). Also check `~/.agents/plugins/dak/.codex-plugin/mcp.json`,
-    `./.codex-plugin/mcp.json`, `./mcp.json`, and `~/.codex/config.toml`
-    (`[mcp_servers.<name>]`).
+-   **Codex**: `~/.codex/plugins/cache/<marketplace>/dak/<version>/mcp.json`.
 -   **Antigravity**: `./mcp_config.json` or
     `~/.gemini/antigravity/mcp_config.json`.
 
