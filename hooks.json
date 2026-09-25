@@ -2,11 +2,11 @@
   "hooks": {
     "SessionStart": [
       {
-        "matcher": "startup|resume",
+        "matcher": "startup",
         "hooks": [
           {
             "type": "command",
-            "command": "node ${CLAUDE_PLUGIN_ROOT}/skills/dak-setup/scripts/dak-setup.js sync"
+            "command": "node \"skills/dak-setup/scripts/dak-setup.js\" sync"
           }
         ]
       }
@@ -17,7 +17,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/.agents/hooks/telemetry_hook.js\" --agent_name claude --install_source data-agent-kit-starter-pack ; exit 0",
+            "command": "node \".agents/hooks/telemetry_hook.js\" --agent_name antigravity --install_source data-agent-kit-starter-pack ; exit 0",
             "timeout": 30
           }
         ]

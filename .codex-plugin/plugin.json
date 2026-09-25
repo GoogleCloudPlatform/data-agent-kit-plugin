@@ -8,6 +8,5 @@
     "category": "Developer Tools",
     "websiteURL": "https://cloud.google.com/products/data-agent-kit"
   },
-  "mcpServers": "./.codex-plugin/mcp.json",
   "hooks": "./.codex-plugin/hooks.json"
 }
