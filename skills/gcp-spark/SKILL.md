@@ -16,7 +16,7 @@ description: |
   - Troubleshooting failed Spark workloads or analyzing logs (use @skill:gcp-spark-troubleshooting).
 license: Apache-2.0
 metadata:
-  version: v19
+  version: v20
   publisher: google
 ---
 
@@ -26,10 +26,52 @@ metadata:
 >
 > You MUST follow the Task Execution Workflow when writing spark code.
 
+## Notebook Generation Environment Rules
+
+> [!CAUTION]
+>
+> When the task is to **generate** a Spark notebook (as opposed to executing
+> one), you **MUST NOT** modify your own local execution environment (i.e. do
+> not run these commands with your shell or other tools). Specifically:
+>
+> -   **NEVER create a virtual environment** (`python -m venv`, `virtualenv`,
+>     `conda create`, `uv venv`, `poetry init/install`, etc.).
+> -   **NEVER install packages** (`pip install`, `%pip install`, `uv pip
+>     install`, `conda install`, `poetry add`).
+> -   **NEVER run environment discovery loops** such as activating a venv,
+>     `pip list`, or probing for `ipykernel` / `google-cloud-spark-connect` as a
+>     precondition for writing the notebook.
+>
+> Assume the user will select the appropriate
+> kernel and dependencies after the notebook is generated.
+
 ## Task Execution Workflow
 
 1.  **Understand user request**:
-    - When asked to generate a new spark notebook you **MUST** clarify with the user which kernel type will be used: "Local Python" (Spark Connect) or "Remote Spark". If the user selects "Local Python", you MUST additionally clarify which dataprocSessionConfig should be used (scan for existing serverless session templates), and **MUST** use spark connect initialization instructions from `references/gcloud_dataproc.md` with `ManagedSparkSession`.
+
+    -   When asked to generate a new spark notebook you **MUST** clarify with
+        the user which kernel type will be used: "Local Python" (Spark Connect)
+        or "Remote Spark". If the user selects "Local Python", you MUST
+        additionally clarify which dataprocSessionConfig should be used (scan
+        for existing serverless session templates), and **MUST** initialize the
+        session with `ManagedSparkSession` by adding the following cells to the
+        notebook:
+        ```python
+        from google.cloud.dataproc_v1 import Session
+        # requires google-cloud-spark-connect pypi package for execution
+        from google.cloud.managed_spark_connect import ManagedSparkSession
+
+        session_config = Session()
+        session_config.session_template = (
+            "projects/<PROJECT_ID>/locations/<REGION>/sessionTemplates/<TEMPLATE_ID>"
+        )
+        spark = (
+            ManagedSparkSession.builder.projectId("<PROJECT_ID>")
+            .location("<REGION>")
+            .dataprocSessionConfig(session_config)
+            .getOrCreate()
+        )
+        ```
 2.  **Understand schemas**: **ALWAYS** use `@skill:discovering-gcp-data-assets`
     skill or `references/schema_direct_inspection.md` to understand input and
     output schemas. Include the schema in your thought process BEFORE generating
@@ -154,9 +196,10 @@ Before submitting a job, verify:
     perform transformations, aggregations (`groupBy().agg()`), or data reduction
     (`limit()`, `sample()`) in Spark before converting small summaries to Pandas
     for plotting or display.
--   [ ] **No inline pip install in Spark jobs**: NEVER run pip install or
-    subprocess package installations inside PySpark scripts. Pass dependencies
-    using --properties=spark.jars.packages=...,
+-   [ ] **No inline pip install in Spark batch/script jobs**: NEVER run pip
+    install or subprocess package installations inside PySpark batch scripts
+    (the `%pip install` setup cell in generated notebooks is exempt). Pass
+    dependencies using --properties=spark.jars.packages=...,
     --archives=gs://.../env.tar.gz#environment, --py-files, or a custom
     --container-image.
 -   [ ] **Optimization & Pre-Submission Refactoring** Verify the job against

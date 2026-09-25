@@ -198,8 +198,7 @@ the code, inspect the template's properties:
 ```bash
 gcloud beta dataproc session-templates describe <TEMPLATE_NAME> \
     --project=<PROJECT_ID> --location=<REGION> \
-    --format="json(runtimeConfig.properties)" \
-  | jq '{defaultCatalog: .runtimeConfig.properties["spark.sql.defaultCatalog"], warehouses: (.runtimeConfig.properties | with_entries(select(.key | endswith(".warehouse"))))}'
+    --format="json(runtimeConfig.properties)"
 ```
 
 -   If `spark.sql.defaultCatalog` is set, `<CATALOG_NAME>` can be omitted
@@ -220,8 +219,8 @@ List templates in the project filtered by the table's warehouse URI (e.g.
 gcloud beta dataproc session-templates list \
     --project=<PROJECT_ID> --location=<REGION> \
     --filter="runtimeConfig.properties:<WAREHOUSE_BUCKET_OR_URI>" \
-    --format="json(name.basename(), runtimeConfig.properties)" \
-  | jq '[.[] | {template: .name, defaultCatalog: .runtimeConfig.properties["spark.sql.defaultCatalog"], warehouses: (.runtimeConfig.properties | with_entries(select(.key | endswith(".warehouse"))))}]'
+    --limit=5 \
+    --format="json(name.basename(), runtimeConfig.properties)"
 ```
 
 -   If multiple templates match, prefer the template where `defaultCatalog`
