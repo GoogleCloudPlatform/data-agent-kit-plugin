@@ -99,22 +99,5 @@
         "X_GOOG_PROXY_HEADERS": "{\"User-Agent\": \"datacloud.gemini-cli\"}"
       }
     }
-  },
-  "settings": [
-    {
-      "name": "GCP Project ID",
-      "description": "Project ID when using the MCP toolbox for databases",
-      "envVar": "PROJECT_ID"
-    },
-    {
-      "name": "GCP Region",
-      "description": "Region for GCP services (e.g. us-west1)",
-      "envVar": "GCP_REGION"
-    },
-    {
-      "name": "BigQuery Location",
-      "description": "Location for BigQuery datasets (e.g. US)",
-      "envVar": "BIGQUERY_LOCATION"
-    }
-  ]
+  }
 }
