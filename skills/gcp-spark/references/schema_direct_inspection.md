@@ -30,7 +30,9 @@ gcloud sql instances describe <INSTANCE_ID> --project=<PROJECT_ID>
 
 If the user specifies a GCS bucket or folder instead of specific files, you
 **MUST** explore the folder contents first to identify relevant files using
-`gcloud storage ls gs://<GCS_BUCKET>/<PATH>` command.
+`gcloud storage objects list "gs://<GCS_BUCKET>/<PATH>/**" --limit=100
+--format="value(name)"` command. In case of errors, cap GCS discovery attempts
+at **3 retries max**.
 
 ## For CSV file
 
