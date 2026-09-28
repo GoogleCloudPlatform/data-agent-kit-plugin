@@ -1,9 +1,9 @@
 {
-  "name": "data-agent-kit-starter-pack",
+  "name": "data-agent-kit",
   "version": "0.11.0",
   "description": "Developer toolkit for Data Cloud and AI integrations.",
   "bin": {
-    "data-agent-kit-starter-pack": "mcp/dist/index.js",
+    "data-agent-kit": "mcp/dist/index.js",
     "notebook-tools": "mcp/dist/index.js"
   },
   "dependencies": {
