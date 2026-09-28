@@ -1,7 +1,7 @@
 {
-  "name": "data-agent-kit-starter-pack-marketplace",
+  "name": "dak-marketplace",
   "interface": {
-    "displayName": "Data Agent Kit Starter Pack Marketplace"
+    "displayName": "Data Agent Kit Marketplace"
   },
   "plugins": [
     {

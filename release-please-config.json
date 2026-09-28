@@ -26,14 +26,9 @@
   "packages": {
     ".": {
       "release-type": "simple",
-      "package-name": "data-agent-kit-starter-pack",
+      "package-name": "data-agent-kit",
       "extra-files": [
         "README.md",
-        {
-          "type": "json",
-          "path": "gemini-extension.json",
-          "jsonpath": "$.version"
-        },
         {
           "type": "json",
           "path": ".codex-plugin/plugin.json",
