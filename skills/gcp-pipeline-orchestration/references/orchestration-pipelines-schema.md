@@ -104,6 +104,8 @@ message BigQueryEngine {
   // Location of the BigQuery dataset / job execution (e.g., "US", "EU", "us-central1").
   // If not specified, falls back to defaults.location. Must match the dataset's region or multi-region.
   string location = 1;
+  // Destination table (e.g., "project.dataset.table_name").
+  // When destination_table is set, the SQL query must be a pure SELECT statement without DDL (no CREATE TABLE).
   string destination_table = 2;
   repeated string impersonation_chain = 3;
 }
@@ -238,6 +240,9 @@ message PythonAction {
   string main_file_path = 4 [(pipeline_models.validation.is_required) = true];
   string python_callable = 5 [(pipeline_models.validation.is_required) = true];
   google.protobuf.Struct op_kwargs = 6;
+  // Optional. If omitted or requirements are not specified, executes as standard
+  // PythonOperator in the Airflow worker host environment.
+  // When requirements are specified, executes as PythonVirtualenvOperator in an isolated virtualenv.
   PythonEnvironment environment = 7;
   PythonEngine engine = 8 [(pipeline_models.validation.is_required) = true];
   TriggerRule trigger_rule = 9; // Default: all_success.
@@ -255,6 +260,7 @@ message PythonEnvironment {
     }
   }
 
+  // Optional pip requirements. If omitted, task runs as standard PythonOperator.
   Requirements requirements = 1;
   bool system_site_packages = 2; // Default: false.
 }
@@ -578,8 +584,14 @@ message AgentPlatformBatchInference {
   string model_name = 2 [(pipeline_models.validation.is_required) = true];
   string instances_format = 3;
   string predictions_format = 4;
+  // BigQuery table source (e.g. "bq://project.dataset.table").
+  // Note: Custom TensorFlow models used for batch prediction with BigQuery source must be exported
+  // with a serving signature expecting input named "instances" and returning a dictionary output (e.g. {"prediction": ...}).
   string bigquery_source = 5;
   repeated string gcs_source = 6;
+  // BigQuery table prefix for prediction results.
+  // Note: For regression/scalar models, predictions are saved in BigQuery as scalar columns (STRING/FLOAT64).
+  // Downstream dbt/SQL queries should access them directly with SAFE_CAST(prediction AS FLOAT64) without [OFFSET(0)].
   string bigquery_destination_prefix = 7;
   string gcs_destination_prefix = 8;
   repeated string impersonation_chain = 12;
@@ -643,9 +655,19 @@ actions:
 1. **Action Key**: Use `- pyspark:`, `- notebook:`, `- sql:`, `- pipeline:`, `- data_ingestion:`, `- orchestration_pipeline:`, or `- ai:` directly as the key. Do NOT use `- type: pyspark`.
 2. **Dataproc Engine**: Under `dataprocOnGce`, you **MUST** specify either `existingCluster` (with `clusterName`) or `ephemeralCluster` (with `clusterName` and `resourceProfile`). For Serverless Dataproc, use `dataprocServerless: {}`.
 3. **Environment Requirements**:
-   - For file dependencies: `environment.requirements.path: "requirements.txt"`
-   - For inline dependencies: **MUST** use nested `list` under `inline` (`environment.requirements.inline.list: ["pkg1", "pkg2"]`). Do NOT pass an array directly to `inline`.
+   - The `environment` field is **optional** on `python` actions. Omit `environment` to run using standard `PythonOperator` when extra dependencies are not required.
+   - When custom dependencies are needed, specifying `requirements` compiles to `PythonVirtualenvOperator`:
+     - For file dependencies: `environment.requirements.path: "requirements.txt"`
+     - For inline dependencies: **MUST** use nested `list` under `inline` (`environment.requirements.inline.list: ["pkg1", "pkg2"]`). Do NOT pass an array directly to `inline`.
 4. **Action Params (`params`)**:
    - Keys must match regex `^[a-zA-Z0-9_-]+$` (only alphanumeric, underscores, and hyphens).
    - Values must match regex `^[^';|`&]+$` (cannot contain `'`, `;`, `|`, `` ` ``, `&`).
-5. **BigQuery SQL Action Location**: When using `engine.bigquery` in a `sql` action, always check the referenced dataset location (e.g. using `bq show --format=prettyjson <project>:<dataset>`) and explicitly set `location` (e.g. `US`, `EU`, `us-central1`) to prevent location mismatch errors against multi-region or regional datasets.
+5. **SQL Action Location & Query Guidelines**:
+   - **BigQuery (`engine.bigquery`)**: Always set `location` to match the dataset's region/multi-region. Specify the target table via `destinationTable` and use pure `SELECT` queries without DDL statements (do NOT use `CREATE TABLE` or `CREATE OR REPLACE TABLE`).
+   - **Dataproc (`engine.dataprocServerless` / `engine.dataprocOnGce`)**: Dataproc engines do not have a `destinationTable` field; include DDL/DML statements (`CREATE TABLE ... AS SELECT ...` or `INSERT OVERWRITE ...`) directly within the SQL query text to persist tables.
+6. **Agent Platform (Vertex AI) Scope & Serving Signature**:
+   - **Supported Scope**: Support for Agent Platform (`Vertex AI`) is currently limited to uploading a trained custom model to the agent platform Registry (`agentPlatform.modelUpload`) and running batch predictions (`agentPlatform.batchInference`). Model training (e.g. Keras/TensorFlow models) is executed in a `pyspark` action.
+   - **Batch Prediction Serving Signature**: When training custom TensorFlow/Keras models in a `pyspark` action for downstream Agent Platform batch prediction (`agentPlatform.batchInference`) with BigQuery sources, the model must be saved with an explicit serving signature accepting `instances` (e.g. `tf.TensorSpec(..., name="instances")`) and returning a dictionary (e.g. `{"prediction": ...}`) to match Agent Platform's batch payload format.
+6. **Vertex AI Batch Prediction Serving Signature & Output Schema**:
+   - **Model Export**: When training custom TensorFlow/Keras models for Vertex AI batch prediction (`agentPlatform.batchInference`) with BigQuery sources, the model must be saved with an explicit serving signature accepting `instances` (e.g. `tf.TensorSpec(..., name="instances")`) and returning a dictionary (e.g. `{"prediction": ...}`) to match Vertex AI's batch payload format.
+   - **Downstream Querying (dbt / SQL)**: For regression/scalar predictions, Vertex AI writes the output column as a scalar (not an array). Access it directly using `SAFE_CAST(prediction AS FLOAT64)` rather than array indexing `prediction[OFFSET(0)]`.

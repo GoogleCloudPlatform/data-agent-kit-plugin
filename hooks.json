@@ -1,0 +1,24 @@
+{
+  "dak-setup-sync": {
+    "SessionStart": [
+      {
+        "type": "command",
+        "command": "node skills/dak-setup/scripts/dak-setup.js sync"
+      }
+    ]
+  },
+  "dak-telemetry": {
+    "PreToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node .agents/hooks/telemetry_hook.js --agent_name antigravity --install_source data-agent-kit-starter-pack || exit 0",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -112,6 +112,9 @@ PROPERTIES (
     `AVG`, `MIN`, `MAX`, `COUNT(DISTINCT ...)`.
 *   **Limitation**: Measures must be explicitly aliased (anonymous measures are
     not allowed).
+*   **Rejected shape**: a bare aggregate without the `MEASURE(...)` wrapper
+    (`SUM(cost) AS total_cost`) fails with `Aggregate function SUM not allowed
+    in PROPERTIES clause`.
 
 ### B. Property Options (`OPTIONS`)
 
@@ -145,6 +148,41 @@ NODE TABLES (
     PROPERTIES(id)
 )
 ```
+
+### D. Derived Dimension Properties (expression columns)
+
+A derived dimension (a bucketing, a recoding) lands as an expression column
+exposed as a property. Two mechanisms; pick by whether you may add a column to
+the object the node table reads from.
+
+**Inline in `PROPERTIES`** — first choice; it creates nothing:
+
+```sql
+`<dataset>.users` AS Cust
+  KEY (id)
+  PROPERTIES (
+    id, age, country,
+    CASE
+      WHEN age IS NULL THEN 'unknown'
+      WHEN age < 25    THEN '18-24'
+      ELSE                  '25+'
+    END AS age_group
+  )
+```
+
+The derivation is computed by the graph definition itself and reads back through
+`MATCH` like any ordinary property — and appears as an ordinary dimension column
+(`<element alias>_<property>`) in `GRAPH_EXPAND`'s flattened output.
+
+**A view carrying the expression column, referenced as the node table** — for
+when the source table is read-only to you, the derivation needs a join or window
+a property expression cannot hold, or the user should be able to `GROUP BY` the
+derived column in plain SQL too. Create the view in your own dataset, derived
+column beside the originals, and point the node table at it. Name the view in
+the plan and the closing report, and say the source table is untouched.
+
+**Every bucketing covers NULL and covers the rest.** Write the `unknown` branch
+and the final `ELSE`; check that bucket counts sum to the table's row count.
 
 --------------------------------------------------------------------------------
 
