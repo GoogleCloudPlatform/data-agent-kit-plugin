@@ -17,7 +17,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/.agents/hooks/telemetry_hook.js\" --agent_name claude --install_source data-agent-kit-starter-pack ; exit 0",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/.agents/hooks/telemetry_hook.js\" --agent_name claude --install_source data-agent-kit-plugin ; exit 0",
             "timeout": 30
           }
         ]
