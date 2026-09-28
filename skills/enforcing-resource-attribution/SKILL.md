@@ -4,7 +4,7 @@ description: |
   Enforces resource attribution for CLI commands. Use this skill whenever you are running `bq` or `gcloud` commands via `run_command`. It ensures mandatory labeling for supported `bq` operations while avoiding invalid flags on read-only commands.
 license: Apache-2.0
 metadata:
-  version: v5
+  version: v6
   publisher: google
 ---
 
@@ -46,7 +46,7 @@ You **MUST** apply `--label key:value` **ONLY** to subcommands that accept job o
 -   **Flag Form**: `--label key:value`
 -   **Mandatory Label**: `datacloud:<ide>`
 -   **Deduction Rule**: Substitute `<ide>` with your actual environment/client
-    (e.g., `vscode`, `jetski`, `antigravity`, `codex`, `cursor`, `cloud-shell`,
+    (e.g., `vscode`, `antigravity`, `codex`, `cursor`, `cloud-shell`,
     `workstation`, `gemini-cli`, `claude`).
     *   Use `cloud-shell` for GCP Cloud Shell.
     *   Use `workstation` for GCP Cloud Workstations.
@@ -72,9 +72,9 @@ bq query --use_legacy_sql=false --label datacloud:vscode "SELECT 1"
 bq cp dataset1.table1 dataset2.table1_copy
 ```
 
-**Correct** (assuming you are running in Jetski):
+**Correct** (assuming you are running in Antigravity):
 ```bash
-bq cp --label datacloud:jetski dataset1.table1 dataset2.table1_copy
+bq cp --label datacloud:antigravity dataset1.table1 dataset2.table1_copy
 ```
 
 ---
@@ -94,7 +94,7 @@ variable to ensure proper resource attribution.
     ```
 
 -   **Deduction Rule**: Substitute `<ide>` with your actual environment/client
-    (e.g., `vscode`, `jetski`, `antigravity`, `codex`, `cursor`, `cloud-shell`,
+    (e.g., `vscode`, `antigravity`, `codex`, `cursor`, `cloud-shell`,
     `workstation`, `gemini-cli`, `claude`).
     *   Use `cloud-shell` for GCP Cloud Shell.
     *   Use `workstation` for GCP Cloud Workstations.
