@@ -5,9 +5,7 @@
   "description": "This plugin provides a specialized suite of skills for data engineers and database practitioners working on Google Cloud. It acts as an expert assistant, allowing you to use natural language prompts in your preferred coding agent to architect complex data pipelines, transform data with dbt, write Spark and BigQuery SQL notebooks, and orchestrate end-to-end workflows across GCP's data ecosystem.",
   "author": {
     "name": "Google LLC",
-    "email": "data-cloud-ai-integrations@google.com"
+    "email": "data-agent-kit@google.com"
   },
-  "homepage": "https://docs.cloud.google.com/data-cloud-extension",
-  "repository": "https://github.com/gemini-cli-extensions/data-agent-kit-starter-pack",
-  "license": "Apache-2.0"
+  "homepage": "https://cloud.google.com/products/data-agent-kit"
 }
