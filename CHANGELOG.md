@@ -1,5 +1,47 @@
 # Changelog
 
+## [0.11.1](https://github.com/GoogleCloudPlatform/data-agent-kit-plugin/compare/0.11.0...0.11.1) (2026-09-29)
+
+
+### Features
+
+* add DAK setup script ([6003384](https://github.com/GoogleCloudPlatform/data-agent-kit-plugin/commit/6003384158243bba4f24f6c977216a75bab19e09))
+* Add onboarding support for Codex and Agy CLI. ([36720b7](https://github.com/GoogleCloudPlatform/data-agent-kit-plugin/commit/36720b7a35c2f894be53a8fb4a80cc2f9b629b3c))
+* Cleanup Claude and Codex plugin configs. ([d5357d1](https://github.com/GoogleCloudPlatform/data-agent-kit-plugin/commit/d5357d1016a7a5ccdb0df2920e0e507faf9e8d5b))
+* **dak-setup:** add DAK plugin setup skill and CLI bundle ([ca53915](https://github.com/GoogleCloudPlatform/data-agent-kit-plugin/commit/ca53915c64b8eb2c7b6bd4fb336987ca421c5a2e))
+* Define BigFrames as the default Python library for BigQuery data ([59173ba](https://github.com/GoogleCloudPlatform/data-agent-kit-plugin/commit/59173ba366e9e866d64c8a8e549dfdf7bfe1cded))
+* **mcp:** Add BILLING_PROJECT_ID quota header support to CLI MCP proxy ([81806f3](https://github.com/GoogleCloudPlatform/data-agent-kit-plugin/commit/81806f3099fa15693dcd24a157a1c3884e745e11))
+* Remove plugin setup config prompts across agents ([1a7a684](https://github.com/GoogleCloudPlatform/data-agent-kit-plugin/commit/1a7a684c4610f6c1cf35c97d976c1aa8c8e8eed9))
+* Replace `bigquery_graph` skill with `bigquery_graph_author` and `bigquery_graph_query` (graph v2) ([fa97c18](https://github.com/GoogleCloudPlatform/data-agent-kit-plugin/commit/fa97c187923c43c27e9f28d57607643b394bef5d))
+* **skill:** Add cell execution failure handling protocol to notebook guidance ([97892b3](https://github.com/GoogleCloudPlatform/data-agent-kit-plugin/commit/97892b34edb64185ec8ba8b2cac0e1163a3fded0))
+* **skill:** Add guidance for PySpark ML vector slicing and invalid label handling. ([2febf2c](https://github.com/GoogleCloudPlatform/data-agent-kit-plugin/commit/2febf2c3b55b7d2c1760a92f41ca23adefd61810))
+* **skill:** guidance for batch submit command ([b53d990](https://github.com/GoogleCloudPlatform/data-agent-kit-plugin/commit/b53d990a5769228c773ea7dfa184e05d4c432474))
+* **skill:** Make sure libraries are not downloaded during notebook generation ([59ff724](https://github.com/GoogleCloudPlatform/data-agent-kit-plugin/commit/59ff7248e3f1aff98c8f20de1fd0a8ee43a89802))
+* **skills:** add gcp-spark-troubleshooting skill for Dataproc and Spark diagnostics ([1a044de](https://github.com/GoogleCloudPlatform/data-agent-kit-plugin/commit/1a044def966656ea161f18d622792ed0f4a7025e))
+* **skills:** add Spark optimization guidance as gcp-spark references ([c3cb553](https://github.com/GoogleCloudPlatform/data-agent-kit-plugin/commit/c3cb553a2282d78ed8776d7af15322f7bb3733c6))
+* **skills:** Cap data asset discovery retries and update GCS listing in gcp_spark skill ([5faa2af](https://github.com/GoogleCloudPlatform/data-agent-kit-plugin/commit/5faa2afec708ef5c3728f2734de23cb8a10ef806))
+* **skills:** Enforce driver memory protection in gcp-spark optimizations ([bccafd5](https://github.com/GoogleCloudPlatform/data-agent-kit-plugin/commit/bccafd5026d03c56a0ebcf7beb12940805f2d8b1))
+* **skills:** GCP Managed Spark upgrade SKILL for PySpark job type on Cluster ([6dc2c29](https://github.com/GoogleCloudPlatform/data-agent-kit-plugin/commit/6dc2c295c9a3385a50d6f35dd7bd37b779d52143))
+* **skills:** harden gcp-spark code guidance for production logging, parameterized config, and broadcast joins ([af143c8](https://github.com/GoogleCloudPlatform/data-agent-kit-plugin/commit/af143c8f1b30db31e0b078ec10bb98bc235cc7d0))
+* **skills:** Update gcloud Dataproc skill guidance for multi-package batch submission and Spanner connector ([4823a3c](https://github.com/GoogleCloudPlatform/data-agent-kit-plugin/commit/4823a3c08e8bd058e6a3cd53d332496dc27c799d))
+* **skills:** Update gcp_spark skill for ManagedSparkSession with better instructions ([2e04bb5](https://github.com/GoogleCloudPlatform/data-agent-kit-plugin/commit/2e04bb514b884cb9b19ad987766e22848fcab42a))
+* **skills:** update gcp-spark skill to forbid whole-file reads of executed notebooks ([66f0d37](https://github.com/GoogleCloudPlatform/data-agent-kit-plugin/commit/66f0d3749f4d79707b8cdd349f5468eaa67d0800))
+* **skill:** Update Iceberg guidelines to favor session templates for notebooks ([764829f](https://github.com/GoogleCloudPlatform/data-agent-kit-plugin/commit/764829f8640fd6f5c4854cf388ebbc5252b2910d))
+
+
+### Bug Fixes
+
+* clarify SQL action guidelines for BigQuery and Dataproc engines ([c057fb5](https://github.com/GoogleCloudPlatform/data-agent-kit-plugin/commit/c057fb5cb41fb54328963181a7e3c3dd389f63f4))
+* clarify that the environment field is optional for Python actions ([aedd28d](https://github.com/GoogleCloudPlatform/data-agent-kit-plugin/commit/aedd28dd769c684af83928ab237d64f09e8fc7ad))
+* **dak:** restore default `npx` resolution in package.json bin ([5f4abac](https://github.com/GoogleCloudPlatform/data-agent-kit-plugin/commit/5f4abac1389462d3703ff8b6e6bbc88c67ca788a))
+* Document serving signature requirements for Vertex AI batch prediction with BigQuery sources. ([3039bea](https://github.com/GoogleCloudPlatform/data-agent-kit-plugin/commit/3039bea08733b06e8bdd5905f571673064e625e4))
+* **gcp-spark:** rename spark_env virtualenv to venv in gcloud_dataproc.md ([a6a3073](https://github.com/GoogleCloudPlatform/data-agent-kit-plugin/commit/a6a307383d9a733136250389b1750bcc00f9aeab))
+* **hooks:** Make dak-setup SessionStart hook work in agy CLI ([d045730](https://github.com/GoogleCloudPlatform/data-agent-kit-plugin/commit/d04573009b7cb5957659ccf8693a5f8ecc1543e4))
+* **skills:** Point resolving_mcp_region_configs at the Codex mcp.json that is actually loaded ([117bbd0](https://github.com/GoogleCloudPlatform/data-agent-kit-plugin/commit/117bbd0178a6d545266d4356151417af42fa701e))
+* **skills:** Sanitize internal references in Data Agent Kit skills ([f1ef383](https://github.com/GoogleCloudPlatform/data-agent-kit-plugin/commit/f1ef3837625d822fc350792f329a971fe1eb1861))
+* Update skill how to query Vertex AI batch prediction outputs in downstream SQL ([8ef4e4b](https://github.com/GoogleCloudPlatform/data-agent-kit-plugin/commit/8ef4e4b35c4981793766becd1148528c51fec4cc))
+* Update SQL action guidelines for BigQuery and Dataproc engines in orchestration schema and documentation. ([c057fb5](https://github.com/GoogleCloudPlatform/data-agent-kit-plugin/commit/c057fb5cb41fb54328963181a7e3c3dd389f63f4))
+
 ## [0.11.0](https://github.com/gemini-cli-extensions/data-agent-kit-starter-pack/compare/0.10.1...0.11.0) (2026-09-11)
 
 
