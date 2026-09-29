@@ -125,7 +125,7 @@ normally with the sandbox enabled.
 </details>
 
 <!-- {x-release-please-end} -->
-<!-- github-release-force: 0.11.0 -->
+<!-- github-release-force: 1.0.0 -->
 
 ## Features and Common Uses
 
