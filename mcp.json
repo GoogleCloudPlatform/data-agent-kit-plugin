@@ -1,108 +1,119 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
   "mcpServers": {
-    "notebook": {
-      "type": "stdio",
+    "dak-notebook": {
       "command": "node",
+      "type": "stdio",
       "args": [
         "${PLUGIN_ROOT}/mcp/dist/index.js",
         "--mode=notebook"
       ]
     },
-    "visualization": {
-      "type": "stdio",
+    "dak-viz": {
       "command": "node",
+      "type": "stdio",
       "args": [
         "${PLUGIN_ROOT}/mcp/dist/index.js",
         "--mode=visualization"
       ]
     },
-    "bigquery": {
-      "type": "stdio",
+    "dak-alloydb": {
       "command": "node",
-      "args": [
-        "${PLUGIN_ROOT}/mcp/bin/mcp_proxy_bundle.cjs",
-        "https://bigquery.googleapis.com/mcp"
-      ],
-      "env": {
-        "X_GOOG_PROXY_HEADERS": "{\"User-Agent\": \"datacloud.other\"}"
-      }
-    },
-    "spanner": {
       "type": "stdio",
-      "command": "node",
-      "args": [
-        "${PLUGIN_ROOT}/mcp/bin/mcp_proxy_bundle.cjs",
-        "https://spanner.googleapis.com/mcp"
-      ],
-      "env": {
-        "X_GOOG_PROXY_HEADERS": "{\"User-Agent\": \"datacloud.other\"}"
-      }
-    },
-    "alloydb-postgres": {
-      "type": "stdio",
-      "command": "node",
       "args": [
         "${PLUGIN_ROOT}/mcp/bin/mcp_proxy_bundle.cjs",
         "https://alloydb.googleapis.com/mcp"
       ],
       "env": {
-        "X_GOOG_PROXY_HEADERS": "{\"User-Agent\": \"datacloud.other\"}"
+        "X_GOOG_PROXY_HEADERS": "{\"User-Agent\":\"datacloud.other\"}"
       }
     },
-    "cloud-sql-postgresql": {
-      "type": "stdio",
+    "dak-spark": {
       "command": "node",
-      "args": [
-        "${PLUGIN_ROOT}/mcp/bin/mcp_proxy_bundle.cjs",
-        "https://sqladmin.googleapis.com/mcp"
-      ],
-      "env": {
-        "X_GOOG_PROXY_HEADERS": "{\"User-Agent\": \"datacloud.other\"}"
-      }
-    },
-    "knowledge_catalog": {
       "type": "stdio",
-      "command": "node",
-      "args": [
-        "${PLUGIN_ROOT}/mcp/bin/mcp_proxy_bundle.cjs",
-        "https://dataplex.googleapis.com/mcp"
-      ],
-      "env": {
-        "X_GOOG_PROXY_HEADERS": "{\"User-Agent\": \"datacloud.other\"}"
-      }
-    },
-    "dataproc": {
-      "type": "stdio",
-      "command": "node",
       "args": [
         "${PLUGIN_ROOT}/mcp/bin/mcp_proxy_bundle.cjs",
         "https://dataproc-$GCP_REGION.googleapis.com/mcp"
       ],
       "env": {
-        "X_GOOG_PROXY_HEADERS": "{\"User-Agent\": \"datacloud.other\"}"
+        "X_GOOG_PROXY_HEADERS": "{\"User-Agent\":\"datacloud.other\"}"
       }
     },
-    "bigtable": {
-      "type": "stdio",
+    "dak-bigquery": {
       "command": "node",
+      "type": "stdio",
+      "args": [
+        "${PLUGIN_ROOT}/mcp/bin/mcp_proxy_bundle.cjs",
+        "https://bigquery.googleapis.com/mcp"
+      ],
+      "env": {
+        "X_GOOG_PROXY_HEADERS": "{\"User-Agent\":\"datacloud.other\"}"
+      }
+    },
+    "dak-bigtable-data": {
+      "command": "node",
+      "type": "stdio",
+      "args": [
+        "${PLUGIN_ROOT}/mcp/bin/mcp_proxy_bundle.cjs",
+        "https://bigtable.googleapis.com/mcp"
+      ],
+      "env": {
+        "X_GOOG_PROXY_HEADERS": "{\"User-Agent\":\"datacloud.other\"}"
+      }
+    },
+    "dak-bigtable": {
+      "command": "node",
+      "type": "stdio",
       "args": [
         "${PLUGIN_ROOT}/mcp/bin/mcp_proxy_bundle.cjs",
         "https://bigtableadmin.googleapis.com/mcp"
       ],
       "env": {
-        "X_GOOG_PROXY_HEADERS": "{\"User-Agent\": \"datacloud.other\"}"
+        "X_GOOG_PROXY_HEADERS": "{\"User-Agent\":\"datacloud.other\"}"
       }
     },
-    "cloud-storage": {
-      "type": "stdio",
+    "dak-cloudsql": {
       "command": "node",
+      "type": "stdio",
+      "args": [
+        "${PLUGIN_ROOT}/mcp/bin/mcp_proxy_bundle.cjs",
+        "https://sqladmin.googleapis.com/mcp"
+      ],
+      "env": {
+        "X_GOOG_PROXY_HEADERS": "{\"User-Agent\":\"datacloud.other\"}"
+      }
+    },
+    "dak-gcs": {
+      "command": "node",
+      "type": "stdio",
       "args": [
         "${PLUGIN_ROOT}/mcp/bin/mcp_proxy_bundle.cjs",
         "https://storage.googleapis.com/storage/mcp"
       ],
       "env": {
-        "X_GOOG_PROXY_HEADERS": "{\"User-Agent\": \"datacloud.other\"}"
+        "X_GOOG_PROXY_HEADERS": "{\"User-Agent\":\"datacloud.other\"}"
+      }
+    },
+    "dak-kc": {
+      "command": "node",
+      "type": "stdio",
+      "args": [
+        "${PLUGIN_ROOT}/mcp/bin/mcp_proxy_bundle.cjs",
+        "https://dataplex.googleapis.com/mcp"
+      ],
+      "env": {
+        "X_GOOG_PROXY_HEADERS": "{\"User-Agent\":\"datacloud.other\"}"
+      }
+    },
+    "dak-spanner": {
+      "command": "node",
+      "type": "stdio",
+      "args": [
+        "${PLUGIN_ROOT}/mcp/bin/mcp_proxy_bundle.cjs",
+        "https://spanner.googleapis.com/mcp"
+      ],
+      "env": {
+        "X_GOOG_PROXY_HEADERS": "{\"User-Agent\":\"datacloud.other\"}"
       }
     }
   }
