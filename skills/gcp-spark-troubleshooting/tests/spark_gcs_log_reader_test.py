@@ -22,6 +22,7 @@ import os
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 # Add scripts directory to path
 sys.path.insert(
@@ -32,6 +33,29 @@ import spark_gcs_log_reader
 
 
 class SparkGcsLogReaderTest(unittest.TestCase):
+
+  def test_gcs_reads_verify_tls_with_the_shared_context(self):
+    reader = spark_gcs_log_reader.GcsStreamReader("gs://bucket/logs/app.log")
+    context = object()
+    with mock.patch.object(
+        spark_gcs_log_reader.subprocess, "check_output", return_value="tok\n"
+    ), mock.patch.object(
+        spark_gcs_log_reader.spark_applications,
+        "ssl_context",
+        return_value=context,
+    ), mock.patch.object(
+        spark_gcs_log_reader.urllib.request,
+        "urlopen",
+        side_effect=lambda *args, **kwargs: io.BytesIO(b"log line\n"),
+    ) as urlopen:
+      self.assertEqual(reader.open_range_stream(0, 8).read(), b"log line\n")
+      self.assertEqual(reader.open_full_stream().read(), b"log line\n")
+    self.assertEqual(urlopen.call_count, 2)
+    for (request,), kwargs in urlopen.call_args_list:
+      self.assertIs(kwargs["context"], context)
+      self.assertEqual(request.get_header("Authorization"), "Bearer tok")
+    range_request = urlopen.call_args_list[0][0][0]
+    self.assertEqual(range_request.get_header("Range"), "bytes=0-8")
 
   def test_parse_gcs_uri(self):
     bucket, obj = spark_gcs_log_reader.parse_gcs_uri(
