@@ -16,7 +16,7 @@ description: |
   - Troubleshooting failed Spark workloads or analyzing logs (use @skill:gcp-spark-troubleshooting).
 license: Apache-2.0
 metadata:
-  version: v20
+  version: v21
   publisher: google
 ---
 
@@ -170,8 +170,22 @@ metadata:
 7.  **Execute script or notebook**: When requested to run a job, script,
     session, or execute notebook cells against Managed Spark, refer to
     `references/gcloud_dataproc.md` on how to execute code on Dataproc
-    Serverless using Spark Connect or Dataproc jobs.
+    Serverless using Spark Connect or Dataproc jobs. For notebooks, follow the
+    incremental flow in `@skill:notebook-guidance`: insert ONE cell, execute it,
+    and verify its output before inserting the next one. Do NOT author every
+    cell first and then validate with repeated whole-notebook runs (e.g.
+    `jupyter nbconvert --execute`); each run repeats every expensive stage, such
+    as model training, and re-injects all outputs into the context.
 8.  **Follow up with the user**: If a brand new notebook was generated, instruct the user to select the appropriate kernel in the dropdown for cell execution.
+9.  **Notebook operations**:
+
+    *   **PROHIBITED**: Do NOT use `read_file` or generic whole-file reading
+        tools on executed `.ipynb` notebooks. Executed notebooks often contain
+        massive base64-encoded image outputs that cause excessive token
+        consumption.
+    *   **REQUIRED**: To inspect execution outputs, you MUST use cell-scoped
+        reading tools (such as `notebook__read_cell`, `jupyter__read_cell`, or
+        specific line slices) rather than reading the entire file at once.
 
 --------------------------------------------------------------------------------
 
