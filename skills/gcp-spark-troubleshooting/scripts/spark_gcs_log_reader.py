@@ -61,6 +61,11 @@ try:
 except ImportError:
   HAS_ZSTD = False
 
+# pylint: disable=g-import-not-at-top
+# The sibling script is importable because Python puts the running script's
+# directory on sys.path (and the tests/BUILD add scripts/ explicitly).
+import spark_application_telemetry as telemetry
+
 LARGE_FILE_THRESHOLD_BYTES = 20 * 1024 * 1024  # 20 MB
 # Upper bound on a single --action=read_range request. Reading an unbounded
 # range would flood the agent's context window with log text.
@@ -232,7 +237,9 @@ class GcsStreamReader:
             url,
             headers={"Authorization": f"Bearer {token}", "Range": range_header},
         )
-        resp = urllib.request.urlopen(req, timeout=60)
+        resp = urllib.request.urlopen(
+            req, timeout=60, context=telemetry.ssl_context()
+        )
         return io.BufferedReader(resp)
     except (
         subprocess.SubprocessError,
@@ -279,7 +286,9 @@ class GcsStreamReader:
         req = urllib.request.Request(
             url, headers={"Authorization": f"Bearer {token}"}
         )
-        resp = urllib.request.urlopen(req, timeout=120)
+        resp = urllib.request.urlopen(
+            req, timeout=120, context=telemetry.ssl_context()
+        )
         return io.BufferedReader(resp)
     except (
         subprocess.SubprocessError,
