@@ -348,6 +348,26 @@ Python scripts, follow these steps:
     )
     ```
 
+    **End-user credentials**: Spark Connect sessions run as the end user unless
+    an authentication type is set. Failure with `Dataproc does not have the
+    necessary permissions to run your workload using end user credentials` means
+    the user has not granted OAuth consent to Dataproc; the error body carries
+    the consent link. Surface that link to the user and STOP. Do NOT search the
+    filesystem for credential files, guess service account names, create service
+    account keys, enable APIs, or modify IAM policy bindings.
+
+    To run as a service account instead, set both the account and the
+    authentication type -- a service account is rejected while the type is
+    `END_USER_CREDENTIALS`:
+
+    ```python
+    exec_config = session_config.environment_config.execution_config
+    exec_config.service_account = "<SERVICE_ACCOUNT_EMAIL>"
+    exec_config.authentication_config.user_workload_authentication_type = (
+        "SERVICE_ACCOUNT"
+    )
+    ```
+
 6.  **Local Environment Cleanup**:
 
     ```bash
