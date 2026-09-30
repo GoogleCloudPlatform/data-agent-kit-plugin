@@ -145,6 +145,23 @@ df.write \
     results to confirm it uses GCS storage (starts with `gs:`).
 - [!WARNING] **DO NOT** assume catalog_name, project_id, io implementation for a
   table, **ALWAYS lookup** table details before proceeding.
+-   [!IMPORTANT] Authentication to the REST catalog is handled by
+    `rest.auth.type = org.apache.iceberg.gcp.auth.GoogleAuthManager`, which uses
+    Application Default Credentials. **DO NOT** pass `token`, `credential`, or a
+    `gcloud auth print-access-token` value. `GoogleAuthManager` and `GCSFileIO`
+    ship in the `iceberg-gcp-bundle` jar, so when Iceberg jars are not
+    pre-installed (local or standalone sessions) also set `spark.jars.packages`
+    to
+    `org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:1.10.0,org.apache.iceberg:iceberg-gcp-bundle:1.10.0`,
+    keeping the bundle version identical to the runtime version. A missing
+    bundle surfaces as `IllegalArgumentException: Cannot initialize AuthManager
+    implementation org.apache.iceberg.gcp.auth.GoogleAuthManager`. A
+    `NotAuthorizedException: Request is missing required authentication
+    credential` instead means `rest.auth.type` was never set, so Iceberg
+    defaulted to `none` and sent the request unauthenticated.
+-   [!WARNING] Set `spark.jars.packages` on the builder before `getOrCreate()`;
+    jars cannot be added to a running JVM, so a package added later is ignored.
+    `spark.sql.catalog.*` properties may also be set after the session exists.
 
 #### Option A: Zero-Config (Preferred) — Session Template / Runtime Profile
 
