@@ -60,7 +60,8 @@ agy plugin install https://github.com/GoogleCloudPlatform/data-agent-kit-plugin
 <summary><b>Claude Code</b></summary>
 
 ```bash
-claude plugin install data-agent-kit-starter-pack@claude-plugins-official
+claude plugin marketplace add https://github.com/GoogleCloudPlatform/data-agent-kit-plugin
+claude plugin install dak@dak-marketplace
 ```
 
 </details>
