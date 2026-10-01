@@ -178,7 +178,7 @@ executing the command for Job Submission
 
 Prefer MCP if available. If using gcloud, use this command template:
 
-Augment the basic command with iceberg, spanner or xgboost related arguments as
+Augment the basic command with spanner, jdbc, or xgboost related arguments as
 needed by the script to be executed. When submitting batches with multiple
 java dependencies, you must combine them with commas (e.g.
 `spark.jars.packages=pkg1,pkg2`).
@@ -188,10 +188,10 @@ gcloud dataproc batches submit pyspark <SCRIPT_PATH.py> \
     --project=<PROJECT_ID> \
     --region=<GCP_REGION> \
     --version=2.3 \
-    --deps-bucket=<GCS_PATH>
+    --deps-bucket=gs://<BUCKET_NAME>
 ```
 
-You MUST set the `--deps-bucket` to a GCS path to upload workload dependencies.
+You MUST set the `--deps-bucket` to a root GCS bucket URI (`gs://<BUCKET_NAME>`). Do NOT pass a subfolder path (e.g. `gs://<BUCKET_NAME>/deps`), or `gcloud` will fail with `Invalid bucket name`.
 
 > [!IMPORTANT] Dataproc Serverless batches can be expected to take a very long
 > time. **Typical initial execution time:** 10-15 minutes. This is **NORMAL**
@@ -223,8 +223,14 @@ For asynchronous execution, you must poll the batch status until state is
 #### Iceberg REST
 
 -   **Dependency**:
-    `spark.jars.packages=org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:1.5.0`
--   **Notes**: In code use `<CATALOG>.<DATASET>.<TABLE>` (not project ID)
+    -   **Dataproc Serverless (`2.3+` / `3.0`)**: Pre-installed on the default Spark classpath (`/usr/lib/spark/jars/`). Do **NOT** pass `spark.jars.packages=org.apache.iceberg:...` (which risks Scala 2.12 vs 2.13 binary mismatches or missing `GCSFileIO` classes).
+    -   **Dataproc on GCE Clusters (`2.2+`)**: Enable `--optional-components=ICEBERG` at cluster creation (which adds `/usr/lib/iceberg/lib/*` to `SPARK_DIST_CLASSPATH`), or pass the local VM JARs from `/usr/lib/iceberg/lib/` via `--jars` if submitting to an existing cluster without the optional component.
+-   **Notes**:
+    -   In code use `<CATALOG>.<DATASET>.<TABLE>` (not project ID).
+    -   **Automatic Zero-Config Catalog Discovery (`2.3+`)**: To automatically discover Lakehouse Iceberg catalogs in `<PROJECT_ID>` without manual 7-property catalog bootstrap configurations:
+        -   **Dataproc Serverless Batch (`--version=2.3`)**: Pass `--properties="spark.dataproc.lakehouse.project=<PROJECT_ID>"`.
+        -   **Dataproc on GCE Cluster (`--image-version=2.3-debian12`)**: Enable `--optional-components=ICEBERG` (and optionally `--properties="spark:spark.dataproc.lakehouse.project=<PROJECT_ID>"` at cluster creation, or `--properties="spark.dataproc.lakehouse.project=<PROJECT_ID>"` on `gcloud dataproc jobs submit pyspark`).
+    -   Before running a batch job that creates or writes to a BigLake Iceberg REST catalog, ensure the catalog exists on the GCS bucket (`gcloud alpha biglake iceberg catalogs create <CATALOG_NAME> --catalog-type=gcs-bucket --project=<PROJECT_ID>`) and that `<CATALOG_NAME>` matches the GCS bucket name (`gs://<CATALOG_NAME>`).
 
 #### Pub/Sub
 
