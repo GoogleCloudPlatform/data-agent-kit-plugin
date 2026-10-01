@@ -199,10 +199,17 @@ You MUST set the `--deps-bucket` to a GCS path to upload workload dependencies.
 
 #### Checking batch completion
 
-When batch is submitted synchronously, you can wait for the command to return.
-For asynchronous execution, you must poll the batch status until state is
-`SUCCEEDED`, `FAILED` or `CANCELLED`. You can check the batch status using
-`gcloud dataproc batches describe <BATCH_ID>`.
+Wait for the batch with a SINGLE blocking call: submit synchronously and let the
+command return, or, if it was submitted asynchronously, block with `gcloud
+dataproc batches wait <BATCH_ID> --region=<GCP_REGION>`. Both return once the
+batch reaches a terminal state (`SUCCEEDED`, `FAILED` or `CANCELLED`). (The
+Dataproc MCP surface is read-only: it can describe a batch but cannot block on
+one.)
+
+> [!CAUTION] NEVER hand-roll polling. Do not write shell retry loops (`for i in
+> {1..40}` / `sleep` / repeated `gcloud dataproc batches describe`) or custom
+> `poll_*.py` scripts: every round trip re-sends the whole context and wastes
+> tokens. Use `describe` only for a single one-off status check.
 
 ### Connector Dependencies & Properties
 
