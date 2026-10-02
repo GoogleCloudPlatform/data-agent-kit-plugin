@@ -25,7 +25,7 @@ Draft Plan Field / Setting         | Terraform Resource & Attribute             
 :--------------------------------- | :-------------------------------------------------------------------- | :-------------
 **Bucket Name**                    | `google_storage_bucket.name`                                          | Required string. Must be globally unique.
 **Project**                        | `google_storage_bucket.project`                                       | Optional. Defaults to provider project.
-**Location**                       | `google_storage_bucket.location`                                      | Required. E.g., `"us-central1"`, `"us"`. Zonal buckets (using Rapid storage) require setting this to the region (e.g., `"us-east1"`).
+**Location**                       | `google_storage_bucket.location`                                      | Required. E.g., `"us-central1"`, `"us"`. Zonal buckets (using the Rapid storage class) require setting this to the region (e.g., `"us-east1"`).
 **Placement**                      | `google_storage_bucket.custom_placement_config.data_locations`        | List of strings. E.g., `["us-east1", "us-west1"]` (for custom dual-regions), or `["us-east1-b"]` (for zonal buckets).
 **Replication Speed (RPO)**        | `google_storage_bucket.rpo`                                           | String. E.g., `"ASYNC_TURBO"` (for dual-region buckets).
 **Storage Class**                  | `google_storage_bucket.storage_class`                                 | String. E.g., `"STANDARD"`, `"NEARLINE"`, `"COLDLINE"`, `"ARCHIVE"`, `"RAPID"`. Zonal locations require `"RAPID"`. Note: If Autoclass is enabled, do not set storage_class to anything other than `"STANDARD"`.
@@ -337,7 +337,7 @@ resource "google_storage_bucket_iam_member" "public_viewer" {
 
 --------------------------------------------------------------------------------
 
-### Example 4: AI/ML Checkpointing (Zonal Bucket / Rapid Storage)
+### Example 4: AI/ML Checkpointing (Zonal Buckets)
 
 #### Input Draft Plan
 
@@ -347,12 +347,12 @@ resource "google_storage_bucket_iam_member" "public_viewer" {
 *   **Location**: `us-east1` (Region)
 *   **Placement**: `us-east1-b` (Zone-level co-location for high performance)
 *   **Storage Class**: `RAPID` (Must be explicitly specified for zonal buckets)
-*   **UBLA**: Enabled (Required for HNS)
+*   **UBLA**: Enabled (Required for Hierarchical Namespace)
 *   **Public Access Prevention (PAP)**: Enforced
 *   **Encryption**: Google-managed key
 *   **Soft Delete**: Disabled (0 days) (Soft delete is not supported for zonal buckets)
 *   **Use-case specific settings**:
-    *   Hierarchical Namespace (HNS): Enabled (Required for Zonal buckets)
+    *   Hierarchical Namespace: Enabled (Required for Zonal buckets)
     *   Lifecycle: Delete checkpoint files older than 14 days
 ```
 

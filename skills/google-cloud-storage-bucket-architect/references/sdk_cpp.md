@@ -228,7 +228,7 @@ StatusOr<gcs::BucketMetadata> CreateStaticWebsiteBucket(gcs::Client client,
 
 --------------------------------------------------------------------------------
 
-### Example 4: AI/ML Checkpointing (Zonal Bucket / Rapid Storage)
+### Example 4: AI/ML Checkpointing (Zonal Buckets)
 
 #### Input Draft Plan
 
@@ -237,13 +237,13 @@ StatusOr<gcs::BucketMetadata> CreateStaticWebsiteBucket(gcs::Client client,
 *   **Location**: `us-east1` (Region)
 *   **Placement**: `us-east1-b` (Zone-level co-location for high performance)
 *   **Storage Class**: `RAPID` (Must be explicitly specified for zonal buckets)
-*   **UBLA**: Enabled (Required for HNS)
+*   **UBLA**: Enabled (Required for Hierarchical Namespace)
 *   **Public Access Prevention (PAP)**: Enforced
 *   **Encryption**: Google-managed key
 *   **Soft Delete**: Disabled (0 days) (Soft delete is not supported for zonal
     buckets)
 *   **Use-case specific settings**:
-    *   Hierarchical Namespace (HNS): Enabled (Required for Zonal buckets)
+    *   Hierarchical Namespace: Enabled (Required for Zonal buckets)
     *   Lifecycle: Delete checkpoint files older than 14 days
 
 ```cpp
