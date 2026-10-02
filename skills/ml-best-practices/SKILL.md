@@ -15,7 +15,7 @@ description: |
   SQL/BigQuery ML HANDOFF: If the user requires a SQL solution, use this skill to dictate the ANALYSIS STEPS (e.g., markdown analysis cells, visualization logic), but defer to `bigquery` for all SQL syntax.
 license: Apache-2.0
 metadata:
-  version: v1
+  version: v2
   publisher: google
 ---
 
@@ -69,7 +69,9 @@ How might different modeling approaches impact the prediction accuracy?
 -   Train two time series forecasting models to predict the target feature. Use
     previous seasonality and stationarity information as model hyperparameters.
 -   Predict the target feature for the training and validation sets.
--   Optionally, hypertune models with the validation set.
+-   Tune model hyperparameters systematically using the validation set (e.g.,
+    via grid search or candidate parameter evaluation) rather than using fixed
+    or hardcoded values.
 -   Visualize the actual and predicted target feature vs time for each model on
     the training and validation sets.
 -   Evaluate the validation performance with error metrics.
