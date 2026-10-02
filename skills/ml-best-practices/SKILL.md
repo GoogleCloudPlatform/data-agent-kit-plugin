@@ -15,7 +15,7 @@ description: |
   SQL/BigQuery ML HANDOFF: If the user requires a SQL solution, use this skill to dictate the ANALYSIS STEPS (e.g., markdown analysis cells, visualization logic), but defer to `bigquery` for all SQL syntax.
 license: Apache-2.0
 metadata:
-  version: v1
+  version: v2
   publisher: google
 ---
 
@@ -60,6 +60,8 @@ How might different modeling approaches impact the prediction accuracy?
 
 -   Understand the schema and field descriptions.
 -   Visualize the target feature over time at a reasonable granularity.
+-   Detect and handle outliers in numerical features (e.g., Price) using the
+    Interquartile Range (IQR) method or robust statistics prior to modeling.
 -   Always perform a chronological split on the data to create training,
     validation, and test sets.
 -   Are there seasonal trends?
