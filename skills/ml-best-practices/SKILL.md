@@ -15,7 +15,7 @@ description: |
   SQL/BigQuery ML HANDOFF: If the user requires a SQL solution, use this skill to dictate the ANALYSIS STEPS (e.g., markdown analysis cells, visualization logic), but defer to `bigquery` for all SQL syntax.
 license: Apache-2.0
 metadata:
-  version: v1
+  version: v2
   publisher: google
 ---
 
@@ -88,6 +88,10 @@ observed in the data. Provide visualizations to support your findings.
 -   Visualize the target feature distribution in a way that shows outliers.
 -   Identify and describe any outliers in the target feature.
 -   Visualize relationships between the target feature and other features.
+-   In bivariate scatter plots, inspect for stratification patterns and distinct
+    linear bands corresponding to discrete features (e.g., term durations in
+    Payments vs Amount), differentiate them (e.g., via hue), and describe each
+    cohort relationship.
 -   Identify and describe unusual patterns or significant trends.
 -   Visualize patterns and trends.
 -   Conclusion: comprehensively answer the prompt in a final markdown cell.
