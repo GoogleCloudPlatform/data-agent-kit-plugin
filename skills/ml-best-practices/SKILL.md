@@ -15,7 +15,7 @@ description: |
   SQL/BigQuery ML HANDOFF: If the user requires a SQL solution, use this skill to dictate the ANALYSIS STEPS (e.g., markdown analysis cells, visualization logic), but defer to `bigquery` for all SQL syntax.
 license: Apache-2.0
 metadata:
-  version: v1
+  version: v2
   publisher: google
 ---
 
@@ -85,6 +85,9 @@ Identify and describe any outliers, unusual patterns, or significant trends
 observed in the data. Provide visualizations to support your findings.
 
 -   Understand the schema and field descriptions.
+-   Directly examine individual raw feature distributions (e.g., histogram/KDE
+    of Price for multimodality) rather than substituting compound features
+    (e.g., TotalPrice).
 -   Visualize the target feature distribution in a way that shows outliers.
 -   Identify and describe any outliers in the target feature.
 -   Visualize relationships between the target feature and other features.
