@@ -15,7 +15,7 @@ description: |
   SQL/BigQuery ML HANDOFF: If the user requires a SQL solution, use this skill to dictate the ANALYSIS STEPS (e.g., markdown analysis cells, visualization logic), but defer to `bigquery` for all SQL syntax.
 license: Apache-2.0
 metadata:
-  version: v1
+  version: v2
   publisher: google
 ---
 
@@ -39,8 +39,9 @@ Identify distinct groups based on their features.
 -   Before applying encoders, check if the dataset already contains pre-encoded
     features and prefer existing numerical representations.
 -   Prefer to keep data instead of dropping it when possible.
--   Transform ordinal data with an ordinal encoder.
--   Transform nominal data with a one hot encoder.
+-   Transform ordinal data (e.g., status or features with intrinsic ordering)
+    with an ordinal encoder or mapping. Do not one-hot encode ordinal features.
+-   Transform nominal data (unordered categories) with a one hot encoder.
 -   Standardize numerical features.
 -   Perform clustering with a range of values, and collect the silhouette score.
 -   Choose the optimal number of clusters based on the silhouette score.
