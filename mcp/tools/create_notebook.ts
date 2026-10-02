@@ -16,6 +16,7 @@
 
 import * as fs from 'fs/promises';
 import * as path from 'path';
+import * as os from 'os';
 
 export async function createNotebook(directory: string, filename: string) {
   try {
@@ -25,6 +26,11 @@ export async function createNotebook(directory: string, filename: string) {
       : `${filename}.${extension}`;
 
     const notebookPath = path.join(directory, fullFilename);
+    const resolvedPath = path.resolve(notebookPath);
+    const allowedBase = path.resolve(process.cwd());
+    if (!resolvedPath.startsWith(allowedBase + path.sep) && resolvedPath !== allowedBase) {
+      throw new Error('Invalid directory or filename: path traversal detected');
+    }
 
     // Check if file already exists
     try {
