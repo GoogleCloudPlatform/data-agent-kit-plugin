@@ -15,7 +15,7 @@ description: |
   SQL/BigQuery ML HANDOFF: If the user requires a SQL solution, use this skill to dictate the ANALYSIS STEPS (e.g., markdown analysis cells, visualization logic), but defer to `bigquery` for all SQL syntax.
 license: Apache-2.0
 metadata:
-  version: v1
+  version: v2
   publisher: google
 ---
 
@@ -131,6 +131,10 @@ Predict the continuous valued target feature.
     contain?
 -   Develop an understanding of the data and determine how to handle missing
     values. This should make sense in the business context.
+-   When modeling inventory duration or time-to-sale, do NOT filter out unsold
+    items (e.g. NULL sold_at) to avoid survival bias; incorporate unsold
+    inventory using an explicit binary indicator (unsold flag), sale
+    probability/fraction, or appropriate imputation/aggregation.
 -   Identify any potential sources of group leakage. Aggregate where appropriate
     to prevent this.
 -   Visualize target feature.
