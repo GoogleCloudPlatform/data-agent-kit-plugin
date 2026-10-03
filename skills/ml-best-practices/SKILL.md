@@ -15,7 +15,7 @@ description: |
   SQL/BigQuery ML HANDOFF: If the user requires a SQL solution, use this skill to dictate the ANALYSIS STEPS (e.g., markdown analysis cells, visualization logic), but defer to `bigquery` for all SQL syntax.
 license: Apache-2.0
 metadata:
-  version: v1
+  version: v2
   publisher: google
 ---
 
@@ -64,8 +64,9 @@ How might different modeling approaches impact the prediction accuracy?
     validation, and test sets.
 -   Are there seasonal trends?
 -   Test for stationarity.
--   Discuss possible modeling approaches. How might different modeling
-    approaches impact the prediction accuracy?
+-   Discuss possible modeling approaches: how might different modeling
+    approaches impact prediction accuracy (e.g., capturing high-frequency
+    volatility and spikes vs. general trend)?
 -   Train two time series forecasting models to predict the target feature. Use
     previous seasonality and stationarity information as model hyperparameters.
 -   Predict the target feature for the training and validation sets.
@@ -74,10 +75,15 @@ How might different modeling approaches impact the prediction accuracy?
     the training and validation sets.
 -   Evaluate the validation performance with error metrics.
 -   Select a model.
+-   In markdown analysis, explicitly discuss model limitations (specifically
+    whether the models capture high-frequency volatility/spikes vs. just the
+    general trend).
 -   Retrain the selected model on the test and validation sets.
 -   Predict the test values with the selected model.
 -   Visualize the average target feature and the predicted test values.
--   Conclusion: comprehensively answer the prompt in a final markdown cell.
+-   Conclusion: comprehensively answer the prompt in a final markdown cell,
+    summarizing findings, model comparisons, and limitations in capturing
+    volatility vs. trends.
 
 ## Exploratory Data Analysis / Anomaly Detection:
 
