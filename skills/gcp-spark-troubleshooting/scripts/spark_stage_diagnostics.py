@@ -15,18 +15,37 @@
 
 """Spark Stage Diagnostics rule evaluator.
 
-Evaluates caller-supplied expression rules over Dataproc Spark stage and
-quantile metrics. The evaluator ships no built-in thresholds; see
+Evaluates caller-supplied rules over Dataproc Spark stage and quantile metrics.
+The evaluator applies no built-in rules or thresholds; see
 `references/diagnostic_rules_catalog.md` for rule-authoring guidelines and
 worked examples.
+
+Telemetry is fetched the same way the Dataproc Data Worker Agent's
+`GetSparkStageDiagnostics` tool fetches it: `sparkApplications:search` to find
+the application, `summarizeExecutors` for the executor totals, then every page
+of `searchStages` with `summary_metrics_mask=task_quantile_metrics`.
+
+Rules are CEL expressions over `stages` (list of StageData) and
+`total_executor_summary` (ConsolidatedExecutorSummary), compiled, type-checked
+and evaluated with that tool's semantics (see `spark_cel.py`): a rule that
+yields a non-empty list of stages flags those stages, one that yields `true`
+is an application-level finding, and a rule that fails to compile or evaluate
+is skipped with a warning. Rules and their optional `detail` expressions are
+only ever interpreted as CEL; nothing a rule contains is executed as Python.
 """
 
 import argparse
 import json
 import os
-import subprocess
+import re
 import sys
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional, Tuple
+
+# pylint: disable=g-import-not-at-top
+# The sibling scripts are importable because Python puts the running script's
+# directory on sys.path (and the tests/BUILD add scripts/ explicitly).
+import spark_application_telemetry as telemetry
+import spark_cel as cel
 
 
 def _snake_to_camel(name: str) -> str:
@@ -40,13 +59,14 @@ def _get(data: Any, key: str, default: Any = 0) -> Any:
 
   The Dataproc REST API emits camelCase field names (`taskQuantileMetrics`),
   while the protos and `gcloud ... --format=json` emit snake_case
-  (`task_quantile_metrics`). Callers always pass the canonical snake_case proto
-  name and this helper transparently falls back to the camelCase spelling, so a
-  missing fallback can no longer silently disable a rule.
+  (`task_quantile_metrics`). Callers normally pass the canonical snake_case
+  proto name and this helper transparently falls back to the camelCase
+  spelling (and vice versa), so a missing fallback can no longer silently
+  disable a rule.
 
   Args:
     data: The mapping to read from. Non-mappings yield `default`.
-    key: The canonical snake_case field name.
+    key: The field name, preferably in canonical snake_case.
     default: Value returned when the field is absent under either spelling.
 
   Returns:
@@ -56,169 +76,75 @@ def _get(data: Any, key: str, default: Any = 0) -> Any:
     return default
   if key in data:
     return data[key]
-  return data.get(_snake_to_camel(key), default)
+  camel = _snake_to_camel(key)
+  if camel in data:
+    return data[camel]
+  return data.get(re.sub(r"(?<!^)(?=[A-Z])", "_", key).lower(), default)
 
 
-class _CelView:
-  """Read-only attribute view over a telemetry dict, for custom rules.
-
-  Rules are conventionally written with dotted field paths, e.g.
-  `s.stage_metrics.jvm_gc_time_millis > 0`. Plain dicts do not support
-  attribute access, so such an expression would raise `AttributeError`. This
-  wrapper accepts the dotted form, resolves either JSON spelling of each field
-  via `_get`, and returns nested mappings as further views so arbitrarily deep
-  paths work.
-
-  Absent fields resolve to `None` rather than raising, so `has(s.foo)` behaves
-  like the CEL macro and comparisons against a missing field fail the rule
-  instead of aborting the run.
-  """
-
-  __slots__ = ("_data",)
-
-  def __init__(self, data: Any):
-    object.__setattr__(self, "_data", data if isinstance(data, dict) else {})
-
-  def __getattr__(self, name: str) -> Any:
-    value = _get(object.__getattribute__(self, "_data"), name, None)
-    return _CelView(value) if isinstance(value, dict) else value
-
-  def __getitem__(self, key: str) -> Any:
-    return self.__getattr__(key)
-
-  def __contains__(self, key: str) -> bool:
-    return self.__getattr__(key) is not None
-
-  def __bool__(self) -> bool:
-    return bool(object.__getattribute__(self, "_data"))
-
-  def __eq__(self, other: Any) -> bool:
-    if isinstance(other, _CelView):
-      other = object.__getattribute__(other, "_data")
-    return object.__getattribute__(self, "_data") == other
-
-  def __hash__(self) -> int:
-    return id(self)
-
-  def __repr__(self) -> str:
-    return f"_CelView({object.__getattribute__(self, '_data')!r})"
+_SKIPPED_PREFIX = "rule '"
 
 
-def _cel_has(value: Any) -> bool:
-  """Mirrors the CEL `has()` macro: true when a field is present and non-empty.
-
-  Args:
-    value: The resolved field value. Absent fields arrive as `None`.
-
-  Returns:
-    False for an absent field or an empty message, True otherwise. Scalars are
-    always treated as present so that a legitimate `0` metric is never mistaken
-    for a missing one.
-  """
-  if value is None:
-    return False
-  if isinstance(value, (dict, _CelView)):
-    return bool(value)
-  return True
+def count_skipped_rules(warnings: List[str]) -> int:
+  """Counts the rules `evaluate_stage_rules` skipped, from its warnings."""
+  return sum(w.startswith(_SKIPPED_PREFIX) for w in warnings)
 
 
-def _ratio(numerator: Any, denominator: Any) -> float:
-  """Divides two metrics, yielding 0.0 instead of raising on a zero divisor.
-
-  Stage telemetry is full of legitimately-zero denominators (a stage that ran
-  no tasks, read no bytes, or spent no time in GC). Without this helper every
-  ratio rule would need its own guard clause, and a forgotten guard would abort
-  the rule rather than simply not matching.
-
-  Args:
-    numerator: Dividend. `None` is treated as 0.
-    denominator: Divisor. `None` or 0 yields 0.0.
-
-  Returns:
-    The quotient, or 0.0 when the divisor is absent or zero.
-  """
-  try:
-    bottom = float(denominator or 0)
-    if bottom == 0:
-      return 0.0
-    return float(numerator or 0) / bottom
-  except (TypeError, ValueError):
-    return 0.0
-
-
-def _mb(num_bytes: Any) -> float:
-  """Converts bytes to mebibytes for readable rule detail strings."""
-  try:
-    return round(float(num_bytes or 0) / (1024 * 1024), 2)
-  except (TypeError, ValueError):
-    return 0.0
-
-
-def _gb(num_bytes: Any) -> float:
-  """Converts bytes to gibibytes for readable rule detail strings."""
-  try:
-    return round(float(num_bytes or 0) / (1024 * 1024 * 1024), 2)
-  except (TypeError, ValueError):
-    return 0.0
-
-
-def _rule_context(stage: Any) -> Dict[str, Any]:
-  """Builds the namespace a rule expression is evaluated in.
-
-  Args:
-    stage: A single stage telemetry mapping.
-
-  Returns:
-    The variables and helper functions available to rule authors. Anything not
-    listed here is unavailable to an expression, because builtins are withheld
-    at evaluation time.
-  """
-  return {
-      "s": _CelView(stage),
-      "has": _cel_has,
-      "ratio": _ratio,
-      "mb": _mb,
-      "gb": _gb,
-      "double": float,
-      "int": int,
-      "str": str,
-      "size": len,
-      "abs": abs,
-      "max": max,
-      "min": min,
-      "round": round,
-  }
-
-
-def _warn_once(seen: Set[str], rule_id: str, message: str) -> None:
-  """Reports a broken rule once, to stderr.
+class _RuleWarnings:
+  """Reports broken rules and details, to stderr and to the report.
 
   A rule that cannot be evaluated must never abort the run, but it must not be
   silently dropped either: an empty report would otherwise be misread as "no
-  problems found".
-
-  Args:
-    seen: Rule IDs already reported; mutated in place.
-    rule_id: The offending rule.
-    message: Why it was skipped.
+  problems found". Each skipped rule, and each rule whose `detail` could not
+  be rendered, is reported exactly once.
   """
-  if rule_id in seen:
-    return
-  seen.add(rule_id)
-  print(
-      f"Warning: rule '{rule_id}' could not be evaluated and was skipped:"
-      f" {message}",
-      file=sys.stderr,
-  )
+
+  def __init__(self):
+    self.messages: List[str] = []
+
+  def _emit(self, text: str) -> None:
+    self.messages.append(text)
+    print(f"Warning: {text}", file=sys.stderr)
+
+  def warn(self, rule_id: str, message: str) -> None:
+    """Reports a rule that was skipped. Called at most once per rule."""
+    self._emit(
+        f"{_SKIPPED_PREFIX}{rule_id}' could not be evaluated and was"
+        f" skipped: {message}"
+    )
+
+  def warn_detail(self, rule_id: str, message: str) -> None:
+    """Reports a `detail` that could not be rendered; the rule still ran."""
+    self._emit(
+        f"detail of rule '{rule_id}' could not be rendered, so its findings"
+        f" use a generic text: {message}"
+    )
+
+
+def _stage_id(stage: Any) -> Any:
+  # Proto3 JSON omits a zero stage ID, so absence means stage 0.
+  return _get(stage, "stage_id", 0)
+
+
+def _describe_value(value: Any, limit: int = 200) -> str:
+  if isinstance(value, bool):
+    text = "true" if value else "false"
+  elif isinstance(value, cel.Message):
+    text = f"{value.type_name} message"
+  else:
+    text = repr(value)
+  return text if len(text) <= limit else text[: limit - 3] + "..."
 
 
 def evaluate_stage_rules(
     stages: List[Dict[str, Any]],
     rules: Optional[List[Dict[str, Any]]] = None,
+    total_executor_summary: Optional[Dict[str, Any]] = None,
+    warnings: Optional[List[str]] = None,
 ) -> List[Dict[str, Any]]:
-  """Evaluates caller-supplied expression rules against stage telemetry.
+  """Evaluates caller-supplied rules against stage telemetry.
 
-  This evaluator deliberately ships no built-in rules or thresholds. What
+  This evaluator deliberately applies no rules or thresholds of its own. What
   counts as "too much" GC, skew, or spill is workload-specific: a ratio that is
   healthy for a long-running ETL job is pathological for an interactive query.
   Baking in fixed numbers would produce confident-looking findings that are
@@ -226,142 +152,389 @@ def evaluate_stage_rules(
   `references/diagnostic_rules_catalog.md` for authoring guidelines and
   worked examples.
 
+  CEL rules follow the Data Worker Agent's result semantics:
+
+  * a non-empty list is a violation; its StageData elements are the violating
+    stages (int elements are also taken as stage IDs, so
+    `stages.filter(...).map(s, s.stage_id)` works too);
+  * `true` is an application-level violation with no stage IDs;
+  * anything else (`false`, an empty list, ...) is not a violation;
+  * a rule that fails to compile or evaluate is skipped with a warning.
+
   Args:
-    stages: Stage telemetry mappings, in either snake_case or camelCase.
+    stages: Stage telemetry mappings, in either snake_case or camelCase. int64
+      values serialized as strings are accepted.
     rules: Rule objects. Each requires `ruleId` and `expression`. Optional
       `description` and `remediation` are echoed into the report, and an
-      optional `detail` expression is evaluated per matching stage to render a
-      human-readable explanation with the actual measured values.
+      optional `detail` expression is evaluated per matching stage (bound to
+      `s`) to render a human-readable explanation with the measured values.
+    total_executor_summary: Optional ConsolidatedExecutorSummary, available to
+      rules as `total_executor_summary`.
+    warnings: If given, messages about skipped rules are appended to it.
 
   Returns:
-    One entry per rule that matched at least one stage.
+    One entry per violated rule. `scope` is "stage" when the rule identified
+    stages (listed in `violating_stages`) and "application" otherwise (with
+    the rendered `detail`).
   """
+  stages = [telemetry.normalize_int64(s) for s in stages or []]
+  executors = telemetry.normalize_int64(total_executor_summary or {})
   results = []
-  failed_rule_ids: Set[str] = set()
+  reporter = _RuleWarnings()
+  activation = {
+      "stages": [cel.Message("StageData", s) for s in stages],
+      "total_executor_summary": executors,
+  }
+  by_id: Dict[Any, Dict[str, Any]] = {}
+  for s in stages:
+    by_id.setdefault(_stage_id(s), s)
 
-  for rule in rules or []:
-    rule_id = rule.get("ruleId", "UNNAMED_RULE")
-    expression = rule.get("expression")
-    if not expression:
-      _warn_once(
-          failed_rule_ids, rule_id, "rule is missing an 'expression' field"
+  for index, rule in enumerate(rules or []):
+    if not isinstance(rule, dict):
+      reporter.warn(
+          f"#{index + 1}", f"a rule must be a JSON object, not {rule!r:.100}"
       )
       continue
+    rule_id = str(rule.get("ruleId") or f"UNNAMED_RULE_{index + 1}")
+    expression = rule.get("expression")
+    if not expression or not isinstance(expression, str):
+      reporter.warn(rule_id, "rule is missing an 'expression' string")
+      continue
+    try:
+      program = cel.compile_expression(expression)
+    except cel.CelError as e:
+      reporter.warn(rule_id, f"{type(e).__name__}: {e}")
+      continue
 
-    detail_expr = rule.get("detail")
-    violating_stages = []
+    entry = {
+        "ruleId": rule_id,
+        "description": rule.get("description", ""),
+        "remediation": rule.get(
+            "remediation", "Review stage execution metrics."
+        ),
+        "scope": "stage",
+        "violating_stages": [],
+    }
+    detail = _DetailRenderer(
+        rule_id,
+        rule.get("detail"),
+        reporter,
+        program.top_level_macro_variable() or "s",
+        activation,
+    )
+    try:
+      result = program.evaluate(activation)
+    except cel.CelError as e:
+      reporter.warn(rule_id, f"{type(e).__name__}: {e}")
+      continue
+    except Exception as e:  # pylint: disable=broad-except
+      reporter.warn(rule_id, f"internal evaluator error: {e!r}")
+      continue
 
-    for s in stages:
-      context_vars = _rule_context(s)
-      try:
-        # The expression comes from the operator's own rule input, not from
-        # untrusted data. Builtins are withheld to limit blast radius, but
-        # this is a convenience evaluator, not a security sandbox.
-        # pylint: disable=eval-used
-        matched = eval(expression, {"__builtins__": {}}, context_vars)
-      except Exception as e:  # pylint: disable=broad-except
-        # The rule is broken for every stage, not just this one, so stop
-        # re-evaluating it rather than emitting the same warning N times.
-        _warn_once(failed_rule_ids, rule_id, f"{type(e).__name__}: {e}")
-        break
+    if isinstance(result, bool) and result:
+      entry["scope"] = "application"
+      entry["detail"] = detail.render()
+      results.append(entry)
+    elif isinstance(result, list) and result:
+      for element in result:
+        if cel.is_message(element, "StageData"):
+          stage_id = element.get("stage_id")
+          stage: Any = element
+        elif isinstance(element, int) and not isinstance(element, bool):
+          stage_id = element
+          stage = by_id.get(stage_id)
+        else:
+          continue
+        entry["violating_stages"].append({
+            "stage_id": stage_id,
+            "detail": (
+                detail.render(stage)
+                if stage is not None
+                else _DetailRenderer.FALLBACK
+            ),
+        })
+      if not entry["violating_stages"]:
+        # Like the Data Worker Agent: a non-empty list without stages is
+        # still a violation, just not attributable to specific stages.
+        entry["scope"] = "application"
+        entry["detail"] = (
+            f"Rule returned {len(result)} value(s): {_describe_value(result)}"
+        )
+      results.append(entry)
+    elif not isinstance(result, (bool, list)):
+      reporter.warn(
+          rule_id,
+          f"a rule must yield a bool or a list, not {_describe_value(result)}",
+      )
 
-      if not matched:
-        continue
-
-      detail = "Rule expression matched."
-      if detail_expr:
-        try:
-          # pylint: disable=eval-used
-          detail = str(eval(detail_expr, {"__builtins__": {}}, context_vars))
-        except Exception as e:  # pylint: disable=broad-except
-          # A broken detail expression must not suppress the finding itself.
-          _warn_once(
-              failed_rule_ids,
-              f"{rule_id} (detail)",
-              f"{type(e).__name__}: {e}",
-          )
-          detail_expr = None
-
-      violating_stages.append({
-          "stage_id": _get(s, "stage_id", -1),
-          "detail": detail,
-      })
-
-    if violating_stages:
-      results.append({
-          "ruleId": rule_id,
-          "description": rule.get("description", ""),
-          "remediation": rule.get(
-              "remediation", "Review stage execution metrics."
-          ),
-          "violating_stages": violating_stages,
-      })
-
+  if warnings is not None:
+    warnings.extend(reporter.messages)
   return results
 
 
-def fetch_batch_telemetry_via_gcloud(
-    batch_id: str, region: str
-) -> List[Dict[str, Any]]:
-  """Fetches Spark stages telemetry for a Dataproc batch using gcloud.
+class _DetailRenderer:
+  """Evaluates a rule's optional CEL `detail` expression for a finding.
+
+  The expression sees the same variables as rules, plus the violating stage
+  bound to `s` (and to the rule's `stages.filter(x, ...)` variable, if any).
+  A broken detail expression must not suppress the finding itself: it is
+  reported once and the finding falls back to a generic text.
+  """
+
+  FALLBACK = "Rule expression matched."
+
+  def __init__(
+      self,
+      rule_id: str,
+      expression: Any,
+      reporter: _RuleWarnings,
+      stage_var: str,
+      activation: Dict[str, Any],
+  ):
+    self._rule_id = rule_id
+    self._reporter = reporter
+    self._activation = activation
+    self._stage_names = frozenset({"s", stage_var})
+    self._program: Optional[cel.Program] = None
+    if not isinstance(expression, str):
+      if expression is not None:
+        self._report(TypeError("'detail' must be a CEL expression string"))
+      return
+    if not expression:
+      return
+    declarations = dict(cel.STAGE_RULE_DECLARATIONS)
+    for name in self._stage_names:
+      declarations[name] = "StageData"
+    try:
+      self._program = cel.compile_expression(expression, declarations)
+    except cel.CelError as e:
+      self._report(e)
+
+  def _report(self, error: Exception) -> None:
+    self._reporter.warn_detail(
+        self._rule_id, f"{type(error).__name__}: {error}"
+    )
+
+  def render(self, stage: Any = None) -> str:
+    """Renders the detail text.
+
+    Args:
+      stage: The violating stage, or None for an application-level finding.
+
+    Returns:
+      The rendered text, or a generic fallback.
+    """
+    if self._program is None:
+      return self.FALLBACK
+    activation = dict(self._activation)
+    if stage is not None:
+      message = (
+          stage
+          if cel.is_message(stage, "StageData")
+          else cel.Message("StageData", stage)
+      )
+      for name in self._stage_names:
+        activation[name] = message
+    elif self._stage_names & self._program.free_variables:
+      # An application-level finding has no stage to describe.
+      return self.FALLBACK
+    try:
+      value = self._program.evaluate(activation)
+    except Exception as e:  # pylint: disable=broad-except
+      self._report(e)
+      self._program = None
+      return self.FALLBACK
+    return value if isinstance(value, str) else _describe_value(value)
+
+
+_NO_APPLICATION = "No Spark applications found for workload {}"
+_FETCH_FAILED = "Failed to retrieve Spark diagnostics via public APIs: {}"
+
+
+def fetch_workload_telemetry(
+    client: "telemetry.SparkApplicationsClient",
+    application_id: Optional[str] = None,
+) -> Tuple[str, List[Dict[str, Any]], Dict[str, Any]]:
+  """Fetches stage telemetry exactly as the Data Worker Agent does.
 
   Args:
-    batch_id: The Dataproc Serverless batch ID.
-    region: The GCP region hosting the batch.
+    client: A client bound to one batch or session.
+    application_id: Optional explicit Spark application ID.
 
   Returns:
-    The list of stage telemetry dicts. May legitimately be empty for a batch
-    that has not scheduled any stage yet.
+    (application ID, every StageData with task quantile metrics, the
+    application's totalExecutorSummary).
 
   Raises:
-    RuntimeError: If the batch could not be described or its payload could not
-      be parsed. This is deliberately distinct from an empty result so that a
-      failed fetch is never reported as a clean bill of health.
+    telemetry.DataprocApiError: If any call fails or the workload has no Spark
+      application. This is deliberately distinct from an empty stage list so
+      that a failed fetch is never reported as a clean bill of health. The
+      message starts with the Data Worker Agent's wording for the same
+      failure.
   """
-  cmd = [
-      "gcloud",
-      "dataproc",
-      "batches",
-      "describe",
-      batch_id,
-      f"--region={region}",
-      "--format=json",
-  ]
   try:
-    proc = subprocess.run(
-        cmd, capture_output=True, text=True, check=False, timeout=120
-    )
-  except (OSError, subprocess.SubprocessError) as e:
-    raise RuntimeError(
-        f"Could not run 'gcloud dataproc batches describe': {e}. Is the "
-        "Google Cloud CLI installed and on PATH?"
+    app_id, _, _ = client.resolve_application(application_id)
+  except telemetry.DataprocApiError as e:
+    if e.status == 404 and str(e).startswith("No Spark application found"):
+      raise telemetry.DataprocApiError(
+          _NO_APPLICATION.format(client.workload_id)
+          + ". The workload may still be pending, or it failed before the"
+          " Spark driver started (check the batch stateMessage and driver"
+          " logs instead).",
+          e.status,
+          e.reason,
+      ) from e
+    raise telemetry.DataprocApiError(
+        _FETCH_FAILED.format(e), e.status, e.reason
     ) from e
-
-  if proc.returncode != 0:
-    detail = (proc.stderr or "").strip() or f"exit code {proc.returncode}"
-    raise RuntimeError(
-        f"Failed to describe batch '{batch_id}' in region '{region}': {detail}"
-    )
-
   try:
-    batch = json.loads(proc.stdout)
-  except (ValueError, json.JSONDecodeError) as e:
-    raise RuntimeError(
-        f"Could not parse the JSON describing batch '{batch_id}': {e}"
-    ) from e
-
-  applications = batch.get("sparkApplications") or batch.get(
-      "spark_applications"
-  )
-  if not applications:
-    raise RuntimeError(
-        f"Batch '{batch_id}' exposes no Spark application telemetry. The batch "
-        "may still be pending, or the Persistent History Server may not be "
-        "configured for it."
+    executors = client.call("summarizeExecutors", app_id)
+    stages = client.paginate(
+        "searchStages",
+        "sparkApplicationStages",
+        app_id,
+        {
+            "pageSize": telemetry.MAX_PAGE_SIZE,
+            "summaryMetricsMask": "task_quantile_metrics",
+        },
     )
+  except telemetry.DataprocApiError as e:
+    raise telemetry.DataprocApiError(
+        _FETCH_FAILED.format(e), e.status, e.reason
+    ) from e
+  return app_id, stages, executors.get("totalExecutorSummary") or {}
 
-  stages = _get(applications[0], "stages", None)
-  return stages if isinstance(stages, list) else []
+
+def _quantiles(stage: Dict[str, Any], *path: str) -> Optional[Dict[str, Any]]:
+  q = telemetry.field(stage, "task_quantile_metrics", *path, default=None)
+  if not isinstance(q, dict):
+    return None
+  return {
+      "minimum": telemetry.field(q, "minimum"),
+      "percentile50": telemetry.field(q, "percentile_50"),
+      "maximum": telemetry.field(q, "maximum"),
+      "sum": telemetry.field(q, "sum"),
+  }
+
+
+def violating_stage_info(stage: Dict[str, Any]) -> Dict[str, Any]:
+  """Maps a StageData to the Data Worker Agent's ViolatingStageInfo record."""
+  f = telemetry.field
+  metrics = f(stage, "stage_metrics", default={})
+  task_quantiles = None
+  if isinstance(f(stage, "task_quantile_metrics", default=None), dict):
+    task_quantiles = {
+        "durationMillis": _quantiles(stage, "duration_millis"),
+        "inputBytes": _quantiles(stage, "input_metrics", "bytes_read"),
+        "outputBytes": _quantiles(stage, "output_metrics", "bytes_written"),
+        "shuffleWriteBytes": _quantiles(
+            stage, "shuffle_write_metrics", "write_bytes"
+        ),
+    }
+  return {
+      "stageId": _stage_id(stage),
+      "numTasks": f(stage, "num_tasks"),
+      "numKilledTasks": f(stage, "num_killed_tasks"),
+      "stageMetrics": {
+          "executorRunTimeMillis": f(metrics, "executor_run_time_millis"),
+          "jvmGcTimeMillis": f(metrics, "jvm_gc_time_millis"),
+          "memoryBytesSpilled": f(metrics, "memory_bytes_spilled"),
+          "diskBytesSpilled": f(metrics, "disk_bytes_spilled"),
+          "shuffleWriteTimeNanos": f(
+              metrics, "stage_shuffle_write_metrics", "write_time_nanos"
+          ),
+          "inputBytesRead": f(metrics, "stage_input_metrics", "bytes_read"),
+          "shuffleReadBytesRead": f(
+              metrics, "stage_shuffle_read_metrics", "bytes_read"
+          ),
+          "outputBytesWritten": f(
+              metrics, "stage_output_metrics", "bytes_written"
+          ),
+          "shuffleWriteBytesWritten": f(
+              metrics, "stage_shuffle_write_metrics", "bytes_written"
+          ),
+      },
+      "taskQuantiles": task_quantiles,
+  }
+
+
+def build_diagnostics_output(
+    stages: List[Dict[str, Any]],
+    violations: List[Dict[str, Any]],
+    total_executor_summary: Optional[Dict[str, Any]] = None,
+    error_message: Optional[str] = None,
+    warnings: Optional[List[str]] = None,
+) -> Dict[str, Any]:
+  """Builds the Data Worker Agent's `GetSparkStageDiagnostics.Output` shape.
+
+  Every field the agent emits is present under the same name. Additionally,
+  each violation carries `remediation`, per-stage `details` and (for
+  application-level findings) `detail`, and `warnings` lists rules that were
+  skipped and other caveats the agent only logs.
+
+  Args:
+    stages: The evaluated stages.
+    violations: The result of `evaluate_stage_rules`.
+    total_executor_summary: The application's totalExecutorSummary.
+    error_message: Set to produce an ERROR result.
+    warnings: Caveats to surface alongside the result.
+
+  Returns:
+    A JSON-serializable dict with status, errorMessage, violations,
+    stageMetrics, summary and warnings.
+  """
+  if error_message is not None:
+    return {
+        "status": "ERROR",
+        "errorMessage": error_message,
+        "violations": [],
+        "stageMetrics": [],
+        "summary": None,
+        "warnings": list(warnings or []),
+    }
+  stages = [telemetry.normalize_int64(s) for s in stages]
+  executors = telemetry.normalize_int64(total_executor_summary or {})
+  by_id: Dict[Any, Dict[str, Any]] = {}
+  for s in stages:
+    by_id.setdefault(_stage_id(s), s)
+  stage_metrics: Dict[Any, Dict[str, Any]] = {}
+  violation_details = []
+  for v in violations:
+    ids = [vs["stage_id"] for vs in v["violating_stages"]]
+    for stage_id in ids:
+      if stage_id not in stage_metrics and stage_id in by_id:
+        stage_metrics[stage_id] = violating_stage_info(by_id[stage_id])
+    detail = {
+        "ruleId": v["ruleId"],
+        "description": v["description"],
+        "violatingStageIds": ids,
+        "remediation": v["remediation"],
+        "details": [
+            {"stageId": vs["stage_id"], "detail": vs["detail"]}
+            for vs in v["violating_stages"]
+        ],
+    }
+    if "detail" in v:
+      detail["detail"] = v["detail"]
+    violation_details.append(detail)
+  f = telemetry.field
+  return {
+      "status": "FAIL" if violations else "PASS",
+      "errorMessage": None,
+      "violations": violation_details,
+      "stageMetrics": list(stage_metrics.values()),
+      "summary": {
+          "totalDurationMs": f(executors, "total_duration_millis"),
+          "totalInputBytes": f(executors, "total_input_bytes"),
+          "activeTasks": f(executors, "active_tasks"),
+          "completedTasks": f(executors, "completed_tasks"),
+          "failedTasks": f(executors, "failed_tasks"),
+          "killedTasks": sum(
+              int(f(s, "num_killed_tasks") or 0) for s in stages
+          ),
+      },
+      "warnings": list(warnings or []),
+  }
 
 
 def _load_rules(raw: str, source_flag: str) -> List[Dict[str, Any]]:
@@ -396,17 +569,144 @@ def _load_rules(raw: str, source_flag: str) -> List[Dict[str, Any]]:
   return parsed
 
 
-def main():
+def _load_telemetry_file(
+    path: str,
+) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+  """Reads stages (and optionally the executor summary) from a JSON file.
+
+  Accepts a list of stages, a raw `searchStages` response, or an object with
+  `stages` and optionally `totalExecutorSummary` (either spelling).
+
+  Args:
+    path: The file to read.
+
+  Returns:
+    (stages, totalExecutorSummary).
+
+  Raises:
+    ValueError: If the file is missing or not valid JSON.
+  """
+  if not os.path.exists(path):
+    raise ValueError(f"telemetry file not found: {path}")
+  try:
+    with open(path, "r") as f:
+      data = json.load(f)
+  except (OSError, ValueError, json.JSONDecodeError) as e:
+    raise ValueError(f"could not parse {path}: {e}") from e
+  if isinstance(data, list):
+    return data, {}
+  if isinstance(data, dict):
+    executors = _get(data, "total_executor_summary", None) or {}
+    for key in ("stages", "spark_application_stages"):
+      stages = _get(data, key, None)
+      if isinstance(stages, list):
+        return stages, executors
+    return [data], executors
+  return [], {}
+
+
+def _print_markdown(
+    output: Dict[str, Any],
+    violations: List[Dict[str, Any]],
+    rules_count: int,
+    stages_count: int,
+    app_id: Optional[str],
+) -> None:
+  """Renders the report for a human or an agent reading markdown."""
+  print("# Spark Stage Diagnostics Report\n")
+  if app_id:
+    print(f"- **Spark Application**: `{app_id}`")
+  print(f"- **Status**: {output['status']}")
+  skipped = count_skipped_rules(output.get("warnings") or [])
+  print(
+      f"- **Rules Evaluated**: {rules_count - skipped}"
+      + (f" ({skipped} skipped, see Warnings)" if skipped else "")
+  )
+  print(f"- **Total Stages Analyzed**: {stages_count}")
+  print(f"- **Total Diagnostic Violations Detected**: {len(violations)}")
+  summary = output.get("summary")
+  if summary:
+    print(
+        f"- **Tasks**: {summary['completedTasks']} completed,"
+        f" {summary['failedTasks']} failed, {summary['killedTasks']} killed,"
+        f" {summary['activeTasks']} active"
+    )
+    print(
+        "- **Total Task Time**:"
+        f" {telemetry.human_millis(summary['totalDurationMs'])}; **Input**:"
+        f" {telemetry.human_bytes(summary['totalInputBytes'])}"
+    )
+  print()
+
+  if output.get("warnings"):
+    print("### Warnings\n")
+    for warning in output["warnings"]:
+      print(f"- {warning}")
+    print()
+
+  if not violations:
+    if not stages_count:
+      print(
+          "### Result: No stage telemetry was available. This is NOT a clean"
+          " bill of health -- verify the batch ID and region, and confirm the"
+          " batch has started executing stages."
+      )
+    else:
+      print(
+          "### Result: None of the supplied rules matched. Note that this only"
+          " means the rules you provided did not fire; it is not a guarantee"
+          " that the job is healthy."
+      )
+    return
+
+  print("### Diagnostic Rule Violations Summary\n")
+  for v in violations:
+    print(f"#### [{v['ruleId']}] {v['description']}")
+    print(f"- **Remediation / Recommendation**: {v['remediation']}")
+    if v["scope"] == "application":
+      print(f"- **Application-level finding**: {v.get('detail', '')}")
+    else:
+      print("- **Violating Stages**:")
+      for vs in v["violating_stages"]:
+        print(f"  - **Stage {vs['stage_id']}**: {vs['detail']}")
+    print()
+
+  if output["stageMetrics"]:
+    h_ms, h_b = telemetry.human_millis, telemetry.human_bytes
+    print("### Violating Stage Metrics\n")
+    print(
+        "| Stage | Tasks (killed) | Run time | GC | Input | Shuffle R/W |"
+        " Output | Spill mem/disk | Task duration p50 / max |"
+    )
+    print("|---|---|---|---|---|---|---|---|---|")
+    for info in output["stageMetrics"]:
+      m = info["stageMetrics"]
+      q = (info["taskQuantiles"] or {}).get("durationMillis") or {}
+      print(
+          f"| {info['stageId']} | {info['numTasks']}"
+          f" ({info['numKilledTasks']}) |"
+          f" {h_ms(m['executorRunTimeMillis'])} |"
+          f" {h_ms(m['jvmGcTimeMillis'])} | {h_b(m['inputBytesRead'])} |"
+          f" {h_b(m['shuffleReadBytesRead'])} /"
+          f" {h_b(m['shuffleWriteBytesWritten'])} |"
+          f" {h_b(m['outputBytesWritten'])} |"
+          f" {h_b(m['memoryBytesSpilled'])} / {h_b(m['diskBytesSpilled'])} |"
+          f" {h_ms(q.get('percentile50')) if q else 'n/a'} /"
+          f" {h_ms(q.get('maximum')) if q else 'n/a'} |"
+      )
+
+
+def main(argv: Optional[List[str]] = None) -> int:
   parser = argparse.ArgumentParser(
       description=(
-          "Evaluates user-supplied diagnostic rules against Spark stage"
-          " telemetry. Ships no built-in thresholds: supply rules with"
+          "Evaluates CEL diagnostic rules against Spark stage telemetry."
+          " Applies no rules or thresholds of its own: supply them with"
           " --rules_file or --custom_rule. See"
-          " references/diagnostic_rules_catalog.md for authoring guidelines."
+          " references/diagnostic_rules_catalog.md for the data model,"
+          " authoring guidelines and examples."
       )
   )
-  parser.add_argument("--batch_id", help="Dataproc Serverless batch ID")
-  parser.add_argument("--region", default="us-central1", help="GCP Region")
+  telemetry.add_workload_arguments(parser)
   parser.add_argument(
       "--telemetry_file",
       help="Local JSON file containing exported stage telemetry",
@@ -419,8 +719,14 @@ def main():
       "--custom_rule",
       help="JSON string (or file path) containing a list of diagnostic rules",
   )
+  parser.add_argument(
+      "--format",
+      choices=["markdown", "json"],
+      default="markdown",
+      help="markdown report, or the agent's JSON Output shape",
+  )
 
-  args = parser.parse_args()
+  args = parser.parse_args(argv)
 
   # Resolve rules before fetching telemetry: with no rules there is nothing to
   # evaluate, and failing first avoids a pointless API round trip.
@@ -435,87 +741,69 @@ def main():
       rules.extend(_load_rules(value, flag))
     except ValueError as e:
       print(f"Error: {e}", file=sys.stderr)
-      sys.exit(1)
+      return 1
 
   if not rules:
     # Returning "no violations" here would be actively misleading: it reads as
     # a clean bill of health when in fact nothing was ever checked.
     print(
-        "Error: no diagnostic rules supplied. This tool ships no built-in"
-        " thresholds, because what counts as unhealthy depends on the"
-        " workload.\n"
+        "Error: no diagnostic rules supplied. This tool applies no rules or"
+        " thresholds of its own, because what counts as unhealthy depends on"
+        " the workload.\n"
         "Pass rules with --rules_file <file.json> or --custom_rule"
         " '[{...}]'.\n"
         "See references/diagnostic_rules_catalog.md for authoring guidelines"
         " and worked examples.",
         file=sys.stderr,
     )
-    sys.exit(1)
+    return 1
 
-  stages = []
-  if args.telemetry_file:
-    if not os.path.exists(args.telemetry_file):
-      print(
-          f"Error: telemetry file not found: {args.telemetry_file}",
-          file=sys.stderr,
+  app_id: Optional[str] = None
+  stages: List[Dict[str, Any]] = []
+  executors: Dict[str, Any] = {}
+  try:
+    if args.telemetry_file:
+      stages, executors = _load_telemetry_file(args.telemetry_file)
+    elif args.batch_id or args.session_id:
+      app_id, stages, executors = fetch_workload_telemetry(
+          telemetry.build_client(args), args.application_id
       )
-      sys.exit(1)
-    try:
-      with open(args.telemetry_file, "r") as f:
-        data = json.load(f)
-    except (OSError, ValueError, json.JSONDecodeError) as e:
-      print(
-          f"Error: could not parse {args.telemetry_file}: {e}", file=sys.stderr
+    else:
+      raise ValueError(
+          "Specify one of --batch_id, --session_id or --telemetry_file"
       )
-      sys.exit(1)
-    if isinstance(data, list):
-      stages = data
-    elif isinstance(data, dict):
-      stages = _get(data, "stages", None) or [data]
-  elif args.batch_id:
-    try:
-      stages = fetch_batch_telemetry_via_gcloud(args.batch_id, args.region)
-    except RuntimeError as e:
+  except (telemetry.DataprocApiError, ValueError) as e:
+    if args.format == "json":
+      print(
+          json.dumps(
+              build_diagnostics_output([], [], error_message=str(e)), indent=2
+          )
+      )
+    else:
       print(f"Error: {e}", file=sys.stderr)
-      sys.exit(1)
-  else:
-    print(
-        "Error: Specify either --batch_id or --telemetry_file", file=sys.stderr
-    )
-    sys.exit(1)
+    return 1
 
-  violations = evaluate_stage_rules(stages, rules)
-
-  print("# Spark Stage Diagnostics Report\n")
-  print(f"- **Rules Evaluated**: {len(rules)}")
-  print(f"- **Total Stages Analyzed**: {len(stages)}")
-  print(f"- **Total Diagnostic Violations Detected**: {len(violations)}\n")
-
+  warnings: List[str] = []
   if not stages:
-    print(
-        "### Result: No stage telemetry was available, so no rules could be"
-        " evaluated. This is NOT a clean bill of health -- verify the batch ID"
-        " and region, and confirm the batch has started executing stages."
+    # The Data Worker Agent reports PASS here too, but a Spark application
+    # with no stages usually failed before its first action, so the evidence
+    # is in the driver log, not in stage metrics. Say so explicitly.
+    warnings.append(
+        "No stage telemetry was available, so stage rules had nothing to"
+        " match; PASS does not mean healthy. The application probably failed"
+        " before running a Spark action -- read the driver log instead."
     )
-    return
+  violations = evaluate_stage_rules(stages, rules, executors, warnings)
+  output = build_diagnostics_output(
+      stages, violations, executors, warnings=warnings
+  )
 
-  if not violations:
-    print(
-        "### Result: None of the supplied rules matched. Note that this only"
-        " means the rules you provided did not fire; it is not a guarantee"
-        " that the job is healthy."
-    )
-    return
-
-  print("### Diagnostic Rule Violations Summary\n")
-  for v in violations:
-    print(f"#### [{v['ruleId']}] {v['description']}")
-    print(f"- **Remediation / Recommendation**: {v['remediation']}")
-    print("- **Violating Stages**:")
-    for vs in v["violating_stages"]:
-      print(f"  - **Stage {vs['stage_id']}**: {vs['detail']}")
-    print()
+  if args.format == "json":
+    print(json.dumps({"applicationId": app_id, **output}, indent=2))
+  else:
+    _print_markdown(output, violations, len(rules), len(stages), app_id)
+  return 0
 
 
 if __name__ == "__main__":
-  main()
+  sys.exit(main())
