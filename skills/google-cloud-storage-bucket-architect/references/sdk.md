@@ -19,7 +19,7 @@ Phase 2) into the corresponding SDK configuration in C++, Java, Python, and Go.
 *   [Cloud Storage Java Client Library](https://cloud.google.com/java/docs/reference/google-cloud-storage/latest/overview)
 *   [Cloud Storage Python Client Library](https://cloud.google.com/python/docs/reference/storage/latest)
 
-### Cloud Storage Control (Control Plane - HNS, Folders, Rapid Cache)
+### Cloud Storage Control (Control Plane - Hierarchical Namespace, Folders, Rapid Cache)
 
 *   [Cloud Storage Control C++ Client Library](https://cloud.google.com/cpp/docs/reference/storagecontrol/latest)
 *   [Cloud Storage Control Go Package Reference](https://pkg.go.dev/cloud.google.com/go/storage/control/apiv2)
