@@ -13,22 +13,20 @@
 
 ### Spark Session Configuration
 
-On Managed Spark on Google Cloud, BigQuery connector jars are pre-installed.
-When initializing local session, set the BigQuery package coordinates and
-dependencies:
+On Managed Spark on Google Cloud (Dataproc Serverless and Dataproc Clusters),
+BigQuery connector JARs (`spark-bigquery-with-dependencies`) are pre-installed
+in the runtime environment. Do **NOT** pass `com.google.cloud.spark:spark-*-bigquery`
+via `spark.jars.packages` when running on Dataproc.
+
+-   **Interactive Notebooks (`.ipynb`) & Spark Connect**: Initialize with
+    `ManagedSparkSession` (see `SKILL.md`).
+-   **Dataproc Batch & Cluster Jobs (`.py`)**: Initialize with standard
+    `SparkSession.builder`:
 
 ```python
 from pyspark.sql import SparkSession
 
-# For Spark 4.0 environments
-spark = (
-    SparkSession.builder.appName("<APP_NAME>")
-    .config(
-        "spark.jars.packages",
-        "com.google.cloud.spark:spark-4.0-bigquery:0.45.0,javax.inject:javax.inject:1",
-    )
-    .getOrCreate()
-)
+spark = SparkSession.builder.appName("<APP_NAME>").getOrCreate()
 ```
 
 ### Reading from BigQuery
@@ -241,6 +239,13 @@ cluster and batch jobs, or environments without a pre-configured profile). You
 **MUST NOT** use this in notebook code - ask user to configure and provide the
 session template instead. Multiple Iceberg catalogs can be configured in the
 same spark session.
+
+> [!IMPORTANT]
+> - **Runtime JARs**:
+>   - **Dataproc Serverless**: Iceberg and `iceberg-gcp` (`GCSFileIO`) JARs are pre-installed on `/usr/lib/spark/jars/` by default. Do **NOT** pass `spark.jars.packages=org.apache.iceberg:...` when submitting serverless batches.
+>   - **Dataproc on GCE Clusters**: Enable `--optional-components=ICEBERG` at cluster creation (which adds `/usr/lib/iceberg/lib/*` to `SPARK_DIST_CLASSPATH`), or pass `/usr/lib/iceberg/lib/*` via `--jars` if submitting to a cluster without the optional component.
+> - **Warehouse URI & Catalog Name**: `spark.sql.catalog.<GCS_CATALOG_NAME>.warehouse` **MUST** be the root GCS bucket URI (`gs://<GCS_CATALOG_NAME>`) without any subfolder path, and `<GCS_CATALOG_NAME>` must match the GCS bucket name. Passing a subfolder (e.g. `gs://<BUCKET>/warehouse`) causes `BadRequestException: Bucket name is invalid`.
+> - **Catalog Provisioning & IAM**: Before creating namespaces or writing tables, ensure the BigLake Iceberg catalog exists (`gcloud alpha biglake iceberg catalogs create <GCS_CATALOG_NAME> --catalog-type=gcs-bucket --project=<CATALOG_PROJECT_ID>`) and the execution service account has `roles/biglake.admin` and `roles/storage.objectUser` on the catalog bucket.
 
 Example with GCS storage:
 
