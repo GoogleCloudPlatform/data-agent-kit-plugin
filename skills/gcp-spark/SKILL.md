@@ -16,7 +16,7 @@ description: |
   - Troubleshooting failed Spark workloads or analyzing logs (use @skill:gcp-spark-troubleshooting).
 license: Apache-2.0
 metadata:
-  version: v20
+  version: v22
   publisher: google
 ---
 
@@ -114,16 +114,20 @@ metadata:
 
         > [!CAUTION] **NEVER** create a local Spark session. The following are
         > **BANNED**: - `SparkSession.builder.master("local")` -
-        > `pyspark.sql.SparkSession.builder.getOrCreate()` when used without
-        > `ManagedSparkSession` - Any `try/except` fallbacks that revert to a
-        > local `SparkSession`.
+        > `pyspark.sql.SparkSession.builder.getOrCreate()` in notebooks or local
+        > Spark Connect scripts when used without `ManagedSparkSession` - Any
+        > `try/except` fallbacks that revert to a local `SparkSession`.
         >
-        > You **MUST ALWAYS** use `ManagedSparkSession` from
-        > `google-cloud-spark-connect` to connect to **Managed Spark
-        > Serverless**. No exceptions.
+        > - **Interactive Notebooks (`.ipynb`) & Spark Connect scripts**: You
+        >   **MUST ALWAYS** use `ManagedSparkSession` from
+        >   `google-cloud-spark-connect` to connect to **Managed Spark
+        >   Serverless**. No exceptions.
+        > - **Dataproc Batch & Cluster jobs (`.py` submitted via `gcloud dataproc batches submit pyspark` or `gcloud dataproc jobs submit pyspark`)**:
+        >   Use standard `SparkSession.builder.appName("<APP_NAME>").getOrCreate()`
+        >   (never `.master("local")`).
 
         Refer to `references/gcloud_dataproc.md` for detailed configuration.
-        Minimal initialization:
+        Minimal initialization for notebooks / Spark Connect:
 
         ```python
         from google.cloud.managed_spark_connect import ManagedSparkSession
@@ -219,10 +223,12 @@ Before submitting a job, verify:
 The Managed Spark (Dataproc) service account needs:
 
 *   `roles/dataproc.worker`: Job execution
-*   `roles/biglake.admin`: Iceberg table management
-*   `roles/bigquery.jobUser`: Query materialization
-*   `roles/storage.objectUser`: Read/write GCS
-*   `roles/spanner.databaseUser`: Spanner writes
+*   `roles/biglake.admin`: BigLake Iceberg table management
+*   `roles/bigquery.jobUser`: BigQuery query materialization and load jobs
+*   `roles/bigquery.dataEditor`: BigQuery table reads and writes (direct and indirect)
+*   `roles/bigquery.readSessionUser`: BigQuery Storage Read API session creation
+*   `roles/storage.objectUser`: Read/write GCS (data, Iceberg warehouse, and `--deps-bucket` / `temporaryGcsBucket`)
+*   `roles/spanner.databaseUser`: Spanner reads and writes
 
 --------------------------------------------------------------------------------
 
