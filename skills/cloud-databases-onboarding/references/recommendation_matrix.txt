@@ -1,0 +1,815 @@
+# Recommendation Matrix for Database Migrations to Google Cloud
+
+# ===================================================================================================
+# TABLE OF CONTENTS (LINE HINTS FOR AGENT JUST-IN-TIME READING)
+# To save context window tokens when reading this file via view_file, use StartLine/EndLine with these line hints:
+#
+# | Source Database                              | Line Range  | Primary GCP Destinations |
+# | :---                                         | :---        | :---                     |
+# | MySQL                                        | L23 - L96   | Cloud SQL for MySQL Enterprise / Plus, Spanner |
+# | PostgreSQL                                   | L98 - L214  | Cloud SQL for PostgreSQL, AlloyDB, Spanner |
+# | Microsoft SQL Server                         | L216 - L283 | Cloud SQL for SQL Server, AlloyDB for PostgreSQL, Spanner |
+# | Oracle                                       | L285 - L441 | Oracle Database@Google Cloud, Oracle Self-Managed, AlloyDB for PostgreSQL, Spanner |
+# | HBase                                        | L443 - L479 | Bigtable |
+# | Amazon DynamoDB                              | L481 - L535 | Bigtable, Spanner |
+# | Apache Cassandra                             | L537 - L594 | Bigtable, Spanner |
+# | Redis / Valkey                               | L596 - L645 | Memorystore for Valkey |
+# | Memcached                                    | L647 - L677 | Memorystore for Valkey |
+# | Aerospike                                    | L679 - L729 | Bigtable, Memorystore for Valkey |
+# | MongoDB / Amazon DocumentDB / Azure CosmosDB   | L731 - L775 | Firestore, Spanner |
+# | Neo4j / Amazon Neptune / Aerospike Graph       | L777 - L814 | Spanner Graph |
+# ===================================================================================================
+
+# MySQL
+source_recommendations {
+  source: MYSQL
+  discovery_questions: [
+    "What MySQL version?",
+    "What is the size of the database?",
+    "What are the availability requirements?",
+    "Is it a sharded MySQL deployment?",
+    "Are you willing to refactor the application?",
+    "What is the planned growth rate in the next 6-12 months?",
+    "Does your application require temporary scaling up to handle workload surges?"
+  ]
+  recommendations {
+    selection_criteria: [
+      "100% open source compatible",
+      "Standard production performance and availability (99.95% SLA)",
+      "Also includes versions predating MySQL 8"
+    ]
+    primary_destination: CLOUD_SQL_FOR_MYSQL_ENTERPRISE
+    migration_complexity: [
+      "Low complexity. Easy with Database Migration Service"
+    ]
+    best_when: "Existing MySQL customers are looking to stay on MySQL. Cloud SQL for MySQL is a great choice for straightforward migrations, offering an easy and accessible path to a fully managed, secure, and highly available cloud database."
+    benefits: [
+      "Fully managed",
+      "Secure",
+      "H/A & DR",
+      "99.95% SLA",
+      "Broad MySQL version support",
+      "Lower entry point"
+    ]
+  }
+  recommendations {
+    selection_criteria: [
+      "100% open source compatible",
+      "High performance (up to 3x faster reads, 2x faster writes) and high availability (99.99% SLA, near-zero maintenance downtime)",
+      "Continuous availability is needed",
+      "MySQL 8+ only"
+    ]
+    primary_destination: CLOUD_SQL_FOR_MYSQL_ENTERPRISE_PLUS
+    migration_complexity: [
+      "Low complexity. Easy with Database Migration Service"
+    ]
+    best_when: "Cloud SQL Enterprise Plus is the premier choice for mission-critical MySQL workloads, delivering dramatic performance gains with up to 3x faster reads and 2x improved write latency, while ensuring maximum availability through near-zero maintenance downtime and a 99.99% SLA."
+    benefits: [
+      "All the benefits of Cloud SQL for MySQL Enterprise",
+      "Optimized performance (3x faster)",
+      "Near zero maintenance downtime",
+      "99.99% SLA"
+    ]
+  }
+  recommendations {
+    selection_criteria: [
+      "Sharded MySQL workloads (e.g. Vitess, app sharding) or large scale workloads",
+      "Ability to handle extremely large databases",
+      "Customers looking for highest scale and availability (e.g. payments use-cases)",
+      "Customer pain point around scale and management of existing sharded MySQL environment",
+      "Workloads with highly spiky or unpredictable traffic patterns that benefit from autoscaling to optimize costs"
+    ]
+    primary_destination: SPANNER
+    migration_complexity: [
+      "Medium to Higher Complexity. Requires query and transaction handling changes, but Google SQL similarity to MySQL limits the rewrite effort. We offer free Spanner Migration Tool and Black Belt team expertise"
+    ]
+    best_when: "The source DB is sharded MySQL - Spanner transforms the operational burden of sharding. Instead of managing individual database shards, Spanner operates as a single, logical database that automatically handles horizontal scaling, delivering virtually infinite capacity and multi-region consistent writes. This shift eliminates the pain of re-sharding and cross-shard management, replacing it with a system built for the highest reliability, backed by an up to 99.999% SLA and no maintenance downtime. Spanner's native autoscaling also makes it a highly cost-effective solution for spiky workloads."
+    benefits: [
+      "Virtually infinite scale",
+      "Multi-region consistent writes",
+      "No maintenance downtime",
+      "99.999% SLA",
+      "Online schema changes",
+      "Automatic scaling to handle spiky workloads and optimize costs"
+    ]
+  }
+}
+
+# PostgreSQL
+source_recommendations {
+  source: POSTGRESQL
+  discovery_questions: [
+    "What PostgreSQL version?",
+    "What is the size of the database?",
+    "Is it an analytical/HTAP workload?",
+    "Is it a sharded PostgreSQL deployment?",
+    "Do you need to leave a portion of your workload on-premises?",
+    "Do you need a multi cloud solution?",
+    "Do you need to build Gen AI applications with pgvector?",
+    "Does your application require temporary scaling up to handle workload surges?"
+  ]
+  recommendations {
+    selection_criteria: [
+      "100% open source compatible",
+      "Standard production performance and availability (99.95% SLA)",
+      "Supports PostgreSQL 9.6 and above (including legacy versions 9.6, 10, 11)"
+    ]
+    primary_destination: CLOUD_SQL_FOR_POSTGRESQL_ENTERPRISE
+    migration_complexity: [
+      "Low complexity. Easy with Database Migration Service"
+    ]
+    best_when: "Existing PostgreSQL customers who are looking to stay on PostgreSQL. Cloud SQL is a great choice for straightforward migrations, offering an easy and accessible path to a fully managed, secure, and highly available cloud database."
+    benefits: [
+      "Fully managed",
+      "Secure",
+      "H/A & DR",
+      "99.95% SLA",
+      "Broadest PostgreSQL version support",
+      "Up to 64TB storage",
+      "pgvector support for Gen AI apps"
+    ]
+  }
+  recommendations {
+    selection_criteria: [
+      "100% open source compatible",
+      "High performance (up to 4x reads, 2x writes) and high availability (99.99% SLA, near-zero maintenance downtime)",
+      "Supports PostgreSQL 12 and above"
+    ]
+    primary_destination: CLOUD_SQL_FOR_POSTGRESQL_ENTERPRISE_PLUS
+    migration_complexity: [
+      "Low complexity. Easy with Database Migration Service"
+    ]
+    best_when: "Existing PostgreSQL customers who are looking to stay on PostgreSQL. Cloud SQL Enterprise Plus delivers dramatic performance gains, while ensuring maximum availability through a 99.99% SLA."
+    benefits: [
+      "All the features and capabilities of Enterprise edition with up to 2x improved write throughput and up to 4x improved read throughput compared to Enterprise edition",
+      "Near zero maintenance downtime",
+      "99.99% SLA",
+      "pgvector support for Gen AI apps"
+    ]
+  }
+  recommendations {
+    selection_criteria: [
+      "Higher level of performance and manageability than open source",
+      "Fully open source compatible",
+      "Extreme performance (4x transactional, 100x analytical HTAP) and high availability (99.99% SLA, near-zero maintenance downtime)",
+      "Hybrid Transactional and Analytical (HTAP) workloads",
+      "Do you need to scale out for reads?"
+    ]
+    primary_destination: ALLOYDB_FOR_POSTGRESQL
+    migration_complexity: [
+      "Low complexity. Easy with Database Migration Service"
+    ]
+    best_when: "AlloyDB is a next-generation, PostgreSQL-compatible database that modernizes the most demanding enterprise workloads by delivering extreme performance for transactions and analytics (HTAP), a cloud-native elastic architecture, and a fully integrated platform for generative AI, all backed by enterprise-grade availability."
+    benefits: [
+      "Superior performance, columnar engine, improved manageability, autopilot optimizations",
+      "4x performance for transactions and 100x faster analytical queries compared to stock PostgreSQL",
+      "Up to 64TB storage (>64TB coming soon)",
+      "Cloud-first architecture with complete disaggregation of compute and storage",
+      "Read replicas and read replica pools",
+      "Vertex AI integration for real-time model inferencing, BQ integration with Datastream",
+      "pgvector support for Gen AI apps",
+      "Near zero maintenance downtime"
+    ]
+  }
+  recommendations {
+    selection_criteria: [
+      "Need to run PostgreSQL workloads on-premises and/or in any public cloud",
+      "Need to break free from legacy databases faster than you can replatform in the Cloud",
+      "Developers looking for a local / on-premises database"
+    ]
+    primary_destination: ALLOYDB_OMNI
+    migration_complexity: [
+      "Low complexity"
+    ]
+    best_when: "PostgreSQL customers who are looking to stay on PostgreSQL. Looking to run on-prem, in any cloud, or in an air-gapped environment."
+    benefits: [
+      "Run AlloyDB anywhere you run Databases",
+      "2x performance for OLTP and 100x for analytical queries compared to stock PostgreSQL",
+      "Support for edge computing, hybrid and multi-cloud customers who have regulatory restrictions or data sovereignty requirements",
+      "No cost for development and testing",
+      "Fully compatible with AlloyDB in the Cloud"
+    ]
+  }
+  recommendations {
+    selection_criteria: [
+      "Ability to handle extremely large databases or sharded PostgreSQL workloads",
+      "Customers looking for highest scale and availability (e.g. payments use-cases)",
+      "Workloads with highly spiky or unpredictable traffic patterns that benefit from autoscaling to optimize costs"
+    ]
+    primary_destination: SPANNER
+    migration_complexity: [
+      "Medium complexity. While Spanner is a distributed database, the Spanner PostgreSQL dialect significantly reduces the migration effort. We offer free Spanner Migration Tool and Black Belt team expertise"
+    ]
+    best_when: "The source is a large or sharded PostgreSQL - Spanner transforms the operational burden of sharding. Instead of managing individual database shards, Spanner operates as a single, logical database that automatically handles horizontal scaling, delivering virtually infinite capacity and multi-region consistent writes. This shift eliminates the pain of re-sharding and cross-shard management, replacing it with a system built for the highest reliability, backed by an up to 99.999% SLA and no maintenance downtime. Spanner's native autoscaling also makes it a highly cost-effective solution for spiky workloads."
+    benefits: [
+      "Virtually infinite scale",
+      "Multi-region consistent writes",
+      "No maintenance downtime",
+      "99.999% SLA",
+      "Online schema changes",
+      "Analyze operational data isolated from transactional workloads with BigQuery",
+      "Automatic scaling to handle spiky workloads and optimize costs"
+    ]
+  }
+}
+
+# SQL Server
+source_recommendations {
+  source: SQL_SERVER
+  discovery_questions: [
+    "What SQL Server version?",
+    "Are you concerned about licensing costs and do you have an existing ELA with Microsoft?",
+    "SQL Server-specific options needed?",
+    "Is this OLTP, analytical, or mixed workload?",
+    "Are you willing to refactor the application?",
+    "Are you interested in moving to open source?"
+  ]
+  recommendations {
+    selection_criteria: [
+      "100% SQL Server compatible",
+      "Supports legacy or packaged apps that need to run on SQL Server",
+      "Data center exit"
+    ]
+    primary_destination: CLOUD_SQL_FOR_SQL_SERVER
+    migration_complexity: [
+      "Easy homogeneous migrations with Database Migration Service coming soon; Current solution is to use SQL Server technologies"
+    ]
+    best_when: "Existing SQL Server users are looking to stay on SQL Server, Cloud SQL for SQL Server is a great choice for straightforward migrations, offering an easy and accessible path to a fully managed, secure, and highly available cloud database."
+    benefits: [
+      "Fully managed",
+      "Secure",
+      "H/A & DR",
+      "99.95% SLA",
+      "Multi-regional DR"
+    ]
+  }
+  recommendations {
+    selection_criteria: [
+      "Looking to break free from legacy, proprietary database with expensive licensing and modernize to open source",
+      "Support for Hybrid Transactional and Analytical (HTAP) workloads via an open (PostgreSQL) interface"
+    ]
+    primary_destination: ALLOYDB_FOR_POSTGRESQL
+    migration_complexity: [
+      "Heterogeneous migration required with application code changes; No cost Database Migration Assessment via first-party tool"
+    ]
+    best_when: "(Modernization opportunity) For SQL Server customers looking to break free from legacy licensing costs, AlloyDB for PostgreSQL offers the premier path to modernization. It provides a fully managed, PostgreSQL-compatible experience that combines the freedom of open-source with performance far exceeding the standard version. AlloyDB is built to handle the most demanding enterprise workloads with its extreme speed for transactions and analytics (HTAP), a cloud-native elastic architecture, and a powerful, integrated AI platform."
+    benefits: [
+      "Fully PostgreSQL compatible, with no licensing costs or vendor lock-in",
+      "Superior performance, columnar engine, improved manageability, autopilot optimizations",
+      "Cloud-first architecture with complete disaggregation of compute and storage",
+      "Vertex AI integration for real-time model inferencing, BigQuery integration with Datastream",
+      "99.99% SLA",
+      "Monetize your operational data with AI-driven insights: Build transformative applications with vector search, foundation models integration, and generative AI, while maintaining open-source compatibility",
+      "Near zero maintenance downtime"
+    ]
+  }
+  recommendations {
+    selection_criteria: [
+      "Highest scale and availability requirements (e.g. global payments workloads)",
+      "Willing to modernize and migrate to a distributed database to eliminate legacy SQL Server licensing costs"
+    ]
+    primary_destination: SPANNER
+    migration_complexity: [
+      "Higher complexity. Requires heterogeneous migration and application rewrite from T-SQL to Google SQL or PostgreSQL dialect. We offer database migration assessment tools and expertise"
+    ]
+    best_when: "SQL Server customers with extreme scale, global availability, and strong consistency requirements that exceed the capabilities of traditional relational databases. Spanner provides virtually infinite horizontal scale, multi-region consistent writes, and an up to 99.999% SLA, making it the premier choice for mission-critical modernizations."
+    benefits: [
+      "Virtually infinite scale and global consistency",
+      "99.999% SLA with no maintenance downtime",
+      "Eliminate expensive SQL Server licensing costs",
+      "Support for Google SQL and PostgreSQL dialects"
+    ]
+  }
+}
+
+# Oracle
+source_recommendations {
+  source: ORACLE
+  discovery_questions: [
+    "What Oracle Database version and do you have an existing ULA?",
+    "What is the size of the database?",
+    "Oracle Database options used?",
+    "Are you willing to do some refactoring of the application?",
+    "Are you running Oracle Apps and/or other COTS apps that use Oracle DB?",
+    "Need to run databases on-premises and/or in any public cloud?"
+  ]
+  # source: ORACLE - recommendation #1
+  recommendations {
+    selection_criteria: [
+      "Mission critical databases",
+      "Runs Exadata today",
+      "Highest performance or availability requirements",
+      "Dedicated infrastructure requirements",
+      "Needs to run DW or mixed workload with Oracle"
+    ]
+    primary_destination: ORACLE_AT_DATABASES
+    migration_complexity: [
+      "Low complexity, supports physical and logical migrations"
+    ]
+    benefits: [
+      "Highest performance and availability of any Oracle database platform",
+      "Deploy Oracle Database 19c or 23ai with automation from Oracle",
+      "License included or BYOL pricing for flexible compliance",
+      "Dedicated infrastructure provides highest levels of security and consistent performance",
+      "Run the latest version of Oracle Database, including 23ai",
+      "Take advantage of Google Cloud’s differentiated AI and analytics capabilities"
+    ]
+  }
+  # source: ORACLE - recommendation #2
+  recommendations {
+    selection_criteria: [
+      "Runs Oracle RAC today",
+      "Needs access to operating system",
+      "Has a limited number of Oracle licenses available",
+      "Wants to run RAC without negotiating a contract with Oracle"
+    ]
+    primary_destination: ORACLE_AT_DATABASES
+    migration_complexity: [
+      "Low complexity, supports physical and logical migrations"
+    ]
+    benefits: [
+      "Deploy Oracle Database 19c or 23ai with automation from Oracle",
+      "High availability with the lowest cost of entry",
+      "License included or BYOL pricing for flexible compliance",
+      "Scalable deployments take advantage of cloud economics",
+      "Run the latest version of Oracle Database, including 23ai",
+      "Take advantage of Google Cloud’s differentiated AI and analytics capabilities",
+      "Available with public offer to run month-to-month without long term contracts"
+    ]
+  }
+  # source: ORACLE - recommendation #3
+  recommendations {
+    selection_criteria: [
+      "Smaller departmental or dev/test databases",
+      "Needs access to operating system",
+      "Has a limited number of Oracle licenses available"
+    ]
+    primary_destination: ORACLE_AT_DATABASES
+    migration_complexity: [
+      "Low complexity, supports physical and logical migrations"
+    ]
+    benefits: [
+      "Lowest cost of entry for Oracle Database",
+      "License included or BYOL pricing for flexible compliance",
+      "Run the latest version of Oracle Database, including 23ai",
+      "Take advantage of Google Cloud’s differentiated AI and analytics capabilities"
+    ]
+  }
+  # source: ORACLE - recommendation #4
+  recommendations {
+    selection_criteria: [
+      "Smaller departmental or dev/test databases",
+      "Looking for a fully managed database",
+      "Has a limited number of Oracle licenses available"
+    ]
+    primary_destination: ORACLE_AT_DATABASES
+    migration_complexity: [
+      "Low complexity, supports physical and logical migrations"
+    ]
+    benefits: [
+      "Fully managed deployment of Oracle database, including backup and recovery, patching, and system management",
+      "License included or BYOL pricing for flexible compliance",
+      "Scalable deployments ranging from 1 CPU to hundreds of cores",
+      "Run the latest version of Oracle Database, including 23ai",
+      "Take advantage of Google Cloud’s differentiated AI and analytics capabilities",
+      "Available with public offer to run month-to-month without long term contracts"
+    ]
+  }
+  # source: ORACLE - recommendation #5
+  recommendations {
+    selection_criteria: [
+      "Lift and shift your Oracle database and associated workload to GCE/GKE",
+      "Data center exit",
+      "In-house and department app workloads running on Oracle database"
+    ]
+    primary_destination: ORACLE_SELF_MANAGED
+    migration_complexity: [
+      "Low complexity, lift and shift"
+    ]
+    benefits: [
+      "Run Oracle in any Google Cloud region globally",
+      "Maintain full control over database and OS versions, enabling support for critical legacy Oracle instances or non-Oracle Linux operating systems",
+      "Elastic, on-demand infrastructure lets you scale compute and storage independently",
+      "Ideal for applications moving to microservice architecture with GKE"
+    ]
+  }
+  # source: ORACLE - recommendation #6
+  recommendations {
+    selection_criteria: [
+      "Mission critical databases",
+      "Highest performance or availability requirements",
+      "100% open source compatible (need to reduce proprietary database license expenditures)",
+      "Future proofing apps for AI",
+      "Hybrid Transactional and Analytical (HTAP) workloads"
+    ]
+    primary_destination: ALLOYDB_FOR_POSTGRESQL
+    migration_complexity: [
+      "Heterogeneous migration with schema and data migration with Database Migration Service;",
+      "Application code changes required and support for automated code conversion coming soon"
+    ]
+    best_when: "Oracle customers looking to move away from the expensive licensing and vendor lock-in technology to an open standards based database with a rich set of capabilities to meet their enterprise workloads needs. AlloyDB is built to handle the most demanding enterprise workloads with its extreme speed for transactions and analytics (HTAP), a cloud-native elastic architecture, and a powerful, integrated AI platform."
+    benefits: [
+      "Fully PostgreSQL compatible, with no vendor lock-in",
+      "Superior performance, columnar engine, improved manageability, autopilot optimizations",
+      "4x transaction throughput and up to 100x faster analytical queries compared to stock PostgreSQL",
+      "Cloud-first architecture with complete disaggregation of compute and storage",
+      "Vertex AI integration for real-time model inferencing, BigQuery integration with Datastream",
+      "Monetize your operational data with AI-driven insights. Build transformative applications with vector search, foundation models integration, and generative AI, while maintaining open-source compatibility.",
+      "Near zero maintenance downtime",
+      "Run AlloyDB anywhere you run databases with AlloyDB Omni",
+      "Suitable for edge computing, hybrid and multi-cloud, customers who have regulatory restrictions or data sovereignty requirements"
+    ]
+  }
+  # source: ORACLE - recommendation #7
+  recommendations {
+    selection_criteria: [
+      "Highest scale and availability requirements (e.g. global payments workloads)",
+      "Looking to modernize and eliminate expensive Oracle licensing and vendor lock-in"
+    ]
+    primary_destination: SPANNER
+    migration_complexity: [
+      "Higher complexity. Requires heterogeneous migration and application rewrite from PL/SQL to Google SQL or PostgreSQL dialect. We offer database migration assessment tools and expertise"
+    ]
+    best_when: "Oracle customers with extreme scale, global availability, and strong consistency requirements that exceed the capabilities of traditional relational databases. Spanner provides virtually infinite horizontal scale, multi-region consistent writes, and an up to 99.999% SLA, making it the premier choice for mission-critical modernizations."
+    benefits: [
+      "Virtually infinite scale and global consistency",
+      "99.999% SLA with no maintenance downtime",
+      "Eliminate Oracle licensing costs and vendor lock-in",
+      "Support for Google SQL and PostgreSQL dialects"
+    ]
+  }
+}
+
+# HBase
+source_recommendations {
+  source: HBASE
+  discovery_questions: [
+    "What distribution of HBase?",
+    "What is the database size, number of nodes, CPU and disk per cluster, and hardware configuration?",
+    "Are coprocessors being used, and for what purpose?"
+  ]
+  recommendations {
+    selection_criteria: [
+      "Looking to move from self managed to fully managed",
+      "HBase compatible key-value store suitable for all your application",
+      "Cost sensitive app with high write throughput & large data volumes",
+      "Storage-driven apps needing low cost storage with moderate to high read/write throughput"
+    ]
+    primary_destination: BIGTABLE
+    migration_complexity: [
+      "Tools for assessment and migration.",
+      "Support for live & offline migrations",
+      "Direct import tools from HBase to Bigtable",
+      "Ability to migrate coprocessor functionality"
+    ]
+    best_when: "For customers running HBase, Bigtable is the ideal migration destination, offering a seamless path to modernization with its native support for the HBase API. This allows customers the ability to migrate existing applications with minimal code changes while eliminating the operational burden of managing complex HBase clusters. By moving to a fully managed platform, you gain virtually infinite scaling with single-digit millisecond latency, an up to 99.999% SLA with no maintenance downtime, and a lower TCO at any scale, driven by a native autoscaler and flexible SSD/HDD storage options."
+    benefits: [
+      "Fully managed key-value DB",
+      "Support for HBase APIs",
+      "Lower TCO at any scale",
+      "Single digit millisecond read and write latencies",
+      "Multi-writer support",
+      "Virtually infinite scaling including writes",
+      "Global replication and 99.999% SLA",
+      "Autoscaler to reduce costs",
+      "No maintenance downtime",
+      "Low storage costs with both SSD and HDD"
+    ]
+  }
+}
+
+# DynamoDB
+source_recommendations {
+  source: DYNAMODB
+  discovery_questions: [
+    "What is the read/write workload ratio?",
+    "What are the latency requirements?",
+    "What capacity mode: on-demand or provisioned capacity?",
+    "Are secondary indexes being used?",
+    "Are multi-row transactions being used?",
+    "Are Global Tables being used?"
+  ]
+  recommendations {
+    selection_criteria: [
+      "High write ratio (for Clickstream or Time Series style workloads)",
+      "Large storage volume, needing low cost storage",
+      "Flexible schema",
+      "Multi-primary eventually consistent writes",
+      "Multi-region write latency sensitive and using DynamoDB Global Tables"
+    ]
+    primary_destination: BIGTABLE
+    migration_complexity: [
+      "Heterogeneous migration",
+      "Application code conversion required"
+    ]
+    best_when: "Customers are looking for similar access patterns including retrieving data via a unique key that is identical in both systems.  Application logic designed for DynamoDB's key-based lookups translates naturally to Bigtable's row key model. This conceptual alignment means the migration effort is less about re-architecting the application's core logic and more about adapting to a platform designed for superior scale and performance, building upon the familiar principles of a wide-column, key-value data store."
+    benefits: [
+      "Virtually infinite scaling including writes",
+      "Single digit millisecond read and write latencies",
+      "Flexible single or multi-replica deployment",
+      "Low storage costs with both SSD and HDD",
+      "Lower TCO for most workloads"
+    ]
+  }
+  recommendations {
+    selection_criteria: [
+      "High read ratio",
+      "Application leverages advanced database capabilities (indexes, composite keys, typed values, constraints, JSON, views, ACID transactions, SQL)",
+      "Need strong and/or eventual consistency options for reads",
+      "Need replication with strong consistency guarantees"
+    ]
+    primary_destination: SPANNER
+    migration_complexity: [
+      "Heterogeneous migration",
+      "Application code conversion required"
+    ]
+    best_when: "For DynamoDB users, migrating to Spanner is a strategic modernization that provides a significant upgrade in database capabilities for roughly half the cost. This move allows customers the ability to evolve from a NoSQL K/V store to a globally distributed multi-model database that unlocks advanced features not native to DynamoDB."
+    benefits: [
+      "Virtually infinite scaling including writes",
+      "Advanced database capabilities (e.g. SQL query, indexes, transactions, ACID, and typed values)",
+      "Single digit milliseconds regional read and write latencies (strongly consistent)",
+      "Single-region and multi-region strong consistency",
+      "1/2 cost of DynamoDB"
+    ]
+  }
+}
+
+# Cassandra
+source_recommendations {
+  source: CASSANDRA
+  discovery_questions: [
+    "What is the read/write workload ratio?",
+    "What are the latency requirements?",
+    "Are secondary indexes being used?",
+    "Are strong consistency reads needed?",
+    "How many replicas are needed?",
+    "What is the quorum consistency?",
+    "What is the data volume?",
+    "Do you need CQL querying dialect?"
+  ]
+  recommendations {
+    selection_criteria: [
+      "High write ratio (for Clickstream or Time Series style workloads)",
+      "Large storage volume, needing low cost storage",
+      "Flexible schema",
+      "Multi-primary eventually consistent writes",
+      "Multi-region write latency sensitive"
+    ]
+    primary_destination: BIGTABLE
+    migration_complexity: [
+      "Heterogeneous migration",
+      "Application code conversion required"
+    ]
+    best_when: "When users want to maintain a familiar architecture. Both are wide-column NoSQL databases, meaning the core concepts of schema design and key-based access patterns are highly transferable, simplifying the transition. The primary driver for migrating is to move from a self-managed cluster to a fully managed, auto-scaling service. This allows you to offload the complexities of maintenance and tuning, while gaining Bigtable’s consistent single-digit millisecond latency and a lower total cost of ownership at virtually any scale."
+    benefits: [
+      "Virtually infinite scaling including writes",
+      "Single digit milliseconds read and write latency",
+      "Flexible single or multi-replica deployment",
+      "Low storage costs with both SSD and HDD",
+      "Lower TCO for most workloads"
+    ]
+  }
+  recommendations {
+    selection_criteria: [
+      "High read ratio",
+      "Application leverages advanced database capabilities (indexes, composite keys, typed values, constraints, JSON, views, ACID transactions, SQL)",
+      "Use SQL API",
+      "Need strong and/or eventual consistency options for reads",
+      "Need replication with strong consistency guarantees"
+    ]
+    primary_destination: SPANNER
+    migration_complexity: [
+      "Low complexity",
+      "Near lift-and-shift migration using Spanner's native Cassandra-compatible interface (CQL and wire protocol support) with minimal application changes"
+    ]
+    best_when: "When users are looking to gain capabilities that are fundamentally impossible with a NoSQL architecture. The primary driver is upgrading from eventual consistency to Spanner's global, fully ACID-compliant transactions, which ensures absolute data integrity and simplifies application development. A key advantage of this modernization is Spanner's unified multi-model platform, allowing you to combine relational (SQL), full-text search, graph, and vector search queries directly on your live transactional data. This eliminates the need for separate specialized databases and complex data pipelines. Furthermore, the columnar storage engine in Spanner, which enables true HTAP (Hybrid Transactional/Analytical Processing) allows you to run fast, real-time analytical queries directly on your transactional data, a capability far beyond Cassandra's scope. The transition is also more practical than ever, as Spanner's native Cassandra interface allows developers to reuse their CQL queries and client libraries, minimizing code refactoring while eliminating the operational burden of Cassandra with a fully managed service."
+    benefits: [
+      "Virtually infinite scaling including writes",
+      "Single digit milliseconds regional read and write latencies",
+      "Single-region and multi-region strong consistency",
+      "Advanced database capabilities (e.g. SQL query, indexes, transactions, ACID, and typed values)",
+      "Lower TCO for most workloads"
+    ]
+  }
+}
+
+# Redis, Valkey
+source_recommendations {
+  source: [REDIS, VALKEY]
+  discovery_questions: [
+    "What is the primary use case (caching, session store, pub/sub, real-time data)?",
+    "What are the latency and throughput requirements?",
+    "Is high availability and automatic failover critical?",
+    "Are you looking for a fully managed service to reduce operational overhead?",
+    "Which version of Redis/Valkey?",
+    "Are you using clustering?",
+    "What is the read/write throughput?",
+    "Size of data stored in cache?"
+  ]
+  recommendations {
+    selection_criteria: [
+      "Need for a fully managed, in-memory data store.",
+      "High throughput and ultra-low latency required.",
+      "Compatibility with existing Redis commands and clients.",
+      "High availability (automatic failover, replication) is essential.",
+      "Use cases include caching, session management, real-time analytics, leaderboards, message queues.",
+      "Moving from Redis to Valkey for OSS or for better performance",
+      "Moving from self managed to fully managed",
+      "Looking for an integrated experience with IAM Auth and other services"
+    ]
+    primary_destination: MEMORYSTORE_FOR_VALKEY
+    migration_complexity: [
+      "Low complexity migrations.",
+      "Compatible with existing Redis and Valkey APIs.",
+      "Data migration typically using RIOT or import a RDB file using RIOT tooling.",
+      "No application code changes required."
+    ]
+    best_when: "For customers running Redis or Valkey, Memorystore for Valkey is the best choice. Valkey is fully compatible with Redis 7.2, making migration easy and seamless with no application code changes required. It offers a fully open-source solution with no lock-in, while delivering substantial performance enhancements (such as 3x throughput improvements compared to Memorystore for Redis Cluster in Valkey 9.0) and extreme performance with sub-millisecond latency, high availability (99.99% SLA), and zero-downtime scaling."
+    benefits: [
+      "Fully managed service, reducing operational burden.",
+      "Fully managed experience to accelerate innovation and reduce risk and TCO (usually customers save >40-50% from Redis Enterprise)",
+      "Full open-source compatibility with no lock-in",
+      "Extreme performance with sub-millisecond latency and millions of operations per second.",
+      "High availability (99.99% SLA) with automatic failover and replicas.",
+      "Scalable (zero-downtime scaling).",
+      "Zero downtime maintenance",
+      "Integrated with Google Cloud ecosystem (monitoring, logging, security).",
+      "Open-source compatible (Redis 7.2 and below, Valkey 7.2, 8.0, and 9.0).",
+      "Supports persistence (RDB snapshot, AOF logging). And backups",
+      "Support cross regional replication",
+      "Valkey supports both clustering and noncluster mode.",
+      "Valkey 9.0 supports 3x throughput improvements compared to Memorystore for Redis Cluster.",
+      "Valkey supports up to 14.5TB data in cache"
+    ]
+  }
+}
+
+# Memcached
+source_recommendations {
+  source: MEMCACHED
+  discovery_questions: [
+    "What is the read/write throughput?",
+    "How many nodes?",
+    "Size of data stored in Memcached?"
+  ]
+  recommendations {
+    selection_criteria: [
+      "Moving to the cloud?",
+      "Moving from self managed to fully managed?",
+      "Looking for a next-gen engine to replace deprecated Memcached"
+    ]
+    primary_destination: MEMORYSTORE_FOR_VALKEY
+    migration_complexity: [
+      "Medium complexity migration.",
+      "Requires updating application code to use a Valkey- or Redis-compatible client library (RESP protocol) instead of Memcached protocol."
+    ]
+    best_when: "For customers running Memcached, Memorystore for Valkey is the recommended migration path as the Memcached service is being deprecated. Valkey serves as our next-generation engine, providing a modern, fully open-source in-memory solution."
+    benefits: [
+      "Fully open source engine with no vendor lock-in.",
+      "Zero-downtime horizontal and vertical scaling (from 1.25 GB instances to 27.5TB clusters).",
+      "High availability architecture with a 99.99% SLA.",
+      "Rich and flexible data structures (beyond simple key-value).",
+      "Supports multi-command transactions and Lua scripting.",
+      "Access to advanced modules.",
+      "Persistence options including RDB snapshots and AOF (Append Only File)."
+    ]
+  }
+}
+
+# Aerospike
+source_recommendations {
+  source: AEROSPIKE
+  discovery_questions: [
+    "How large is the data?",
+    "What are latency requirements?",
+    "Is multi-region or multi-writer deployment required?",
+    "What are availability requirements?"
+  ]
+  recommendations {
+    selection_criteria: [
+      "Looking to move from self managed to fully managed",
+      "Data needs to be persisted",
+      "Data volume makes in-memory options cost-prohibitive",
+      "Does not require sub-millisecond latencies"
+    ]
+    primary_destination: BIGTABLE
+    migration_complexity: [
+      "Heterogeneous migration",
+      "Application code conversion required"
+    ]
+    best_when: "Bigtable is a great destination for Aerospike workloads as it delivers single-digit millisecond latency and with significantly lower TCO and reduced risk of a fully managed, auto-scaling platform. You get matching performance while completely eliminating the operational overhead of managing complex clusters."
+    benefits: [
+      "Fully managed experience and reduced risk and TCO",
+      "Open-source compatibility with no lock-in",
+      "Single digit millisecond read and write latency",
+      "Globally replicated and up to 99.999% SLA",
+      "Low storage cost and native autoscaler to reduce cost"
+    ]
+  }
+  recommendations {
+    selection_criteria: [
+      "Moving from self managed to fully managed",
+      "Non-volatile storage is not required",
+      "Requires sub-millisecond latencies",
+      "Dataset is relatively small"
+    ]
+    primary_destination: MEMORYSTORE_FOR_VALKEY
+    migration_complexity: [
+      "Heterogeneous migration",
+      "Application code conversion required"
+    ]
+    best_when: "For Aerospike workloads used primarily as a high-speed cache where durable, persistent storage is not a requirement, Memorystore for Valkey is an excellent choice for modernization and cost reduction."
+    benefits: [
+      "Fully managed experience and reduced risk and TCO",
+      "Open-source compatibility with no lock-in",
+      "Sub-millisecond read and write latencies",
+      "Clustering support for increased scale and throughput with 99.99% SLA"
+    ]
+  }
+}
+
+# MongoDB, Amazon DocumentDB, Azure CosmosDB
+source_recommendations {
+  source: [MONGODB, AMAZON_DOCUMENTDB, AZURE_COSMOSDB]
+  discovery_questions: [
+    "What is the size of your DocumentDB deployment?",
+    "What is the read/write throughput?"
+  ]
+  recommendations {
+    selection_criteria: [
+      "Large instance or large storage requirements",
+      "Lower combined costs for storage and I/O",
+      "High availability"
+    ]
+    primary_destination: FIRESTORE
+    migration_complexity: [
+      "Heterogeneous migration",
+      "Application code conversion required"
+    ]
+    best_when: "For customers with MongoDB workloads, Firestore is the best choice for modernizing your application and eliminating operational overhead. It provides a truly serverless platform that scales elastically to any size, which significantly lowers the total cost of ownership through a pay-for-what-you-use model. This simplicity is backed by enterprise-grade power, including an industry-leading 99.999% SLA and the ability to perform global, multi-document ACID transactions with strong consistency. With deep integration for event-driven architectures, Firestore allows you to build highly scalable and reliable applications without managing servers."
+    benefits: [
+      "Serverless, elastic capacity with no scaling limits",
+      "Lower storage costs and no additional throughput (I/O) fees",
+      "Up to 99.999% SLA with automated failure recovery through built-in data replication and zero RPO/zero RTO",
+      "Global, ACID-compliant, multi-document transactions with strong consistency",
+      "Event triggering support for GKE, Cloud Run and Cloud Functions"
+    ]
+  }
+  recommendations {
+    selection_criteria: [
+      "Highest scale and availability requirements",
+      "Complex query requirements, including indexes and JSON handling, at extreme scale"
+    ]
+    primary_destination: SPANNER
+    migration_complexity: [
+      "Higher complexity. Requires heterogeneous migration from NoSQL document model to relational/hybrid model, and application rewrite"
+    ]
+    best_when: "MongoDB customers with extreme scaling requirements, demanding strong consistency, high availability (up to 99.999% SLA), and complex query capabilities (including JSON support and indexing) that exceed MongoDB's capabilities at scale."
+    benefits: [
+      "Virtually infinite scale with global consistency",
+      "99.999% SLA with no maintenance downtime",
+      "Native support for JSON data type and indexing",
+      "Strong consistency for multi-region deployments"
+    ]
+  }
+}
+
+# Neo4j, Amazon Neptune, Aerospike Graph
+source_recommendations {
+  source: [NEO4J, AEROSPIKE_GRAPH, AMAZON_NEPTUNE]
+  discovery_questions: [
+    "What is the size of your Neo4j/ Neptune deployment?",
+    "Are you running into scaling/ performance issues with your existing graph database?",
+    "What graph query language are you using?",
+    "Are strong consistency reads needed?",
+    "Are you looking for a fully managed solution?",
+    "What are availability requirements?",
+    "Are you looking for FTS and vector search capabilities to augment your Graph use-case?",
+    "What is the source of your graph data?"
+  ]
+  recommendations {
+    selection_criteria: [
+      "Need fully managed solution that doesn't require downtime for upgrades/maintenance",
+      "Want to use a graph query language (e.g. GQL; ISO standard) vs. a proprietary language like Cypher",
+      "Need a solution whose QPS scales linearly and is virtually unlimited.",
+      "Simpler solution that avoids managing pipelines from relational stores to build a graph",
+      "Application leverages advanced database capabilities (indexes, composite keys, typed values, constraints, JSON, views, ACID transactions, SQL)",
+      "Need strong and/or eventual consistency options for reads",
+      "Need replication with strong consistency guarantees",
+      "Need a graph solution without expensive licensing with a pay-as-you-go model."
+    ]
+    primary_destination: SPANNER_GRAPH
+    migration_complexity: [
+      "Medium complexity migration. Some work required for schema conversion and data transfer. (WIP utility to migrate data from Neo4j to Spanner Graph). Query conversion is more straightforward.",
+      "Neo4j APOCs require work to be translated to GQL"
+    ]
+    best_when: "Spanner simplifies your data architecture by providing a high-performance, fully managed graph database that operates directly on your existing relational data. This zero-ETL approach eliminates the need to manage separate graph systems, which reduces cost, prevents data duplication, and allows you to run real-time graph analytics on live transactional data."
+    benefits: [
+      "Leverage a unified, zero-ETL architecture by running graph queries directly on your existing relational data, which eliminates the need for separate databases, complex ETL pipelines, and data duplication.",
+      "Achieve massive scale and performance by efficiently querying graphs with hundreds of billions of nodes, with optimizations for high-speed traversal even on highly connected data.",
+      "Execute seamless multi-model queries by combining graph analytics with relational (SQL), full-text search, and vector search on a single, unified platform.",
+      "Built on an enterprise-grade foundation that includes all of Spanner’s core benefits, such as its industry-leading 99.999% availability, zero-downtime operations, and deep integration with GCP services like IAM and BigQuery."
+    ]
+  }
+}
+
