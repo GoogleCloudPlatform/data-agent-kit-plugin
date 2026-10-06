@@ -1,22 +1,22 @@
 ---
 name: gcp-spark
 description: |
-  Develops, optimizes and executes Spark code on Managed Spark on Google Cloud (Dataproc Clusters and Serverless).
-  Reads and writes data using BigLake Iceberg catalogs, BigQuery and Spanner.
-  Debugs execution failures.
+  Develops, optimizes and runs PySpark/Spark code on Managed Spark (Dataproc
+  clusters and Serverless) on Google Cloud.
   Use when:
-  - Writing Spark ETL pipelines on Google Cloud Platform.
-  - Optimizing PySpark or Spark SQL code for performance, memory, or OOM risks.
-  - Preparing Spark workloads for production submission.
-  - Training or running inference with Machine Learning models with spark on Google Cloud Platform.
+  - Authoring or running Spark/PySpark notebooks (any kernel), incl. data
+    analysis, reports and visualizations.
+  - Writing Spark ETL pipelines or preparing workloads for production.
+  - Training or running inference with ML models on Spark.
+  - Optimizing PySpark or Spark SQL for performance, memory, or OOM risks.
   - Managing Spark clusters, jobs, batches, and interactive sessions.
   Don't use when:
-  - Writing generic Python scripts that don't use Spark.
+  - Writing generic Python that doesn't use Spark.
   - Performing simple SQL queries that can be done directly in BigQuery.
-  - Troubleshooting failed Spark workloads or analyzing logs (use @skill:gcp-spark-troubleshooting).
+  - Troubleshooting failed Spark workloads (use @skill:gcp-spark-troubleshooting).
 license: Apache-2.0
 metadata:
-  version: v20
+  version: v22
   publisher: google
 ---
 
@@ -132,10 +132,13 @@ metadata:
             .location(<REGION>)
             .getOrCreate()
         ```
-    *   **Production Logging**: In all production PySpark jobs and scripts,
-        you MUST use the standard Python `logging` module instead of `print()`
-        statements for job lifecycle, progress, and record counts. Configure it
-        with timestamps:
+    *   **Production Logging (`.py` batch scripts only)**: In standalone
+        production PySpark batch jobs and scripts (`.py`), you MUST use the
+        standard Python `logging` module instead of `print()` statements for job
+        lifecycle, progress, and record counts. Do **NOT** use the `logging`
+        module in notebooks (`.ipynb`); use `print()`, `.show()`, and standard
+        cell outputs instead. Configure `logging` for `.py` scripts with
+        timestamps:
 
         ```python
         import logging
