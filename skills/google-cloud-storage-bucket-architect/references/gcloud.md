@@ -48,7 +48,7 @@ Draft Plan Field / Setting                | gcloud CLI Element / Flag           
 **Attribution**                           | `CLOUDSDK_METRICS_ENVIRONMENT="${CLOUDSDK_METRICS_ENVIRONMENT:+$CLOUDSDK_METRICS_ENVIRONMENT }gcs-skills gcs-skills/1.0 (skill:google-cloud-storage-bucket-architect)"` | **CRITICAL: Required prefix for all gcloud commands.** Set inline.
 **Bucket Name**                           | `gs://[bucket-name]`                                                                                                                                                    | Positional argument at the end of the `create` command. Must be globally unique.
 **Project**                               | `--project=[project-id]`                                                                                                                                                | Global flag. Specify to ensure target project is correct.
-**Location**                              | `--location=[location]`                                                                                                                                                 | E.g. `us-central1` (region), `US` (multi-region/custom dual-region), or `NAM4` (predefined dual-region). For zonal buckets (using Rapid storage), this must be the region (e.g. `us-east1`).
+**Location**                              | `--location=[location]`                                                                                                                                                 | E.g. `us-central1` (region), `US` (multi-region/custom dual-region), or `NAM4` (predefined dual-region). For zonal buckets (using the Rapid storage class), this must be the region (e.g. `us-east1`).
 **Placement**                             | `--placement=[placement]`                                                                                                                                               | Used ONLY for custom dual-regions or zonal buckets. For custom dual-regions, set to a comma-separated list of regions (e.g., `us-east1,us-west1`) and `--location` to the geo area (e.g., `US`). For zonal buckets, set to the zone (e.g., `us-east1-b`) and `--location` to the region (e.g., `us-east1`).
 **Replication Speed (RPO)**               | `--rpo=ASYNC_TURBO`                                                                                                                                                     | Optional. Enables Turbo Replication for dual-region buckets to guarantee replication within 15 minutes.
 **Storage Class**                         | `--default-storage-class=[class]`                                                                                                                                       | Values: `STANDARD`, `NEARLINE`, `COLDLINE`, `ARCHIVE`, `RAPID`. Default is `STANDARD`. Must be explicitly set to `RAPID` for zonal buckets.
@@ -358,7 +358,7 @@ gcloud storage buckets create gs://my-company-secure-bucket \
 
 --------------------------------------------------------------------------------
 
-### Example 4: AI/ML Checkpointing (Zonal Bucket / Rapid Storage)
+### Example 4: AI/ML Checkpointing (Zonal Buckets)
 
 #### Input Draft Plan
 
@@ -367,12 +367,12 @@ gcloud storage buckets create gs://my-company-secure-bucket \
 *   **Project**: `my-ai-project`
 *   **Location**: `us-east1-b` (Zone-level co-location for high performance)
 *   **Storage Class**: `RAPID` (Must be explicitly specified for zonal buckets)
-*   **UBLA**: Enabled (Required for HNS)
+*   **UBLA**: Enabled (Required for Hierarchical Namespace)
 *   **Public Access Prevention (PAP)**: Enforced
 *   **Encryption**: Google-managed key
 *   **Soft Delete**: Disabled (0 days) (Soft delete is not supported for zonal buckets)
 *   **Use-case specific settings**:
-    *   Hierarchical Namespace (HNS): Enabled (Required for Zonal buckets)
+    *   Hierarchical Namespace: Enabled (Required for Zonal buckets)
     *   Lifecycle: Delete checkpoint files older than 14 days
 ```
 
@@ -395,7 +395,7 @@ gcloud storage buckets create gs://my-company-secure-bucket \
 
     ```bash
     # Specifying a zone (e.g. us-east1-b) and RAPID storage class sets up a zonal bucket.
-    # Zonal buckets require enabling HNS and UBLA.
+    # Zonal buckets require enabling Hierarchical Namespace and UBLA.
     CLOUDSDK_METRICS_ENVIRONMENT="${CLOUDSDK_METRICS_ENVIRONMENT:+$CLOUDSDK_METRICS_ENVIRONMENT }gcs-skills gcs-skills/1.0 (skill:google-cloud-storage-bucket-architect)" \
     gcloud storage buckets create gs://my-training-checkpoints-us-east1-b \
         --project=my-ai-project \
