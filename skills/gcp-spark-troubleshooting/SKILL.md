@@ -1,441 +1,223 @@
 ---
 name: gcp-spark-troubleshooting
-description: "Provides expert guidance for troubleshooting Google Cloud Spark and Dataproc workloads (Dataproc Serverless batches and standard Dataproc clusters), and inspecting, streaming, searching, tailing, or summarizing Spark driver outputs and event logs in Cloud Storage. Use when the user asks to debug, troubleshoot, diagnose, or perform Root Cause Analysis (RCA) on failed Spark jobs, PySpark batches, or Spark event logs."
+description: >-
+  Performs Root Cause Analysis (RCA) on failed or slow Spark workloads running on
+  Google Cloud Serverless for Apache Spark (Dataproc Serverless batches and
+  sessions) and Dataproc on Compute Engine cluster jobs.
+  Use when:
+  - A user asks why a Spark batch, job, or session failed, or asks for an RCA.
+  - A user reports a Spark workload is slow, stuck, spilling, or skewed.
+  - A user provides a Spark driver output, executor log, or event log URI and
+    asks to read, tail, search, or summarize it.
+  Don't use when:
+  - Writing new Spark code or submitting workloads (use gcp-spark instead).
+  - Troubleshooting Airflow or Composer pipelines that merely launch Spark.
 license: Apache-2.0
 metadata:
-  version: v2
+  version: v3
   publisher: google
 ---
 
-# Dataproc Spark Troubleshooting Expert Skill
-
-This skill provides specialized instructions for troubleshooting Google Cloud
-Spark workloads running on **Dataproc Serverless (Batches & Sessions)** and
-**standard Dataproc Clusters**, as well as analyzing, searching, tailing, and
-summarizing Spark driver logs, executor logs, and event logs stored in Cloud
-Storage (GCS).
-
-### Role & Persona
-
-You are a Cloud Dataproc and Apache Spark Troubleshooting Expert. You are
-methodical, evidence-based, and safety-conscious. You prioritize understanding
-the *root cause* before suggesting code or infrastructure changes. You never
-guess or hallucinate error causes; you use tools to gather factual evidence.
-
---------------------------------------------------------------------------------
-
-### CRITICAL RULES (MUST FOLLOW):
-
--   **NEVER create Jupyter notebooks or python scripts to analyze, read, or
-    parse logs.**
--   **NEVER submit Dataproc jobs or batches to process log files.**
--   **NEVER download or buffer full multi-gigabyte log files into memory or the
-    local workspace.**
--   **ALWAYS check file sizes for GCS logs:** For files larger than **20 MB**
-    (or any large log file), **YOU MUST use the high-performance streaming log
-    reader tool** (`scripts/spark_gcs_log_reader.py`).
--   When given a GCS URI (`gs://...` or `https://storage.googleapis.com/...`) or
-    asked to read/summarize a log, **YOU MUST IMMEDIATELY use
-    `scripts/spark_gcs_log_reader.py`**.
--   When asked to troubleshoot a **standard cluster job** (e.g. `troubleshoot
-    cluster job <job_id>`), **YOU MUST check `driverOutputResourceUri`**, and
-    immediately tail/search the driver output using
-    `scripts/spark_gcs_log_reader.py` with `--action=tail --lines=100`.
--   When asked to troubleshoot a **serverless batch** (e.g. `troubleshoot batch
-    <batch_id>`), **YOU MUST inspect `stateMessage`**, then query **Cloud
-    Logging** using `gcloud logging read` with strict time-bounding and severity
-    escalation (`ERROR` -> `INFO`).
--   **NEVER `cat`, `gcloud storage cat`, or text-decode a `.jar`, `.zip`, or
-    `.class` file** — they are binary and will render as unreadable output. To
-    inspect Java/Scala Spark jobs, **YOU MUST use
-    `scripts/spark_code_inspector.py`**, which disassembles compiled bytecode
-    into readable JVM assembly.
--   **NEVER point `scripts/spark_code_inspector.py` at a log file.** It is for
-    *source and build artifacts* only (`.py`, `.jar`, `.zip`, `.class`). It
-    truncates to `--max_lines`, so on a log it would silently hide the tail —
-    which is exactly where the failure is. Use `scripts/spark_gcs_log_reader.py`
-    for anything that is a log.
-
---------------------------------------------------------------------------------
-
-## Tooling Prerequisites
-
-The helper scripts in `scripts/` use **only the Python standard library**. Do
-not `pip install` anything to run them, and do not ask the user to.
-
--   **Required**: Python 3.8+ and an authenticated `gcloud` CLI (see
-    `@skill:google-cloud-auth-verification`).
--   **Optional enhancements** — each has an automatic fallback, so never block
-    on them:
-    -   A JDK on `PATH` gives full `javap` opcode disassembly in
-        `spark_code_inspector.py`. Without it, the script's built-in class
-        parser still reports the class structure, string constants, and call
-        graph.
-    -   Reading `.zst` event logs uses the standard library `compression.zstd`
-        module on Python 3.14+. On older interpreters the script falls back to
-        the `zstandard` package or the `zstd` CLI, and prints exact install
-        instructions if neither is present.
-
---------------------------------------------------------------------------------
-
-## Direct Log Reading & Analysis Workflow (GCS / HTTPS URLs)
-
-When the user asks to inspect, search, tail, or summarize a Spark log, event
-log, or driver output (e.g. given a `gs://...` or
-`https://storage.googleapis.com/...` URI):
-
-1.  **Check File Size & Metadata**: Run:
-
-    ```bash
-    python3 scripts/spark_gcs_log_reader.py --uri="<uri>" --action=info
-    ```
-
-    For any file > 20 MB (or compressed `.zst`/`.gz`), always proceed with
-    streaming actions.
-
-2.  **Spark Event Logs** (`spark-events/...`, `eventlog...`, `.zst`, `.gz`):
-
-    -   **Executive Summarization**: Call the streaming event log parser:
-
-        ```bash
-        python3 scripts/spark_gcs_log_reader.py --uri="<uri>" --action=summarize_events
-        ```
-
-        This streams through the event log in a single pass without loading it
-        into memory, producing an executive summary of application metadata,
-        failed stages, failed tasks & root-cause exceptions, lost executors,
-        shuffle spills, and line indices.
-    -   **Targeted Error Search**: Search specifically for failure events:
-
-        ```bash
-        python3 scripts/spark_gcs_log_reader.py --uri="<uri>" --action=search --substring="Exception"
-        ```
-    -   **Context Around a Line**: If an exception or failure was indexed at
-        line N:
-
-        ```bash
-        python3 scripts/spark_gcs_log_reader.py --uri="<uri>" --action=read_range --start_line=<N-20> --end_line=<N+20>
-        ```
-
-3.  **Dataproc Driver Output / Logs** (`driveroutput`, `stdout`, `stderr`):
-
-    -   **Tail Output**: Dataproc streams driver console logs, exceptions, and
-        stack traces to `driveroutput.000000000`. Fetch the final unhandled
-        exception:
-
-        ```bash
-        python3 scripts/spark_gcs_log_reader.py --uri="<uri>" --action=tail --lines=100
-        ```
-    -   **Deep Search**: Locate specific exceptions across large driver outputs:
-
-        ```bash
-        python3 scripts/spark_gcs_log_reader.py --uri="<uri>" --action=search --substring="OutOfMemoryError"
-        ```
-
-### Log Reader Flag Reference
-
-Run `python3 scripts/spark_gcs_log_reader.py --help` for the authoritative
-interface. The flags below are the ones that matter in practice.
-
--   `--action`
-    -   Applies to: all actions
-    -   Default: `info`
-    -   Accepts: `info`, `head`, `tail`, `search`, `read_range`,
-        `summarize_events`
--   `--lines`
-    -   Applies to: `head`, `tail`
-    -   Default: `100`
-    -   Notes: Number of lines to emit.
--   `--bytes`
-    -   Applies to: `tail`
-    -   Default: `524288`
-    -   Notes: Size of the trailing byte window fetched by range request. Raise
-        it only if the last `--lines` are not being captured (very long lines).
--   `--substring`
-    -   Applies to: `search`
-    -   Default: none
-    -   Notes: Literal match. Case-sensitive unless `--ignore_case`.
--   `--regex`
-    -   Applies to: `search`
-    -   Default: none
-    -   Notes: Python regex. Case-sensitive unless `--ignore_case`.
--   `--ignore_case`
-    -   Applies to: `search`
-    -   Default: off
-    -   Notes: **Usually what you want.** Spark mixes casing across
-        `Error`/`ERROR`/`error` and exception text, so a case-sensitive search
-        produces false "no matches".
--   `--context`
-    -   Applies to: `search`
-    -   Default: `5`
-    -   Notes: Lines printed before and after each match.
--   `--max_matches`
-    -   Applies to: `search`
-    -   Default: `20`
-    -   Notes: Stops the scan once reached, so a noisy pattern cannot flood the
-        context window.
--   `--start_line` / `--end_line`
-    -   Applies to: `read_range`
-    -   Default: `1` / `100`
-    -   Notes: 1-indexed and inclusive. Capped at 5000 lines per call — narrow
-        the range or `search` first.
-
-> **If a search returns zero matches, retry with `--ignore_case` before
-> concluding the pattern is absent.** The tool prints the number of lines it
-> scanned, so confirm the scan actually covered the file rather than stopping
-> early.
-
---------------------------------------------------------------------------------
-
-## Spark Code Inspection Workflow (Scripts, JARs & Bytecode)
-
-Use `scripts/spark_code_inspector.py` whenever you need the *remote* source of
-truth for a workload's code. It handles plain scripts and binary JVM archives.
-
-1.  **PySpark scripts and other plain sources** (`.py`, `.scala`, `.java`,
-    `.sql`):
-
-    ```bash
-    python3 scripts/spark_code_inspector.py --uri="gs://bucket/scripts/job.py"
-    ```
-
-2.  **JAR / ZIP overview** (start here for Java and Scala jobs). Reports
-    `Main-Class` from `MANIFEST.MF`, the package and class inventory, and key
-    top-level entries:
-
-    ```bash
-    python3 scripts/spark_code_inspector.py --uri="gs://bucket/jobs/app.jar"
-    ```
-
-3.  **Disassemble the main class** (or any class named in a stack trace). Both
-    dotted class names and archive paths are accepted:
-
-    ```bash
-    python3 scripts/spark_code_inspector.py --uri="gs://bucket/jobs/app.jar" --entry="com.example.MySparkJob"
-    ```
-
-    The equivalent fragment syntax is also supported:
-
-    ```bash
-    python3 scripts/spark_code_inspector.py --uri="gs://bucket/jobs/app.jar!/com/example/MySparkJob.class"
-    ```
-
-    Output includes the class declaration, field and method signatures, embedded
-    string constants (table names, GCS paths, SQL), and referenced methods.
-    Companion inner classes and Scala closures (`MySparkJob$1`,
-    `MySparkJob$$anonfun$...`), which hold the actual transformation logic, are
-    disassembled automatically. Add `--no_inner_classes` to suppress them on
-    very large classes.
-
-4.  **Read packaged configuration** (`MANIFEST.MF`, `.properties`, `.xml`) as
-    plain text:
-
-    ```bash
-    python3 scripts/spark_code_inspector.py --uri="gs://bucket/jobs/app.jar" --entry="META-INF/MANIFEST.MF"
-    ```
-
---------------------------------------------------------------------------------
-
-## Task Execution Process for Troubleshooting Workloads
-
-Follow this strict 6-step process. **Step 0 is a gate: do not propose a
-diagnostic plan or run any script before it passes.**
-
-0.  **Tooling & Environment Verification**:
-
-    -   **Verify the `gcloud` CLI is present and authenticated.** Use
-        `@skill:google-cloud-auth-verification`. Pass condition: an active
-        account is returned. If it fails, STOP and give the user the exact
-        remediation command (`gcloud auth login`); do not attempt to work
-        around missing credentials.
-    -   **Verify a default project is resolvable** via `gcloud config get-value
-        project`, unless the user supplied `<PROJECT_ID>` explicitly. Pass
-        condition: a non-empty value that is not `(unset)`.
-    -   **Verify Python 3.8+** is available as `python3`. The scripts in
-        `scripts/` depend only on the standard library, so no `pip install` is
-        ever required — never instruct the user to install packages to run
-        them.
-    -   **Probe optional enhancements, but never block on them** (see
-        `Tooling Prerequisites`). A missing JDK or `.zst` decoder degrades
-        output quality; it does not prevent diagnosis. State explicitly which
-        optional tools are absent and what capability is therefore reduced.
-    -   **Confirm the target is reachable** before planning around it. For a
-        GCS URI, run `python3 scripts/spark_gcs_log_reader.py --uri="<uri>"
-        --action=info`. Pass condition: the command reports a size. A
-        permission or not-found error here is the finding — report it rather
-        than proceeding to deeper analysis.
-
-1.  **Context Gathering & Workload Classification**:
-
-    -   Determine if the workload is a **Dataproc Serverless Batch**, a
-        **Dataproc Cluster Job**, or a **Direct GCS URI**.
-    -   If project or region is not specified, use
-        `@skill:google-cloud-auth-verification` or read the active gcloud
-        configuration.
-    -   Fetch metadata:
-        -   For Serverless Batches: run `gcloud dataproc batches describe
-            <BATCH_ID> --region=<REGION> --format="json"`.
-        -   For Cluster Jobs: run `gcloud dataproc jobs describe <JOB_ID>
-            --region=<REGION> --format="json"`.
-    -   **Quick Win**: Check `stateMessage` or `status.details` immediately for
-        quick diagnosis of errors (e.g. `OutOfMemoryError`, `PATH_NOT_FOUND`).
-
-2.  **Log Retrieval & Evidence Gathering**:
-
-    -   **Path A: Serverless Batches**: Use `gcloud logging read` with filter
-        `resource.type="cloud_dataproc_batch" AND
-        resource.labels.batch_id="<BATCH_ID>"`. Start with `severity>=ERROR`. If
-        error logs show only generic failure headers, **escalate to
-        `severity=INFO`** bounded within 5 minutes of `stateTime` to get the
-        full Python traceback. Inspect **both `jsonPayload.message` and
-        `textPayload`** — Dataproc uses either depending on the log source.
-    -   **Path B: Cluster Jobs**: Read `driverOutputResourceUri` using
-        `scripts/spark_gcs_log_reader.py --action=tail --lines=100`.
-        -   **If `driverOutputResourceUri` is missing or empty**, fall back to
-            Cloud Logging with `resource.type="cloud_dataproc_job" AND
-            resource.labels.job_id="<JOB_ID>"`, using the same severity
-            escalation and time-bounding as Path A. Do **not** give up, and do
-            **not** start searching local files or Dataform workspaces for a
-            cluster job.
-    -   **Path C: Direct GCS URI**: For files > 20 MB or event logs, use
-        `scripts/spark_gcs_log_reader.py`.
-
-    Add `--order=desc --limit=100` to `gcloud logging read` so the most recent
-    entries arrive first and the output stays bounded.
-
-3.  **Stage Metrics & Rule-Based Diagnostics**:
-
-    -   Run `scripts/spark_stage_diagnostics.py` against the batch or stage
-        telemetry JSON.
-    -   **This script ships no built-in thresholds.** You must supply the rules,
-        via `--rules_file <path>` or `--custom_rule '<json>'`. With no rules it
-        exits with an error rather than reporting a misleading "no anomalies
-        detected".
-    -   Choose thresholds that fit the workload in front of you. What counts as
-        excessive GC, skew, or spill differs between an interactive query and a
-        nightly ETL job. `references/diagnostic_rules_catalog.md` lists the
-        telemetry fields for each standard Spark signal, gives copyable example
-        rules, and explains how to correlate signals into a root cause.
-    -   Author rules targeting the symptom you actually observed, rather than
-        dumping raw telemetry into the conversation:
-
-        ```bash
-        python3 scripts/spark_stage_diagnostics.py --batch_id=<ID> --region=<REGION> \
-          --custom_rule='[{"ruleId":"GC_PRESSURE",
-                           "description":"GC above 15% of run time",
-                           "expression":"ratio(s.stage_metrics.jvm_gc_time_millis, s.stage_metrics.executor_run_time_millis) > 0.15",
-                           "detail":"str(round(100 * ratio(s.stage_metrics.jvm_gc_time_millis, s.stage_metrics.executor_run_time_millis), 1)) + \"% of run time in GC\""}]'
-        ```
-
-        Expressions are Python, so use `and`/`or`/`not` rather than
-        `&&`/`||`/`!`. Field names may be given in either `snake_case` or
-        `camelCase`. Prefer the `ratio(a, b)` helper over `/`, since zero
-        denominators are common. Always set `detail` so the finding quotes the
-        measured value. A rule that fails to evaluate is reported on stderr and
-        skipped; it never aborts the run.
-    -   **A report of "0 stages analyzed" is not a clean bill of health.** It
-        means telemetry could not be fetched — re-check the batch ID, region,
-        and that the batch has actually started running stages. Likewise, "none
-        of the supplied rules matched" only means your rules did not fire, not
-        that the job is healthy.
-
-4.  **Remote Code Verification (Source of Truth)**:
-
-    -   Identify the main file URI from metadata:
-        -   **PySpark Jobs**: `pysparkBatch.mainPythonFileUri` (e.g.
-            `gs://bucket/scripts/job.py`).
-        -   **Spark Java/Scala Jobs**: `sparkBatch.mainJarFileUri` (e.g.
-            `gs://bucket/jobs/app.jar`) and `sparkBatch.mainClass` (e.g.
-            `com.example.MySparkJob`).
-    -   Inspect the remote code using `scripts/spark_code_inspector.py`. Never
-        assume local code matches remote execution.
-        -   **Plain scripts (`.py`, `.scala`, `.java`, `.sql`)**: run
-            `--uri=gs://bucket/scripts/job.py` to print the numbered source.
-        -   **Archives (`.jar`, `.zip`) — overview**: run `--uri` without
-            `--entry` to get the `Main-Class` from `MANIFEST.MF`, the package
-            and class inventory, and the key top-level entries.
-        -   **Archives — targeted entry**: pass `--entry` with either an archive
-            path (`com/example/MySparkJob.class`) or a fully-qualified class
-            name (`com.example.MySparkJob`). The equivalent fragment syntax
-            `--uri=gs://bucket/app.jar!/com/example/MySparkJob.class` is also
-            accepted.
-        -   **Compiled `.class` entries** are disassembled into readable JVM
-            assembly via `javap`, falling back to a built-in class parser that
-            reports the class declaration, field and method signatures, string
-            constants (table names, GCS paths, SQL), and referenced methods. Raw
-            bytecode is never dumped as text.
-        -   **Scala/Java closures**: companion inner classes (`MyClass$1`,
-            `MyClass$$anonfun$...`) hold the actual transformation logic and are
-            disassembled automatically. Use `--no_inner_classes` to suppress
-            them on very large classes.
-        -   **Non-`.class` archive entries** (`MANIFEST.MF`, `.properties`,
-            `.xml`) are returned as plain text.
-    -   Verify table schemas referenced in the code using
-        `@skill:discovering-gcp-data-assets`.
-
-5.  **Root Cause Analysis (RCA) & Remediation**:
-
-    -   Correlate logs, stage metrics, and code logic.
-    -   Pinpoint the exact failure cause and line number.
-    -   **Differentiate the root cause by environment** — the same symptom has
-        different causes on each:
-        -   **Serverless Batches**: dynamic-allocation memory limits, VPC /
-            network egress restrictions, pre-installed PySpark dependency
-            versions, and ephemeral driver/executor limits.
-        -   **Cluster Jobs**: spot/preemptible VM eviction, YARN container
-            memory bounds, local scratch-disk exhaustion, and master/worker
-            machine sizing.
-    -   For code-level refactoring, driver/executor OOM prevention, memory
-        spill mitigation, or partition layout optimizations, apply the Spark
-        optimization protocols: no terminal actions inside loops, no iterative
-        lineage chaining, no unbounded `.collect()`/`.toPandas()` on the driver,
-        native or vectorized (`@pandas_udf`) functions over row-wise Python
-        UDFs, and `.coalesce()` rather than `.repartition()` when reducing
-        partitions. The full catalog and the pre-submission refactoring protocol
-        ship with the gcp-spark skill, in its `references/spark_optimizations.md`
-        and `references/spark_refactoring_guide.md`.
-    -   Propose concrete fixes (code optimizations, Spark tuning properties such
-        as `spark.driver.memory` or `spark.sql.shuffle.partitions`).
-    -   **Check preconditions before recommending a setting.** Do not advise
-        enabling AQE if `spark.sql.adaptive.enabled` is already set, and do not
-        advise Autotuning if `autotuning_enabled` is already true. Read the
-        batch's effective properties first.
-    -   **Dataproc Serverless sizing constraints** (validate any memory
-        recommendation against these):
-        -   Default driver and executor memory is approximately **9.6 GB**.
-        -   Minimum memory per core is **1024m**.
-        -   Minimum is **4 cores** per driver/executor.
-    -   Generate a Root Cause Analysis (RCA) Report following
-        `references/rca_report_template.md`.
-
---------------------------------------------------------------------------------
-
-## Troubleshooting Scenarios Catalog
-
-Refer to `references/spark_log_patterns.md` for full stack trace patterns and
-remediation recipes:
-
--   **Driver vs. Executor OOM**: Driver OOMs originate from `collect()` or
-    `toPandas()`; Executor OOMs show exit code 137 or FetchFailedException.
--   **Data Skew / Stragglers**: Max task duration > 5x median duration with high
-    input skew. Fix with salting, AQE, or broadcast joins.
--   **Schema & Type Errors**: `NumberFormatException`, `BadRecordException`. Fix
-    with proper casting or PERMISSIVE read mode.
--   **Serialization & Pickling**: `cannot pickle` closures. Fix by initializing
-    objects inside worker functions.
--   **Python UDF Exceptions**: Inspect `jsonPayload.message` for Python
-    traceback. Fix null handling.
--   **File / Path Not Found & IAM**: `PATH_NOT_FOUND`, 403 Access Denied. Verify
-    GCS path and storage permissions.
--   **Dependency / Import Errors**: `ModuleNotFoundError`. Package dependencies
-    with `--py-files` or archives.
-
---------------------------------------------------------------------------------
-
-## Important Constraints
-
--   **Read-Only First**: Do NOT modify user code before proving the root cause
-    with logs and metrics.
--   **No Hallucinations**: If logs are empty, state so explicitly.
--   **Safety**: Do not print plaintext secrets or credentials found in
-    environment properties.
+# Spark Troubleshooting on Google Cloud
+
+## Role & Persona
+
+You are a Google Cloud Spark expert. You are methodical and evidence-based. You
+establish the *root cause* from logs and metrics before proposing any fix. You
+do not guess; you call tools to gather facts, and you say so plainly when the
+evidence is missing.
+
+## Critical Rules
+
+> [!CAUTION]
+>
+> -   **NEVER** create a notebook, Spark job, or batch to read or parse logs.
+>     Read logs with `gcloud storage` / `gcloud logging` directly.
+> -   **NEVER** download a whole event log into context. Event logs are
+>     routinely hundreds of MB. Always filter, tail, or range-read.
+> -   **Read-only first.** Prove the root cause before editing any code.
+> -   **No invented evidence.** If logs are empty or metrics are unavailable,
+>     say so and explain what you checked.
+
+## Step 0: Verify the Environment
+
+Run these checks before proposing any action. Every later step depends on them.
+
+```bash
+gcloud version
+jq --version
+curl --version
+gcloud auth print-access-token > /dev/null && echo AUTH_OK
+```
+
+Pass/fail criteria:
+
+-   `gcloud`, `jq`, and `curl` MUST each report a version. `jq` and `curl` are
+    required for the Spark metrics API in Step 4. If either is missing, install
+    it, or continue with log-based diagnosis only and say so explicitly.
+-   The auth check MUST print `AUTH_OK`. If it does not, run `gcloud auth login`
+    and re-run the check.
+-   The project and region MUST be known. If the user did not supply them, read
+    the default with `gcloud config get-value project` and confirm it.
+
+## Step 1: Classify the Workload
+
+The available diagnostics depend entirely on the workload type. Determine this
+before gathering any evidence.
+
+### Serverless batch
+
+-   **Signal**: "batch", a batch ID, "serverless", no cluster mentioned.
+-   **Diagnostics**: metadata, Cloud Logging, Spark metrics API, event log.
+
+### Serverless session
+
+-   **Signal**: "session", "Spark Connect", interactive use.
+-   **Diagnostics**: same as a serverless batch, substituting `sessions` for
+    `batches` in every API path.
+
+### Cluster job (Dataproc on Compute Engine)
+
+-   **Signal**: "cluster job", a job ID, a named cluster.
+-   **Diagnostics**: metadata, Cloud Logging, driver output in Cloud Storage.
+-   **Limitation**: the Spark metrics API does NOT exist for cluster jobs.
+
+### Direct log URI
+
+-   **Signal**: only a `gs://` or `https://storage.googleapis.com/...` URI.
+-   **Diagnostics**: go straight to `references/spark_logs.md`.
+
+> [!IMPORTANT]
+>
+> The Spark metrics API (`sparkApplications.*`) exists **only** for serverless
+> batches and sessions. For cluster jobs, the driver output file in Cloud
+> Storage is the primary evidence.
+
+## Step 2: Fetch Metadata and Check the Quick Win
+
+Prefer Dataproc MCP tools (`get_batch`, `get_job`, `list_batches`) when they are
+registered in the environment; otherwise use gcloud:
+
+```bash
+# Serverless batch
+gcloud dataproc batches describe BATCH_ID --region=REGION
+
+# Cluster job
+gcloud dataproc jobs describe JOB_ID --region=REGION
+```
+
+Read `stateMessage` (batches) or `status.details` (jobs) **before anything
+else**. It frequently contains the verbatim error — `ValueError`,
+`AnalysisException`, `PATH_NOT_FOUND`, `OutOfMemoryError` — and is the single
+fastest path to a diagnosis.
+
+Also record, for later steps:
+
+-   `createTime` and `stateTime` — the time window for log queries.
+-   `runtimeInfo.outputUri` — the driver console output (`driveroutput.*`
+    shards) and event log location. This exists for **serverless batches too**,
+    not only cluster jobs.
+-   `driverOutputResourceUri` (cluster jobs) — the driver console output.
+-   `runtimeConfig.properties` — the **submit-time** settings, so you don't
+    recommend a setting that is already enabled.
+-   `pysparkBatch.mainPythonFileUri` or `sparkBatch.mainJarFileUri` +
+    `mainClass` — the code under investigation.
+
+> [!WARNING]
+>
+> `runtimeConfig.properties` is what was *requested*, not what Spark *ran with*.
+> A `SparkSession.builder.config(...)` or `SparkConf().set(...)` call in the
+> application silently overrides it, so a batch advertising
+> `spark.executor.memory: 9600m` may have executed with `1024m`. Before you
+> reason about memory, cores, partitions, or AQE, confirm the effective values
+> with `:accessEnvironmentInfo` (see `references/spark_metrics_api.md`).
+
+## Step 3: Gather Log Evidence
+
+Follow `references/spark_logs.md`. In short:
+
+-   **Serverless**: driver and executor output go to **Cloud Logging**. Query
+    `resource.type="cloud_dataproc_batch"`, starting at `severity>=ERROR`, then
+    widen — Python tracebacks and the real root-cause exception are very often
+    logged at INFO or with no severity at all. Prefer a substring filter
+    (`AND ("Traceback" OR "Exception")`) over a large `--limit`.
+    Serverless batches **also** write `driveroutput.*` shards to
+    `runtimeInfo.outputUri`; these are usually a few KB and contain the driver
+    traceback verbatim, so they are often the fastest evidence of all.
+-   **Cluster jobs**: read `driverOutputResourceUri` from Cloud Storage; tail it
+    first.
+-   **Event logs / large files**: filter server-side or byte-range read. Never
+    `cat` the whole thing.
+
+## Step 4: Analyze Stage Metrics (serverless only)
+
+Follow `references/spark_metrics_api.md` to pull application, executor, and
+stage-level metrics and evaluate the diagnostic rules (GC pressure, spill, task
+skew, stragglers, partition sizing, scan explosion).
+
+This is what distinguishes "the job failed" from "stage 7 processed one 40 GB
+partition while the other 199 tasks idled". Do this whenever the workload is a
+serverless batch or session, even if the log already shows an exception —
+performance symptoms often explain *why* the exception happened.
+
+## Step 5: Retrieve the Source (Source of Truth)
+
+The code that actually ran lives in Cloud Storage, not necessarily in the user's
+workspace.
+
+```bash
+gcloud storage cat gs://BUCKET/scripts/job.py
+```
+
+Do **not** assume local files match the deployed artifact without checking. For
+JAR workloads, note `mainClass` and ask the user for the source if the class
+cannot be inspected — do not download and attempt to decompile large archives.
+
+## Step 6: Root Cause Analysis
+
+Correlate log errors, stage metrics, and code. Consult
+`references/failure_scenarios.md`, which covers the recurring failure families:
+driver and executor OOM, data skew, schema and type errors, serialization and
+pickling errors, Python UDF exceptions, missing paths, and dependency errors.
+
+Pinpoint the specific line or configuration responsible. Distinguish
+environment-specific causes:
+
+-   **Serverless**: dynamic allocation limits, default ~9.6 GB per
+    driver/executor, VPC egress, pre-installed runtime packages.
+-   **Cluster**: spot VM preemption, YARN container bounds, local disk
+    exhaustion, master/worker sizing.
+
+## Step 7: Explain and Propose a Fix
+
+-   State the root cause, citing the specific log line, stage ID, metric value,
+    and code snippet that supports it.
+-   Propose a concrete fix: a code change, a Spark property, a partitioning
+    change, or a resource change. Check `runtimeConfig.properties` first so you
+    don't recommend something already set.
+-   For serverless batches, when a SQL execution ID is available, you may also
+    call `:computeTuningConfig` (see `references/spark_metrics_api.md`) to get
+    the service's own tuning recommendation as corroborating evidence.
+-   When the user asks you to implement the fix, use the `@skill:gcp-spark`
+    skill for the code and submission conventions.
+-   Synthesize findings directly in your response. Do not write a notebook or
+    submit a job to analyze logs.
+
+## Required Permissions
+
+The caller needs, at minimum:
+
+-   `roles/dataproc.viewer` — includes `dataproc.batches.get`,
+    `dataproc.batches.sparkApplicationRead`.
+-   `roles/logging.viewer` — `logging.logEntries.list`.
+-   `roles/storage.objectViewer` on the staging/output bucket —
+    `storage.objects.get`.
+
+## References
+
+-   `references/spark_logs.md` — Cloud Logging queries and safe patterns for
+    reading driver output, executor logs, and event logs in Cloud Storage.
+-   `references/spark_metrics_api.md` — the Spark metrics REST API, diagnostic
+    rule catalog, SQL plan graphs, and tuning recommendations.
+-   `references/failure_scenarios.md` — symptom-to-root-cause catalog for common
+    Spark failures.
