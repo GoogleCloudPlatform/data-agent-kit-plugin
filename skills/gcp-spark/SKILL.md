@@ -1,22 +1,22 @@
 ---
 name: gcp-spark
 description: |
-  Develops, optimizes and executes Spark code on Managed Spark on Google Cloud (Dataproc Clusters and Serverless).
-  Reads and writes data using BigLake Iceberg catalogs, BigQuery and Spanner.
-  Debugs execution failures.
+  Develops, optimizes and runs PySpark/Spark code on Managed Spark (Dataproc
+  clusters and Serverless) on Google Cloud.
   Use when:
-  - Writing Spark ETL pipelines on Google Cloud Platform.
-  - Optimizing PySpark or Spark SQL code for performance, memory, or OOM risks.
-  - Preparing Spark workloads for production submission.
-  - Training or running inference with Machine Learning models with spark on Google Cloud Platform.
+  - Authoring or running Spark/PySpark notebooks (any kernel), incl. data
+    analysis, reports and visualizations.
+  - Writing Spark ETL pipelines or preparing workloads for production.
+  - Training or running inference with ML models on Spark.
+  - Optimizing PySpark or Spark SQL for performance, memory, or OOM risks.
   - Managing Spark clusters, jobs, batches, and interactive sessions.
   Don't use when:
-  - Writing generic Python scripts that don't use Spark.
+  - Writing generic Python that doesn't use Spark.
   - Performing simple SQL queries that can be done directly in BigQuery.
-  - Troubleshooting failed Spark workloads or analyzing logs (use @skill:gcp-spark-troubleshooting).
+  - Troubleshooting failed Spark workloads (use @skill:gcp-spark-troubleshooting).
 license: Apache-2.0
 metadata:
-  version: v20
+  version: v22
   publisher: google
 ---
 
@@ -81,6 +81,10 @@ metadata:
     across other projects as it can take a long time. If an expected dataset or
     table does not exist, use `@skill:discovering-gcp-data-assets` to discover
     all similar tables in the namespace or project.
+
+    Limit lookups outside the notebook to schema and metadata. Do NOT run
+    profiling or aggregation queries via `bq`, `gcloud`, or SQL tools before or
+    after building the notebook; compute and verify results in notebook cells.
 
     *MINOR TYPO RULE*: If there is a minor typo (e.g. `employees` vs
     `employee`), you can fix the error and proceed.
