@@ -208,6 +208,12 @@ gcloud beta dataproc session-templates describe <TEMPLATE_NAME> \
     (`<CATALOG_NAME>.<NAMESPACE_NAME>.<TABLE_NAME>`).
 -   If multiple catalogs are configured, use the `<CATALOG_NAME>` whose
     `spark.sql.catalog.<CATALOG_NAME>.warehouse` matches the table's warehouse.
+-   If the table's warehouse is unknown, find it with an unscoped
+    `@skill:discovering-gcp-data-assets` search (`system=biglake
+    name:<TABLE_NAME>`; BigLake entries may be registered in another project)
+    and use `metadataPath` from `lookup_context`. Do NOT crawl the warehouse
+    bucket, parse `metadata.json` by hand, or infer the catalog from a
+    same-named BigQuery table.
 
 ###### Case 2: Unknown Session Template
 
