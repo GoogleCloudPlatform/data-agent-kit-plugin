@@ -12,26 +12,26 @@ utilizing TPU or GPU accelerators. These workloads require ultra-high read/write
 throughput, sub-millisecond latencies, and co-location with compute resources to
 prevent compute starvation.
 
-## Architecture Alternatives: Rapid Cache vs. Zonal Buckets (Rapid Storage)
+## Architecture Alternatives: Rapid Cache vs. Zonal Buckets (Rapid Bucket)
 
 Depending on the specific workload phase (Training, Checkpointing, or Inference)
 and data access patterns, recommend one of the two Cloud Storage Rapid
 solutions. Per the
 [Rapid Bucket Terminology](https://cloud.google.com/storage/docs/rapid/rapid-bucket#terminology),
 **Rapid Bucket** is the product that enables buckets to be created with a zonal
-location and the **Rapid storage** class, while individual buckets are referred
+location and the **Rapid storage class**, while individual buckets are referred
 to as **zonal buckets**.
 
-Dimension                        | Rapid Cache                                                                                                            | Zonal Buckets (Rapid Storage)
-:------------------------------- | :--------------------------------------------------------------------------------------------------------------------- | :----------------------------
-**Description**                  | SSD-backed zonal read cache attached to an existing Cloud Storage bucket (regional, dual-regional, or multi-regional). | Zonal bucket in the `RAPID` storage class.
-**Primary Use Case**             | **Model Training & Inference** where datasets already exist in a Cloud Storage bucket.                                 | **Model Checkpointing** and high-QPS, write-heavy training tasks.
-**Read/Write**                   | **Read-Only**. Writes must be written to the underlying bucket.                                                        | **Read and Write**. Serves as a writable source of truth.
-**Namespace**                    | Same namespace as the underlying Cloud Storage bucket.                                                                 | Independent namespace (must copy/upload data directly).
-**Performance**                  | High throughput, cold-start penalty on first reads. Same QPS as standard Cloud Storage.                                | Ultra-low latency, high throughput, and high QPS (no cold start).
-**Data Lifecycle**               | Default TTL is 24 hours. Cache automatically evicts stale data.                                                        | Permanent storage (data lives forever until deleted).
-**Appendability**                | No append support.                                                                                                     | **Supports Append (BiDi protocol)** to write streaming data up to 5TiB.
-**Hierarchical Namespace (HNS)** | Optional.                                                                                                              | **Required** (Always enabled, not configurable).
+Dimension                  | Rapid Cache                                                                                                                    | Zonal Buckets (Rapid Bucket)
+:------------------------- | :----------------------------------------------------------------------------------------------------------------------------- | :---------------------------
+**Description**            | SSD-backed zonal read cache attached to an existing Cloud Storage bucket (regional, dual-regional, or multi-regional).         | Zonal bucket in the `RAPID` storage class.
+**Primary Use Case**       | **Model Training & Inference** where datasets already exist in a Cloud Storage bucket.                                         | **Model Checkpointing** and high-QPS, write-heavy training tasks.
+**Read/Write**             | **Read-Only**. Writes must be written to the underlying bucket.                                                                | **Read and Write**. Serves as a writable source of truth.
+**Namespace**              | Same namespace as the underlying Cloud Storage bucket.                                                                         | Independent namespace (must copy/upload data directly).
+**Performance**            | High throughput. Initial read cold-start penalty can be avoided using **ingest-on-write**. Same QPS as standard Cloud Storage. | Ultra-low latency, high throughput, and high QPS (no cold start).
+**Data Lifecycle**         | Default TTL is 24 hours. Cache automatically evicts stale data.                                                                | Permanent storage (data lives forever until deleted).
+**Appendability**          | No append support.                                                                                                             | **Supports Append (BiDi protocol)** to write streaming data up to 5TiB.
+**Hierarchical Namespace** | Optional.                                                                                                                      | **Required** (Always enabled, not configurable).
 
 --------------------------------------------------------------------------------
 
@@ -42,17 +42,17 @@ configure and recommend the following:
 
 1.  **Zonal Co-location**: Co-locate the Rapid Cache instance in the exact same
     zone as the compute cluster (e.g. GPU/TPU cluster).
-2.  **Cache Pre-warming (Workload Strategy)**: Recommend pre-warming the cache
-    prior to starting the training script to avoid cold-start latencies and
-    prevent GPU/TPU starvation.
-    *   **gcloud Command**: `gcloud storage cat gs://[bucket-name]/**
-        --project=[project-id] > /dev/null`
+2.  **Ingest-on-Write (Recommended to Avoid Cold Start)**: Enable
+    [ingest-on-write](https://cloud.google.com/storage/docs/rapid/rapid-cache#ingest-on-write)
+    (at bucket-level or prefix/managed folder level) so that newly written data
+    is immediately ingested into the cache upon write. This eliminates initial
+    cache misses and avoids cold-start penalties for read-after-write workloads.
 
 --------------------------------------------------------------------------------
 
-## Zonal Buckets (Rapid Storage) Specific Recommendations
+## Zonal Buckets (Rapid Bucket) Specific Recommendations
 
-When the architecture plan recommends **Zonal Buckets (Rapid Storage)**, the
+When the architecture plan recommends **Zonal Buckets (Rapid Bucket)**, the
 agent MUST explicitly configure and recommend the following:
 
 1.  **Zonal Co-location**: Co-locate the zonal bucket in the exact same zone as
@@ -61,7 +61,7 @@ agent MUST explicitly configure and recommend the following:
 2.  **Storage Class**: The storage class MUST be set to `RAPID`.
 3.  **Disable Soft Delete**: Soft delete is not supported for zonal buckets and
     MUST be disabled (set `--soft-delete-duration=0` during creation).
-4.  **Hierarchical Namespace (HNS)**: HNS MUST be enabled.
+4.  **Hierarchical Namespace**: Hierarchical Namespace MUST be enabled.
 5.  **BiDi Protocol Recommendation**: For streaming, write-heavy, or logging
     workloads, explicitly recommend utilizing the **BiDi protocol**
     (Bidirectional Streaming) on the zonal bucket to enable low-latency,
@@ -77,7 +77,7 @@ their recommendation status.
 Feature Group   | Cloud Storage Feature / Setting        | Status                     | Recommendations & Implementation Details                                                                                                                                | Documentation Link
 :-------------- | :------------------------------------- | :------------------------- | :---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :-----------------
 **Core**        | **Storage Class**                      | Highly Recommended         | Use **STANDARD** for standard buckets, or **RAPID** storage class for zonal buckets.                                                                                    | [Storage Classes](https://cloud.google.com/storage/docs/storage-classes)<br>[Rapid Bucket Terminology](https://cloud.google.com/storage/docs/rapid/rapid-bucket#terminology)
-                | **Bucket Type**                        | Highly Recommended         | **Zonal** (with Rapid storage) or **Regional / Dual-region / Multi-region** (for Cloud Storage bucket with Rapid Cache) to co-locate storage and compute.               | [Locations](https://cloud.google.com/storage/docs/locations)
+                | **Bucket Type**                        | Highly Recommended         | **Zonal** (with Rapid Bucket) or **Regional / Dual-region / Multi-region** (for Cloud Storage bucket with Rapid Cache) to co-locate storage and compute.                | [Locations](https://cloud.google.com/storage/docs/locations)
 **Serving**     | **CORS & Signed URLs**                 | Optional / Not Recommended | Avoid exposing AI datasets directly to public users.                                                                                                                    |
 **Security**    | **Uniform Bucket-Level Access (UBLA)** | **Required**               | **Must be enabled** for baseline access control security.                                                                                                               | [Uniform Bucket-Level Access](https://cloud.google.com/storage/docs/uniform-bucket-level-access)
                 | **Encryption (CMEK)**                  | Highly Recommended         | Configure CMEK. Use KMS Autokey for automation.                                                                                                                         | [CMEK](https://cloud.google.com/storage/docs/encryption/customer-managed-keys)
@@ -94,10 +94,11 @@ Feature Group   | Cloud Storage Feature / Setting        | Status               
         exists. Recommend **Rapid Cache** to save migration time and egress
         costs.
     *   *If Checkpointing (write-heavy)*: Recommend **zonal buckets** (with
-        Rapid storage) for low-latency writes.
+        Rapid Bucket) for low-latency writes.
 2.  **What zone is your compute cluster (TPU/GPU) located in?**
     *   *Recommendation*: Co-locate the Rapid Cache or zonal bucket in the exact
         same zone (e.g. `us-central1-a`) to eliminate network bottlenecks.
-3.  **If using Rapid Cache, do you want to pre-warm the cache?**
-    *   *Recommendation*: Pre-warm the cache before starting training jobs to
-        avoid cold-start performance penalties.
+3.  **If using Rapid Cache, do you want to enable ingest-on-write?**
+    *   *Recommendation*: Enable ingest-on-write so that data is ingested into
+        the cache upon write, eliminating initial cache misses and cold-start
+        penalties.
