@@ -9,7 +9,7 @@ description: |-
     4. You need to query BigQuery from within a notebook. DO NOT use the Python BigQuery client library; instead, you MUST use the `%%bqsql` magics explained in this skill.
 license: Apache-2.0
 metadata:
-  version: v6
+  version: v8
   publisher: google
 ---
 
@@ -45,6 +45,14 @@ comparison is involved, favor a notebook and a visualization. A notebook is the
 
 ## Notebook Best Practices
 
+> [!CAUTION]
+>
+> **ALL DISCOVERY HAPPENS IN-CELL**: Schema inspection, data preview, package
+> availability, and model testing MUST be executed entirely inside notebook
+> cells. Do not run shell commands, external SQL tools (`execute_sql`,
+> `execute_sql_readonly`), or separate Python scripts/environments to test code
+> before creating cells.
+
 > [!IMPORTANT]
 >
 > **Agent execution rules**: Your behavior MUST depend on whether the
@@ -70,9 +78,11 @@ comparison is involved, favor a notebook and a visualization. A notebook is the
 2.  **IDENTIFY DATA EARLY**: Use `@skill:discovering-gcp-data-assets` or
     BigQuery list tools to find the correct `project.dataset.table` before
     writing ANY code. If the table ID is missing, ask the user.
-3.  **CLEAN FINAL STATE**: The final notebook MUST NOT have failed cells. If a
-    cell fails, you MUST fix it. If you tried several versions, delete the
-    failed attempts before you present the notebook to the user.
+3.  **CLEAN FINAL STATE**: The final notebook MUST NOT have failed cells. It is
+    normal for cells to encounter errors during in-notebook prototyping—fix
+    failed cells in-place using `replace_cell` (or delete failed attempts)
+    before presenting the notebook to the user, rather than pre-testing code
+    outside the notebook.
 4.  **LOGICAL CHUNK FIDELITY**: Keep cells small. One logical transformation or
     visualization per cell. Group related cells into logical units (e.g., a
     BigQuery `%%bqsql` magic cell followed immediately by a Python visualization
@@ -239,6 +249,10 @@ batch from the shell (for example `jupyter nbconvert --execute` or
 For **Local Python** execution, you **MUST** use a virtual environment and the
 Python version inferred from the kernel definition.
 
+Keep cell outputs small: avoid repeated `.count()`/`.show()` in one cell, use
+`.show(n)` with a small `n`, and call `plt.close()` after showing a figure. If
+a tool output is spilled to a file, read it once and only the part you need.
+
 ## Cell Execution Failure Handling
 
 > [!CAUTION]
@@ -386,8 +400,7 @@ import bigframes.pandas as bpd
 
 > [!IMPORTANT]
 >
-> The `bigframes` library must be installed. Determine if bigframes needs to be
-> installed by following @skill:managing-python-dependencies.
+> The `bigframes` library must be installed.
 
 ```python
 %%bqsql df_sample
@@ -403,6 +416,9 @@ SELECT * FROM `project.dataset.table` LIMIT 10
 >     instead.
 > 2.  **NO Mixing Logic**: Do not put Python code in the same cell as `%%bqsql`
 >     magics.
+> 3.  **NO Unbundled Micro-Testing**: Do not issue individual shell commands per
+>     check or run out-of-band diagnostic scripts. Minimize how often you need
+>     to ask the user for permission.
 
 #### Working with SQL Results in Python
 
