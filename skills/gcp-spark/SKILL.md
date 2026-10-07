@@ -1,22 +1,22 @@
 ---
 name: gcp-spark
 description: |
-  Develops, optimizes and executes Spark code on Managed Spark on Google Cloud (Dataproc Clusters and Serverless).
-  Reads and writes data using BigLake Iceberg catalogs, BigQuery and Spanner.
-  Debugs execution failures.
+  Develops, optimizes and runs PySpark/Spark code on Managed Spark (Dataproc
+  clusters and Serverless) on Google Cloud.
   Use when:
-  - Writing Spark ETL pipelines on Google Cloud Platform.
-  - Optimizing PySpark or Spark SQL code for performance, memory, or OOM risks.
-  - Preparing Spark workloads for production submission.
-  - Training or running inference with Machine Learning models with spark on Google Cloud Platform.
+  - Authoring or running Spark/PySpark notebooks (any kernel), incl. data
+    analysis, reports and visualizations.
+  - Writing Spark ETL pipelines or preparing workloads for production.
+  - Training or running inference with ML models on Spark.
+  - Optimizing PySpark or Spark SQL for performance, memory, or OOM risks.
   - Managing Spark clusters, jobs, batches, and interactive sessions.
   Don't use when:
-  - Writing generic Python scripts that don't use Spark.
+  - Writing generic Python that doesn't use Spark.
   - Performing simple SQL queries that can be done directly in BigQuery.
-  - Troubleshooting failed Spark workloads or analyzing logs (use @skill:gcp-spark-troubleshooting).
+  - Troubleshooting failed Spark workloads (use @skill:gcp-spark-troubleshooting).
 license: Apache-2.0
 metadata:
-  version: v20
+  version: v22
   publisher: google
 ---
 
@@ -185,6 +185,9 @@ Before submitting a job, verify:
 
 -   [ ] **All imports present** (`col`, `when`, `lit`, `broadcast`, etc. from
     `pyspark.sql.functions`)
+-   [ ] **No shadowed builtins** use `from pyspark.sql import functions as F`;
+    never `import *` or import `min`/`max`/`sum`/`round` from
+    `pyspark.sql.functions`
 -   [ ] **`vector_to_array` from correct module** use `from pyspark.ml.functions
     import vector_to_array` (NOT `pyspark.sql.functions`)
 -   [ ] **DataFrame schema matches target Iceberg table** verify with
