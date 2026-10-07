@@ -2,8 +2,12 @@
 
 **Verified patterns** for ML training:
 - **XGBoost**: Use `SparkXGBClassifier`
-- **Native Spark ML**: `GBTClassifier`, `RandomForestClassifier`,
-  `LogisticRegression`
+- **Native Spark ML**: `GBTClassifier` (binary labels only),
+  `RandomForestClassifier`, `LogisticRegression`
+- **Multiclass (>2 classes)**: use `RandomForestClassifier`,
+  `LogisticRegression(family="multinomial")` or `SparkXGBClassifier`. Do NOT
+  wrap `GBTClassifier` in `OneVsRest` or fall back to scikit-learn on
+  `toPandas()` of the training data.
 
 ## LightGBM on Dataproc
 
@@ -14,6 +18,7 @@
 **Alternatives:**
 1. **Use XGBoost** — Similar performance, native Spark support.
 2. **Use Native Spark ML** — `GBTClassifier` provides similar gradient boosting
+   (binary classification only)
 3. **Use Vertex AI** — Train LightGBM on Vertex, export model, load in Spark
    for inference
 4. **Use Dataproc Cluster** (not Serverless) — More control over dependencies
