@@ -1,22 +1,22 @@
 ---
 name: gcp-spark
 description: |
-  Develops, optimizes and executes Spark code on Managed Spark on Google Cloud (Dataproc Clusters and Serverless).
-  Reads and writes data using BigLake Iceberg catalogs, BigQuery and Spanner.
-  Debugs execution failures.
+  Develops, optimizes and runs PySpark/Spark code on Managed Spark (Dataproc
+  clusters and Serverless) on Google Cloud.
   Use when:
-  - Writing Spark ETL pipelines on Google Cloud Platform.
-  - Optimizing PySpark or Spark SQL code for performance, memory, or OOM risks.
-  - Preparing Spark workloads for production submission.
-  - Training or running inference with Machine Learning models with spark on Google Cloud Platform.
+  - Authoring or running Spark/PySpark notebooks (any kernel), incl. data
+    analysis, reports and visualizations.
+  - Writing Spark ETL pipelines or preparing workloads for production.
+  - Training or running inference with ML models on Spark.
+  - Optimizing PySpark or Spark SQL for performance, memory, or OOM risks.
   - Managing Spark clusters, jobs, batches, and interactive sessions.
   Don't use when:
-  - Writing generic Python scripts that don't use Spark.
+  - Writing generic Python that doesn't use Spark.
   - Performing simple SQL queries that can be done directly in BigQuery.
-  - Troubleshooting failed Spark workloads or analyzing logs (use @skill:gcp-spark-troubleshooting).
+  - Troubleshooting failed Spark workloads (use @skill:gcp-spark-troubleshooting).
 license: Apache-2.0
 metadata:
-  version: v20
+  version: v22
   publisher: google
 ---
 
@@ -52,8 +52,10 @@ metadata:
     -   When asked to generate a new spark notebook you **MUST** clarify with
         the user which kernel type will be used: "Local Python" (Spark Connect)
         or "Remote Spark". If the user selects "Local Python", you MUST
-        additionally clarify which dataprocSessionConfig should be used (scan
-        for existing serverless session templates), and **MUST** initialize the
+        additionally clarify which dataprocSessionConfig should be used (if the
+        user names a session template, use it directly without listing or
+        describing templates; otherwise list them with `gcloud beta dataproc
+        session-templates list`), and **MUST** initialize the
         session with `ManagedSparkSession` by adding the following cells to the
         notebook:
         ```python
