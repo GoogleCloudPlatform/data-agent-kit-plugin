@@ -1,154 +1,104 @@
 # PySpark Compatibility Analysis Guide
 
-This guide details compatibility checks and migration patterns specifically for PySpark workloads when upgrading to newer Spark/Dataproc versions.
+PySpark-specific checks: the Python runtime, PySpark breaking changes by Spark version, Python dependencies, Conda, and build checks. Use it with `spark_migration_reference.md`, which covers what every job type shares (version mapping, component versions, connectors, GPU/RAPIDS, and Core Spark / SQL breaking changes).
 
-As an agent, you must perform this analysis by reviewing the codebase against the rules in this document and the referenced official documentation.
+## Official sources
 
-## Relevant Documentation
+- PySpark migration guide: https://spark.apache.org/docs/latest/api/python/migration_guide/index.html
 
-Review the official documentation and migration guides:
+## Procedure
 
-*   **Dataproc Image Releases**: [Dataproc Image Releases](https://cloud.google.com/dataproc/docs/concepts/versioning/dataproc-release-2.2) (Replace track with target version, e.g., 2.0, 2.1, 2.2, 2.3).
-*   **Dataproc Serverless Runtimes**: [Dataproc Serverless Runtimes](https://cloud.google.com/dataproc-serverless/docs/concepts/versions/spark-runtime-2.2) (Replace track with target version).
-*   **Dataproc/Managed Spark Release Notes**: [Managed Spark Release Notes](https://cloud.google.com/dataproc/docs/release-notes) (Covers Dataproc platform changes, image updates, and breaking changes).
-*   **Spark SQL Migration Guide**: [Spark SQL Migration Guide](https://spark.apache.org/docs/latest/sql-migration-guide.html) (Covers SQL parser changes, datetime rebasing, behavior changes in functions).
-*   **PySpark Migration Guide**: [PySpark Migration Guide](https://spark.apache.org/docs/latest/api/python/migration_guide/pyspark_upgrade.html) (Covers PySpark specific changes like Arrow optimization, Row sorting, ML mixins).
-*   **Spark Core Migration Guide**: [Spark Core Migration Guide](https://spark.apache.org/docs/latest/core-migration-guide.html) (Covers core Spark behavior changes).
-*   **Python Documentation**: Refer to [Python Release Docs](https://docs.python.org/3/whatsnew/) if upgrading Python versions to identify deprecated syntax or libraries.
-*   **Hadoop Migration**: Refer to [Hadoop Release Notes](https://hadoop.apache.org/releases.html) if there are major Hadoop version jumps (e.g., 2.x to 3.x), which may affect classpaths or configuration properties (e.g., GCS connector).
+1. Take the target's Python version and preinstalled Python libraries from its component page ("Component Versions" in `spark_migration_reference.md`).
+2. Scan every `.py` file and configuration script for the patterns in sections 1–3 below and in the PySpark migration guide for each intermediate Spark version (e.g. for Spark 2.4 → 3.5, review the changes in 3.0, 3.1, 3.2, 3.3, 3.4, and 3.5).
+3. Check the dependencies (sections 2 and 3) and run the build checks (section 4).
+4. Record each finding with its `file:line`, why it breaks on the target, and the fix. The report format is in SKILL.md Step 3.
 
-## Analysis Procedure
+---
 
-To conduct the analysis:
-1.  **Identify Versions**: Determine the source and target versions of Spark, Python, and Hadoop (from Job ID or user input).
-2.  **Read Migration Guides & Release Notes**: Review the relevant sections of the migration guides and Dataproc release notes listed above for the version jump.
-3.  **Scan Source Code**: Review the PySpark code files for:
-    *   Deprecated/removed APIs (e.g., `SQLContext`, `unionAll`, `pyspark.mllib`).
-    *   Behavior changes (e.g., datetime parsing with `to_date`/`to_timestamp`, `Row` construction with named args).
-    *   Configuration changes.
-    *   **Data Sinks & Output Destinations**: Identify how and where data is written (e.g., `df.write.save()`, `df.write.parquet()`, `insertInto()`, `saveAsTable()`) and how output paths are passed (CLI arguments vs hardcoded paths) to plan test output redirection during verification.
-> [!IMPORTANT]
-> **Preserve Functional Logic**: Analysis and remediation are strictly limited to version compatibility and deprecation fixes. Do NOT alter business logic, filter conditions, column transformations, or permanent dataset paths in the source code.
-4.  **Verify Dependencies & Conda Configs**:
-    *   Check `requirements.txt` or `setup.py` against Python version compatibility.
-    *   **Conda Channel Analysis**: Check if Conda is used (e.g., `environment.yml` file present, or conda properties in job/cluster configurations).
-        *   Analyze based on Conda channel changes (e.g., default channel disabled in May 2024, preconfigured channels removed in June 2026 subminors and all images after Aug 2026).
-        *   If Conda channels are configured in job artifacts (like environment files), update them to use valid channels (e.g., `conda-forge` explicitly if defaults are disabled/missing).
-        *   If Conda is used but not configured in job artifacts, warn the user and request them to configure Conda channels at the cluster level (e.g., via cluster properties or initialization actions).
-5.  **Search Jira for Known Issues (Proactive/Troubleshooting)**:
-    *   If the code uses specific complex APIs or if you encounter errors during compilation/verification that are not explained by the migration guides:
-        *   Search Apache Jira (project `SPARK` or `HADOOP`) for known issues related to the target version and the error message or feature name.
-        *   Use the results to identify if a regression or known bug exists in the target version and if there are workarounds (e.g., setting specific Spark properties).
+## 1. Python Runtime & PySpark Breaking Changes by Spark Version
 
+Take the target Python version from the target's component page, not from the track number: the same track can ship different Python versions (cluster image 2.2 ships Python 3.11, Serverless runtime 2.2 ships Python 3.12, and Serverless runtime 2.3 ships Python 3.11). Minimum Python, pandas, and PyArrow versions enforced by PySpark (`require_minimum_pandas_version()` / `require_minimum_pyarrow_version()`), for sanity-checking version pins:
 
-## 1. Python Version Compatibility
+- **Spark 2.4**: Minimum Python 2.7 / 3.4. Minimum pandas 0.19.2. Minimum PyArrow 0.8.0. Python 2 support deprecated.
+- **Spark 3.0**: Minimum Python 2.7 / 3.4. Minimum pandas 0.23.2. Minimum PyArrow 0.12.1. Python 2.7 and < 3.6 support deprecated.
+- **Spark 3.1**: Minimum Python 3.6. Minimum pandas 0.23.2. Minimum PyArrow 1.0.0. Python 2.7 and ≤ 3.5 support removed.
+- **Spark 3.2**: Minimum Python 3.6. Minimum pandas 0.23.2. Minimum PyArrow 1.0.0. Python 3.6 support deprecated.
+- **Spark 3.3**: Minimum Python 3.7. Minimum pandas 1.0.5. Minimum PyArrow 1.0.0. Python 3.6 support removed.
+- **Spark 3.4**: Minimum Python 3.7. Minimum pandas 1.0.5. Minimum PyArrow 1.0.0. Python 3.7 support deprecated.
+- **Spark 3.5**: Minimum Python 3.8. Minimum pandas 1.0.5. Minimum PyArrow 4.0.0. Python 3.7 support removed.
+- **Spark 4.0**: Minimum Python 3.9. Minimum pandas 2.0.0. Minimum PyArrow 11.0.0. Python 3.8 support removed; requires `numpy >= 1.21`.
+- **Spark 4.1**: Minimum Python 3.10. Minimum pandas 2.2.0. Minimum PyArrow 15.0.0. Python 3.9 support removed.
 
-Spark versions have minimum Python version requirements. Ensure the target environment's Python version is supported.
+Also check that `requirements.txt` or `setup.py` doesn't force an incompatible Python version.
 
-*   **Spark Version**: 2.4
-    *   **Min Python Version**: 2.7, 3.4
-    *   **Max Python Version**: 3.7
-*   **Spark Version**: 3.0
-    *   **Min Python Version**: 3.6
-    *   **Max Python Version**: 3.8
-*   **Spark Version**: 3.1
-    *   **Min Python Version**: 3.6
-    *   **Max Python Version**: 3.9
-*   **Spark Version**: 3.2
-    *   **Min Python Version**: 3.6
-    *   **Max Python Version**: 3.10
-*   **Spark Version**: 3.3
-    *   **Min Python Version**: 3.7
-    *   **Max Python Version**: 3.10
-*   **Spark Version**: 3.4
-    *   **Min Python Version**: 3.8
-    *   **Max Python Version**: 3.11
-*   **Spark Version**: 3.5
-    *   **Min Python Version**: 3.8
-    *   **Max Python Version**: 3.11
-*   **Spark Version**: 4.0
-    *   **Min Python Version**: 3.9
-    *   **Max Python Version**: 3.12 (estimated)
+### PySpark breaking changes by Spark version (cumulative)
+- **Spark 2.4 → 3.0/3.1 (`Row` field order):** up to Spark 2.4, `Row(**kwargs)` sorted its fields alphabetically; since Spark 3.0 (on Python 3.6+), fields keep the order in which they were passed. Code that relied on alphabetical *positions* (e.g. `row[0]`, or schemas inferred from such Rows) breaks. Fix the code to use field names or explicit schemas (note: the temporary Spark 3.0 `PYSPARK_ROW_FIELD_SORTING_ENABLED` env var was removed in Spark 3.1 and has no effect on Spark 3.1+ runtimes).
+- **Spark 3.1 → 3.3 (Pandas API on Spark):** Spark 3.2+ includes the pandas API on Spark (`pyspark.pandas`), which replaces Koalas (`databricks.koalas`).
+- **Spark 3.5 → 4.0 (`pyspark.pandas` under ANSI mode):** in Spark 4.0, `pyspark.pandas` raises an exception when `spark.sql.ansi.enabled=true` (the Spark 4.0+ default). Either set `spark.sql.ansi.enabled=false` or set the pandas-on-Spark option `compute.fail_on_ansi_mode=False` (note: Spark 4.1 supports `pyspark.pandas` under ANSI mode by default via `compute.ansi_mode_support=True`).
+- **Spark 4.0 → 4.1 (`BinaryType` and safe Arrow conversions):**
+  - `BinaryType` maps consistently to Python `bytes` instead of `bytearray` by default (`spark.sql.execution.pyspark.binaryAsBytes=true`). Update code that expects `bytearray`, or set `spark.sql.execution.pyspark.binaryAsBytes=false` as a legacy workaround.
+  - `spark.sql.execution.pandas.convertToArrowArraySafely` defaults to `true`, so PyArrow raises errors on unsafe conversions (integer overflow, float truncation, precision loss) in Arrow-enabled UDFs/`pandas_udf` and `createDataFrame`.
 
-**Action**:
-1.  **Dynamic Verification**: If the target Spark version is not listed in the table above (or is marked as estimated), you MUST dynamically verify the supported Python version by checking the official Dataproc documentation for the target image track (e.g., `https://cloud.google.com/dataproc/docs/concepts/versioning/dataproc-release-2.2`).
-2.  Check `requirements.txt` or `setup.py` and ensure they don't force an incompatible Python version.
+### Python language checks
+- **Python 2 → 3** (sources on cluster images 1.x):
+  - `print` statements → `print()` calls.
+  - `dict.iteritems()`, `dict.iterkeys()`, `dict.itervalues()` → `.items()`, `.keys()`, `.values()`.
+  - `xrange()` → `range()`.
+  - `unicode` vs. `str` handling.
+  - `/` returns a float in Python 3; use `//` where the code relied on floor division.
+- **Python 3.7/3.8 → 3.10+:**
+  - `from collections import Mapping, Sequence, Iterable` → import them from `collections.abc` (the aliases were removed in Python 3.10).
+  - `asyncio` event-loop changes.
+  - Python 3.12 removed `distutils`, `imp`, `asynchat`, `asyncore`, and `smtpd`. Compiling the code (section 4.1) doesn't catch this, so the scan must.
+  - Older `numpy`, `pandas`, `scipy`, and `pyarrow` releases may not support Python 3.10+ or 3.11+ (section 4.2 checks this).
 
-## 2. Dependency Analysis (Python Packages)
+## 2. Pandas, PyArrow, and NumPy Interoperability
 
-When upgrading Spark, you must also upgrade `pyspark` package in your development/test dependencies to match the target Spark version.
+PySpark relies on pandas and PyArrow for vectorized UDFs (`pandas_udf`), `toPandas()`, and `createDataFrame()` from pandas. Compare the job's pins with the versions preinstalled on the target (its component page) and the minimum versions in section 1.
 
-*   Verify `requirements.txt`, `Pipfile`, or `setup.py`.
-*   Ensure that other library dependencies (e.g., `numpy`, `pandas`, `pyarrow`) are compatible with the new Python and PySpark versions.
+- **pandas 2.0+ (and `pyspark.pandas` in Spark 4.0+):** `DataFrame.append()` / `Series.append()` were removed (use `concat()`), and `DataFrame.iteritems()` / `Series.iteritems()` were removed (use `.items()`).
+- **NumPy 1.24+:** the aliases `np.int`, `np.float`, `np.bool`, `np.object`, and `np.str` (deprecated in 1.20) were removed. Use the built-ins `int`, `float`, `bool`, `object`, `str`, or specific types such as `np.int64` and `np.float64`.
+- Don't turn on Arrow-based conversion (`spark.sql.execution.arrow.pyspark.enabled`) as part of the upgrade unless the source already used it: it changes how types are converted.
 
-> [!TIP]
-> Spark 3.x+ strongly recommends using PyArrow for pandas conversion (`toPandas()`, `createDataFrame()`). Ensure `pyarrow` is installed and enabled: `spark.sql.execution.arrow.pyspark.enabled = true`.
+## 3. Conda Channels (clusters)
 
-## 3. Dataproc Platform Changes (Conda)
+- The Anaconda `defaults` channel has been unavailable on Managed Spark images since May 2024.
+- Preconfigured channels, including `conda-forge`, were removed starting with the June 22, 2026 sub-minor versions (`2.2.82`, `2.3.31`, and `3.0.4`); the removal extends to all images after August 24, 2026 (note: `2.2.84`, `2.3.33`, and `3.0.6` were subsequently rolled back).
+- So declare channels explicitly: replace `defaults`, and set `channels: [conda-forge]` (or an explicit mirror channel) in `environment.yml`, or pass `-c conda-forge` to `conda` commands in scripts and initialization actions.
+- If Conda is configured through cluster properties, the code can't fix it: report the change needed when the target cluster is created (see the [June 22, 2026 release notes](https://cloud.google.com/dataproc/docs/release-notes#June_22_2026)).
 
-### 3.1. Conda Channel Changes (June 2026 / May 2024)
-*   **Issue**: 
-    *   **June 22, 2026**: Newer Dataproc subminor versions (e.g., `1.3.96`, `1.4.81`, `1.5.92`, `2.0.161`, `2.3.32` and all versions after August 25, 2026) **do not have preconfigured Conda channels**. Packages cannot be installed using Conda unless channels are manually configured.
-    *   **May 16, 2024**: Anaconda's `default` channel is disabled by default on Dataproc on Compute Engine.
-*   **Remediation**:
-    *   If using `environment.yml` or other Conda environment files, ensure they explicitly define valid channels (e.g., `conda-forge`) and do not rely on `defaults` if it is disabled.
-    *   If Conda configuration is part of the job properties or metadata, update them to configure channels.
-    *   If Conda is required but cannot be configured via job artifacts, **warn the user** that they must configure Conda channels explicitly at the cluster level (e.g., `conda install --channel <CHANNEL> <PACKAGE>`).
+## 4. Build Checks Against the Target Version
 
-## 4. Component Version Resolution
+Build checks show whether the code and its dependencies load on the target version. Run them twice in Step 1: on the original code during the analysis (each failure is a finding), and on the changed code after the upgrade (all checks must pass). Take `<TARGET_PYTHON>` (e.g. `3.11`) and `<TARGET_SPARK>` (e.g. `3.5.3`) from the target's component page.
 
-To ensure you are using the correct versions of Spark, Scala, Java, Python, Hadoop, and connectors (GCS, BigQuery) for the target Dataproc image, resolve them using the provided helper script or the official documentation.
+- Copy the sources to `build_<app_id>_temp/` and run the checks there, so that compiler output (`__pycache__/`) never lands in the user's source directories. Delete the directory after recording the results.
+- If a check can't run (tool missing, no network access), don't install toolchains to force it: record it as "not run" with the reason.
 
-### Resolution Steps:
-1.  **Resolve Subminor Version**: Run the version resolution script to find the latest suitable subminor version for the image track:
-    ```bash
-    uv run ../scripts/cluster_resolve_version.py --version <major.minor> --type gce [--distro <distro>]
-    ```
-2.  **Determine Target Components**: Look up the target image version on the corresponding documentation page:
-    *   **Dataproc on GCE Images**: `https://cloud.google.com/dataproc/docs/concepts/versioning/dataproc-release-2.2` (replace 2.2 with target track)
-    *   **Dataproc Serverless Runtimes**: `https://cloud.google.com/dataproc-serverless/docs/concepts/versions/spark-runtime-2.2` (replace 2.2 with target track)
-3.  **Identify Component Versions**: In the release documentation table, locate the column corresponding to your subminor version and verify the exact versions for:
-    *   **Apache Spark**
-    *   **Apache Hadoop**
-    *   **Python**
-    *   **Scala / Java**
-    *   **Cloud Storage (GCS) Connector**
-    *   **BigQuery Connector**
+### 4.1. L1: Syntax (always)
+Compile every retrieved Python file (main file, `--py-files` modules, and the contents of `.zip`/`.egg` archives) with the target Python:
+```bash
+uv run --no-project --python=<TARGET_PYTHON> -- python -m compileall -q build_<app_id>_temp/
+```
+If `uv` is unavailable, run `python3 -m compileall -q build_<app_id>_temp/` and note the local Python version in the report if it differs from `<TARGET_PYTHON>`. Compilation doesn't detect removed standard-library modules (section 1).
 
-## 5. Common PySpark Migration Reference
+### 4.2. L2: Dependency Resolution (when the job declares dependencies)
+Resolve the job's Python dependencies for the target Python on Linux x86_64 without installing them:
+```bash
+uv pip compile <REQUIREMENTS_FILE> --python-version=<TARGET_PYTHON> --python-platform=x86_64-manylinux_2_28 --output-file=build_<app_id>_temp/requirements_resolved.txt
+```
+If `uv` is unavailable:
+```bash
+python3 -m pip install --dry-run --ignore-installed --only-binary=:all: --python-version=<TARGET_PYTHON> --platform=manylinux2014_x86_64 -r <REQUIREMENTS_FILE>
+```
+- Include dependencies declared outside the manifest: the `dataproc:pip.packages` and `dataproc:conda.packages` cluster properties and packages installed by initialization actions (clusters), or packages baked into a custom container (Serverless).
+- `--only-binary=:all:` fails for packages that publish no wheels. Check those packages manually; the failure alone doesn't prove an incompatibility.
+- Compare the resolved versions with the packages preinstalled on the target. Flag pins that conflict with them, and flag any `pyspark` pin that differs from `<TARGET_SPARK>`: the platform provides PySpark, and an installed copy can shadow it.
+- For Conda environment files, resolve with `conda` or `mamba` only if one is already installed; otherwise review the channels and pins manually (section 3). Never fetch PyPI (`pypi.org`) or Anaconda (`anaconda.org`) web pages to look up unpinned package names—only explicit version pins and the target image's preinstalled component table need comparison.
+- Archives that contain compiled extensions (`.so` files) were built for the source Python. Flag them for a rebuild against `<TARGET_PYTHON>`.
 
-Please refer to the separate reference guide for a list of common Spark migration incompatibilities, broken down by Core Spark and PySpark-specific issues:
-[Common Spark Migration Reference](spark_migration_reference.md)
-
-## 6. GPU and RAPIDS Compatibility
-
-If the workload requires GPU acceleration via NVIDIA GPUs and the RAPIDS Accelerator for Apache Spark, ensure version compatibility:
-
-### 6.1. Dataproc ML Images (Recommended)
-Dataproc provides ML-flavored images (e.g., `2.2-ml-ubuntu22`, `2.3-ml-ubuntu22`) which come pre-installed with compatible versions of CUDA, NVIDIA drivers, and the RAPIDS Accelerator plugin.
-*   **Action**: Prefer using the corresponding `-ml` image for the target Dataproc version (e.g., if upgrading to `2.3-debian12`, use `2.3-ml-ubuntu22` if GPUs are needed).
-
-### 6.2. RAPIDS Plugin and Spark Compatibility
-If installing RAPIDS via initialization actions (e.g., on standard images), you must specify compatible versions of the RAPIDS Spark plugin. The RAPIDS plugin version usually follows the `YY.MM.x` format.
-
-*   **Dataproc Image**: 2.0
-    *   **Spark Version**: 3.1.x
-    *   **Compatible RAPIDS Version (Example)**: 22.x, 23.x
-*   **Dataproc Image**: 2.1
-    *   **Spark Version**: 3.3.x
-    *   **Compatible RAPIDS Version (Example)**: 23.x, 24.x
-*   **Dataproc Image**: 2.2
-    *   **Spark Version**: 3.5.x
-    *   **Compatible RAPIDS Version (Example)**: 24.x, 25.x
-*   **Dataproc Image**: 2.3
-    *   **Spark Version**: 3.5.x
-    *   **Compatible RAPIDS Version (Example)**: 24.12, 26.x
-*   **Dataproc Image**: 3.0
-    *   **Spark Version**: 4.0.x / 4.1.x
-    *   **Compatible RAPIDS Version (Example)**: 26.x
-
-*   **Action**:
-    1.  Check the target Spark version.
-    2.  Refer to the [NVIDIA Spark-RAPIDS Compatibility Matrix](https://docs.nvidia.com/cudf-spark/latest/) (or search the web) to find the exact compatible RAPIDS version.
-    3.  Configure the `rapids-version` metadata attribute during cluster creation to match the compatible version if using initialization actions.
-    4.  Verify shim provider overrides if using experimental/new Spark versions (e.g., `spark.rapids.shims-provider-override`).
+### 4.3. L3: PySpark Import Check (only if `uv` is available)
+This check requires `uv` because `uv run --with` provides a clean way to inject a specific version of `pyspark` into the execution environment without a full installation. This check downloads the `pyspark` package (several hundred MB). Execute the job's own `pyspark` import statements against the target PySpark:
+```bash
+uv run --no-project --python=<TARGET_PYTHON> --with=pyspark==<TARGET_SPARK> -- python -c "<the job's pyspark import statements, separated by semicolons>"
+```
+An `ImportError` confirms a removed or renamed API. The check doesn't start a Spark session, so it can't detect behavior changes. Without `uv`, record the check as "not run".
