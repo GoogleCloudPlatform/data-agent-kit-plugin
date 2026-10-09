@@ -1,7 +1,9 @@
 ---
 name: bigquery-ai-ml
+license: Apache-2.0
 metadata:
-  version: v1
+  version: v2
+  publisher: google
 description: >-
   Leverages BigQuery's built-in machine learning and GenAI capabilities
   for advanced data analytics. Use when you need to write SQL queries

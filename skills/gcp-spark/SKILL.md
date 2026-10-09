@@ -1,22 +1,22 @@
 ---
 name: gcp-spark
 description: |
-  Develops, optimizes and executes Spark code on Managed Spark on Google Cloud (Dataproc Clusters and Serverless).
-  Reads and writes data using BigLake Iceberg catalogs, BigQuery and Spanner.
-  Debugs execution failures.
+  Develops, optimizes and runs PySpark/Spark code on Managed Spark (Dataproc
+  clusters and Serverless) on Google Cloud.
   Use when:
-  - Writing Spark ETL pipelines on Google Cloud Platform.
-  - Optimizing PySpark or Spark SQL code for performance, memory, or OOM risks.
-  - Preparing Spark workloads for production submission.
-  - Training or running inference with Machine Learning models with spark on Google Cloud Platform.
+  - Authoring or running Spark/PySpark notebooks (any kernel), incl. data
+    analysis, reports and visualizations.
+  - Writing Spark ETL pipelines or preparing workloads for production.
+  - Training or running inference with ML models on Spark.
+  - Optimizing PySpark or Spark SQL for performance, memory, or OOM risks.
   - Managing Spark clusters, jobs, batches, and interactive sessions.
   Don't use when:
-  - Writing generic Python scripts that don't use Spark.
+  - Writing generic Python that doesn't use Spark.
   - Performing simple SQL queries that can be done directly in BigQuery.
-  - Troubleshooting failed Spark workloads or analyzing logs (use @skill:gcp-spark-troubleshooting).
+  - Troubleshooting failed Spark workloads (use @skill:gcp-spark-troubleshooting).
 license: Apache-2.0
 metadata:
-  version: v20
+  version: v25
   publisher: google
 ---
 
@@ -114,16 +114,20 @@ metadata:
 
         > [!CAUTION] **NEVER** create a local Spark session. The following are
         > **BANNED**: - `SparkSession.builder.master("local")` -
-        > `pyspark.sql.SparkSession.builder.getOrCreate()` when used without
-        > `ManagedSparkSession` - Any `try/except` fallbacks that revert to a
-        > local `SparkSession`.
+        > `pyspark.sql.SparkSession.builder.getOrCreate()` in notebooks or local
+        > Spark Connect scripts when used without `ManagedSparkSession` - Any
+        > `try/except` fallbacks that revert to a local `SparkSession`.
         >
-        > You **MUST ALWAYS** use `ManagedSparkSession` from
-        > `google-cloud-spark-connect` to connect to **Managed Spark
-        > Serverless**. No exceptions.
+        > - **Interactive Notebooks (`.ipynb`) & Spark Connect scripts**: You
+        >   **MUST ALWAYS** use `ManagedSparkSession` from
+        >   `google-cloud-spark-connect` to connect to **Managed Spark
+        >   Serverless**. No exceptions.
+        > - **Dataproc Batch & Cluster jobs (`.py` submitted via `gcloud dataproc batches submit pyspark` or `gcloud dataproc jobs submit pyspark`)**:
+        >   Use standard `SparkSession.builder.appName("<APP_NAME>").getOrCreate()`
+        >   (never `.master("local")`).
 
         Refer to `references/gcloud_dataproc.md` for detailed configuration.
-        Minimal initialization:
+        Minimal initialization for notebooks / Spark Connect:
 
         ```python
         from google.cloud.managed_spark_connect import ManagedSparkSession
@@ -132,10 +136,13 @@ metadata:
             .location(<REGION>)
             .getOrCreate()
         ```
-    *   **Production Logging**: In all production PySpark jobs and scripts,
-        you MUST use the standard Python `logging` module instead of `print()`
-        statements for job lifecycle, progress, and record counts. Configure it
-        with timestamps:
+    *   **Production Logging**: In standalone
+        production PySpark batch jobs and scripts (`.py`), you MUST use the
+        standard Python `logging` module instead of `print()` statements for job
+        lifecycle, progress, and record counts. Do **NOT** use the `logging`
+        module in notebooks (`.ipynb`); use `print()`, `.show()`, and standard
+        cell outputs instead. Configure `logging` for `.py` scripts with
+        timestamps:
 
         ```python
         import logging
@@ -219,10 +226,13 @@ Before submitting a job, verify:
 The Managed Spark (Dataproc) service account needs:
 
 *   `roles/dataproc.worker`: Job execution
-*   `roles/biglake.admin`: Iceberg table management
-*   `roles/bigquery.jobUser`: Query materialization
-*   `roles/storage.objectUser`: Read/write GCS
-*   `roles/spanner.databaseUser`: Spanner writes
+*   `roles/biglake.admin`: BigLake Iceberg table management
+*   `roles/bigquery.jobUser`: BigQuery query materialization and load jobs
+*   `roles/bigquery.dataEditor`: BigQuery table reads and writes (direct and indirect)
+*   `roles/bigquery.readSessionUser`: BigQuery Storage Read API session creation
+*   `roles/storage.objectUser`: Read/write GCS (data, Iceberg warehouse, and `--deps-bucket` / `temporaryGcsBucket`)
+*   `roles/spanner.databaseUser`: Spanner reads and writes
+*   `roles/secretmanager.secretAccessor`: Accessing database passwords and credentials stored in Secret Manager
 
 --------------------------------------------------------------------------------
 
