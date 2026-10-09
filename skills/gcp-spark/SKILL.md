@@ -16,7 +16,7 @@ description: |
   - Troubleshooting failed Spark workloads (use @skill:gcp-spark-troubleshooting).
 license: Apache-2.0
 metadata:
-  version: v21
+  version: v22
   publisher: google
 ---
 
@@ -132,10 +132,13 @@ metadata:
             .location(<REGION>)
             .getOrCreate()
         ```
-    *   **Production Logging**: In all production PySpark jobs and scripts,
-        you MUST use the standard Python `logging` module instead of `print()`
-        statements for job lifecycle, progress, and record counts. Configure it
-        with timestamps:
+    *   **Production Logging**: In standalone
+        production PySpark batch jobs and scripts (`.py`), you MUST use the
+        standard Python `logging` module instead of `print()` statements for job
+        lifecycle, progress, and record counts. Do **NOT** use the `logging`
+        module in notebooks (`.ipynb`); use `print()`, `.show()`, and standard
+        cell outputs instead. Configure `logging` for `.py` scripts with
+        timestamps:
 
         ```python
         import logging
