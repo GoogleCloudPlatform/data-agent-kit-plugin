@@ -5,6 +5,10 @@ Serverless), including setting up clusters; launching jobs and batches; managing
 serverless session templates; running Spark Connect sessions; and inspecting
 outputs.
 
+> [!NOTE] CLI fallback: the gcloud recipes in this file are only for when you
+> have no tool that can do the operation. On a Remote Kernel notebook no
+> session/template lookup is needed.
+
 ## Background
 
 Managed Spark on Google Cloud (Dataproc) is Google Cloud's managed service for
@@ -31,10 +35,9 @@ Serverless Batches.
 
 ## Project and region/location preferences
 
-Users configure `gcloud` to point at their desired project and region/location.
-Assume gcloud is already installed.
-
-Look up the configuration with:
+Use the project and region from the user prompt or the environment
+(`GOOGLE_CLOUD_PROJECT`, `DATAPROC_REGION`, `GOOGLE_CLOUD_REGION`). Only if
+none of those are available, look up the gcloud configuration with:
 
 ```
 gcloud config get project
@@ -284,15 +287,8 @@ Python scripts, follow these steps:
 4.  **Project and region settings**:
 
     You SHOULD specify project and region in the code. When not set by the user,
-    project and region MUST be retrieved **BEFORE** writing any code, in the
-    following order:
-
-    -   IDE configuration: `google.cloud.project`, `google.cloud.region`
-    -   Environment variables: `GOOGLE_CLOUD_PROJECT`, `GOOGLE_CLOUD_REGION`
-    -   GCloud config: `gcloud config get project`, `gcloud config get-value
-        dataproc/region`
-
-    Retrieve those values and put them using builder methods.
+    take project and region from the environment as described in **Project and
+    region/location preferences** above and put them using builder methods.
 
 5.  **Initialize `ManagedSparkSession` & Execute**: Use `ManagedSparkSession`
     from `google.cloud.managed_spark_connect` to connect to Dataproc Serverless.

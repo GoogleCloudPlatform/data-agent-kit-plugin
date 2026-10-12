@@ -1,5 +1,9 @@
 # Direct Inspection of table schema
 
+CLI fallback: use these only when you have no tool that can do the operation;
+otherwise inspect schema via `@skill:discovering-gcp-data-assets` or in a
+notebook cell.
+
 ## For BigQuery, Spanner and BigLake Iceberg tables and views
 
 Biglake tables are often specified in format `catalog.schema.table`, the first

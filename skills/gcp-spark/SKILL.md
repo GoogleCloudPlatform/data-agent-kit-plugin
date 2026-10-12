@@ -16,7 +16,7 @@ description: |
   - Troubleshooting failed Spark workloads (use @skill:gcp-spark-troubleshooting).
 license: Apache-2.0
 metadata:
-  version: v24
+  version: v25
   publisher: google
 ---
 
@@ -26,13 +26,32 @@ metadata:
 >
 > You MUST follow the Task Execution Workflow when writing spark code.
 
-## Notebook Generation Environment Rules
+## Remote Kernel contract
+
+"Remote Kernel", "Remote Spark Kernel", "Remote Spark", and kernels named
+"... on Serverless Spark" all mean the same thing: a Jupyter kernel running on
+Managed Spark Serverless. Do NOT search the filesystem or the web to work out
+what the term means. If a notebook cell-execution tool (`notebook__execute_cell`,
+`notebook_execute_cell`, `jupyter__execute_cell`) is available, the notebook is
+**already attached** to such a kernel:
+
+-   `spark` is predefined: do NOT create a `ManagedSparkSession` or
+    `SparkSession`, and do NOT look up session templates or sessions.
+-   `pyspark`, `pandas`, `numpy`, `matplotlib`, `seaborn` and `scikit-learn`
+    are preinstalled: do NOT `%pip install` them.
+-   Do NOT ask which kernel to use and do NOT edit `metadata.kernelspec`.
+-   Your first tool call for the notebook MUST be the notebook create tool;
+    a failing cell is fixed in place per `@skill:notebook-guidance`.
+
+## Notebook Environment Rules
 
 > [!CAUTION]
 >
-> When the task is to **generate** a Spark notebook (as opposed to executing
-> one), you **MUST NOT** modify your own local execution environment (i.e. do
-> not run these commands with your shell or other tools). Specifically:
+> For **every** `.ipynb` task (generating, editing or executing a Spark
+> notebook), you **MUST NOT** modify or probe your own local execution
+> environment (i.e. do not run these commands with your shell or other tools);
+> the notebook runs on a remote kernel, so your local shell tells you nothing
+> about it. Specifically:
 >
 > -   **NEVER create a virtual environment** (`python -m venv`, `virtualenv`,
 >     `conda create`, `uv venv`, `poetry init/install`, etc.).
@@ -41,19 +60,34 @@ metadata:
 > -   **NEVER run environment discovery loops** such as activating a venv,
 >     `pip list`, or probing for `ipykernel` / `google-cloud-spark-connect` as a
 >     precondition for writing the notebook.
+> -   **NEVER probe the kernel from the shell**: `jupyter kernelspec list`,
+>     `java -version`, `python -c "import pyspark"`, `find / -name "*.ipynb"`,
+>     or local `SparkSession` / `ManagedSparkSession` smoke tests.
+> -   **NEVER hand-edit the `.ipynb` JSON** (e.g. to patch
+>     `metadata.kernelspec`); use the notebook tools only.
 >
-> Assume the user will select the appropriate
-> kernel and dependencies after the notebook is generated.
+> If no cell-execution tool is available, assume the user will select the
+> appropriate kernel and dependencies after the notebook is generated.
+
+## Reference files
+
+Read the file you need directly instead of listing the `references/` directory:
+`read_write_data.md` (reading/writing data), `schema_direct_inspection.md`
+(CLI schema recipes, only when no tool can do it), `spark_optimizations.md`,
+`spark_refactoring_guide.md`, `ml_tasks.md`, `gcloud_dataproc.md` (Dataproc
+background, batch dependencies, Spark Connect scripts, gcloud fallback).
 
 ## Task Execution Workflow
 
 1.  **Understand user request**:
 
+    -   If a notebook cell-execution tool is available, skip this step: the
+        kernel is already attached.
     -   When asked to generate a new spark notebook you **MUST** clarify with
         the user which kernel type will be used: "Local Python" (Spark Connect)
         or "Remote Spark". If the user selects "Local Python", you MUST
-        additionally clarify which dataprocSessionConfig should be used (scan
-        for existing serverless session templates), and **MUST** initialize the
+        additionally clarify which dataprocSessionConfig should be used, and
+        **MUST** initialize the
         session with `ManagedSparkSession` by adding the following cells to the
         notebook:
         ```python
@@ -94,8 +128,9 @@ metadata:
     Do NOT proceed with code generation, do NOT add fallback logic to code, and
     do NOT automatically substitute any alternative table (even if its schema
     seems to match) without explicit user permission.
-3.  **Verify source accessibility**: verify access/existence using `gcloud
-    storage ls gs://<path-to-dataset>`. If accessing or reading a GCS path fails
+3.  **Verify source accessibility**: verify the source is readable with the
+    tools you have, or by doing the first read in a notebook cell. If accessing
+    or reading a GCS path fails
     with a storage error e.g., permission errors like `403
     Forbidden`/`Forbidden`/`PermissionDenied`, or location errors like `404 Not
     Found`/`NotFound`/`FileNotFoundException` you should report the error
@@ -121,7 +156,8 @@ metadata:
         > - **Interactive Notebooks (`.ipynb`) & Spark Connect scripts**: You
         >   **MUST ALWAYS** use `ManagedSparkSession` from
         >   `google-cloud-spark-connect` to connect to **Managed Spark
-        >   Serverless**. No exceptions.
+        >   Serverless** (not needed on a Remote Kernel, where `spark` is
+        >   already defined). No exceptions.
         > - **Dataproc Batch & Cluster jobs (`.py` submitted via `gcloud dataproc batches submit pyspark` or `gcloud dataproc jobs submit pyspark`)**:
         >   Use standard `SparkSession.builder.appName("<APP_NAME>").getOrCreate()`
         >   (never `.master("local")`).
@@ -170,15 +206,17 @@ metadata:
     destination schema match, use `df.printSchema()` for dataframe schema and
     refer to `@skill:discovering-gcp-data-assets` skill or
     `references/schema_direct_inspection.md` to verify destination schema.
-6.  **Compile code before executing**: For notebooks convert them to python
-    script using `jupyter nbconvert --to script your-notebook.ipynb` first. Then
-    compile the resulting python script using `python3 -m py_compile
-    your-script.py`. The same can be done for pyspark source code.
+6.  **Compile standalone scripts before executing**: For standalone `.py`
+    scripts and batch jobs, compile with `python3 -m py_compile
+    your-script.py` first. Notebooks are validated by executing their cells;
+    do NOT run `jupyter nbconvert` or `py_compile` on them.
 7.  **Execute script or notebook**: When requested to run a job, script,
     session, or execute notebook cells against Managed Spark, refer to
     `references/gcloud_dataproc.md` on how to execute code on Dataproc
     Serverless using Spark Connect or Dataproc jobs.
-8.  **Follow up with the user**: If a brand new notebook was generated, instruct the user to select the appropriate kernel in the dropdown for cell execution.
+8.  **Follow up with the user**: If a brand new notebook was generated without a
+    cell-execution tool, instruct the user to select the appropriate kernel in
+    the dropdown for cell execution.
 
 --------------------------------------------------------------------------------
 
