@@ -16,7 +16,7 @@ description: |
   - Troubleshooting failed Spark workloads (use @skill:gcp-spark-troubleshooting).
 license: Apache-2.0
 metadata:
-  version: v23
+  version: v24
   publisher: google
 ---
 
