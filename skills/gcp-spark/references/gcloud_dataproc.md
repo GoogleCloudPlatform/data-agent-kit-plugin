@@ -123,7 +123,7 @@ Prefer MCP if available. If using gcloud, use this command template:
 gcloud dataproc jobs submit pyspark <LOCAL_SCRIPT_PATH> \
     --project=<PROJECT_ID> \
     --cluster=<CLUSTER> \
-    --region=<REGION>
+    --region=<REGION> 2>&1 | tee driver_log.txt
 ```
 
 > [!WARNING] The `gcloud dataproc jobs submit pyspark` command directly accepts
@@ -188,7 +188,7 @@ gcloud dataproc batches submit pyspark <SCRIPT_PATH.py> \
     --project=<PROJECT_ID> \
     --region=<GCP_REGION> \
     --version=2.3 \
-    --deps-bucket=gs://<BUCKET_NAME>
+    --deps-bucket=gs://<BUCKET_NAME> 2>&1 | tee driver_log.txt
 ```
 
 You MUST set the `--deps-bucket` to a root GCS bucket URI (`gs://<BUCKET_NAME>`). Do NOT pass a subfolder path (e.g. `gs://<BUCKET_NAME>/deps`), or `gcloud` will fail with `Invalid bucket name`.
@@ -215,10 +215,15 @@ For asynchronous execution, you must poll the batch status until state is
 -   **Dependency**: `--jars=gs://spark-lib/spanner/spark-3.5-spanner-1.4.0.jar`
 -   **Notes**: Pass `.option("projectId", ...)` in PySpark
 
-#### PostgreSQL
+#### PostgreSQL, MySQL, SQL Server, Cloud SQL & AlloyDB (JDBC)
 
--   **Dependency**: `spark.jars.packages=org.postgresql:postgresql:42.6.0`
--   **Notes**: Pass `--subnet=...` for private IP
+-   **Dependency**:
+    -   **GCS-Staged Driver & Socket Factory JARs (`gs://...`)**: Pass `--jars=gs://<BUCKET_NAME>/<PATH_TO_DRIVER>.jar` (or comma-separated `--jars=gs://<BUCKET_NAME>/<DRIVER>.jar,gs://<BUCKET_NAME>/<SOCKET_FACTORY>.jar` when using the Cloud SQL or AlloyDB Socket Factory) on the `gcloud` CLI and set `spark.jars` (for `ManagedSparkSession`, set `session_config.runtime_config.properties["spark.jars"]`). Never pass `gs://` URIs to `spark.jars.packages`.
+-   **Notes**:
+    -   Pass `--subnet=<SUBNET>` when connecting to a database on a VPC Private IP (including Cloud SQL / AlloyDB Socket Factory connections with `ipTypes=PRIVATE` / `alloydbIpType=PRIVATE`).
+    -   **AlloyDB & SQL Server Socket Factory Conscrypt Requirement**: When using `com.google.cloud.alloydb.SocketFactory` or `com.google.cloud.sql.sqlserver.SocketFactory` (SQL Server), disable Conscrypt to avoid TLS handshake errors: pass `--properties="dataproc.artifacts.remove=conscrypt"` on Dataproc Serverless (`session_config.runtime_config.properties["dataproc.artifacts.remove"] = "conscrypt"` for `ManagedSparkSession`), or `--properties="dataproc:dataproc.conscrypt.provider.enable=false"` at Dataproc GCE cluster creation.
+    -   **MySQL Socket Factory on Dataproc GCE Clusters**: Because Dataproc GCE images pre-install `mysql-connector-j.jar` in `/usr/lib/spark/jars/`, pass `--properties="spark.driver.extraClassPath=mysql-connector-j.jar:mysql-socket-factory.jar,spark.executor.extraClassPath=mysql-connector-j.jar:mysql-socket-factory.jar"` when submitting via `gcloud dataproc jobs submit pyspark`.
+    -   Retrieve database passwords from Google Cloud Secret Manager via the pre-installed `google.auth` + `urllib.request` REST API (or `SecretManagerServiceClient` if `google-cloud-secret-manager` is installed), or use IAM database authentication (`enableIamAuth=true` / `alloydbEnableIAMAuth=true`). See `references/jdbc_cloudsql.md`.
 
 #### Iceberg REST
 
