@@ -1,5 +1,29 @@
 # Changelog
 
+## [1.1.0](https://github.com/GoogleCloudPlatform/data-agent-kit-plugin/compare/1.0.0...1.1.0) (2026-10-13)
+
+
+### Features
+
+* **dak:** check in the notebook/visualization MCP server bundle (mcp/dist/index.js) into source of truth. ([f39934f](https://github.com/GoogleCloudPlatform/data-agent-kit-plugin/commit/f39934f8db344a55d390a8c1f3f919da590e4e29))
+* **skill:** Make gcp-spark trigger for Spark notebook authoring ([4db7383](https://github.com/GoogleCloudPlatform/data-agent-kit-plugin/commit/4db7383f08d0fcb9718c2e3a8b328e7d5366bd24))
+* **skills:** add publisher/license frontmatter to 3 BigQuery skills ([3c285ad](https://github.com/GoogleCloudPlatform/data-agent-kit-plugin/commit/3c285ad834b88dfcf43edfb320933a7dc8847596))
+* **spark:** read Spark stage data through the Dataproc sparkApplications API ([aa96190](https://github.com/GoogleCloudPlatform/data-agent-kit-plugin/commit/aa961905f158620f1d1c40108170e0d071cb8d27))
+
+
+### Bug Fixes
+
+* **dak-setup:** keep ${region} in MCP server URLs when the region is empty ([db7da5b](https://github.com/GoogleCloudPlatform/data-agent-kit-plugin/commit/db7da5bb13794b517addb921911efc2bd440d49e))
+* **gcp-spark:** standardize BigQuery and BigLake Iceberg write patterns ([05d1609](https://github.com/GoogleCloudPlatform/data-agent-kit-plugin/commit/05d1609d628122a49454b95e619c2eaf3ce232a1))
+* **gcp-spark:** update BigQuery SQL query and Spanner read configurations ([b66bf71](https://github.com/GoogleCloudPlatform/data-agent-kit-plugin/commit/b66bf7175816faecd62c6f439aed899fcf172c96))
+* **skills:** Minimize user prompting for external shell and SQL probing during notebook tasks ([89c4fe5](https://github.com/GoogleCloudPlatform/data-agent-kit-plugin/commit/89c4fe54d85f1b27eefd79636d8fb5b729d2134f))
+* **skills:** scope Spark production logging to batch scripts and add notebook rubric ([f24fc90](https://github.com/GoogleCloudPlatform/data-agent-kit-plugin/commit/f24fc90772a1e1990f03bd428f81b8d71e1aa7d3))
+
+
+### Miscellaneous Chores
+
+* force release 1.1.0 ([cf9f39b](https://github.com/GoogleCloudPlatform/data-agent-kit-plugin/commit/cf9f39bd068ddab6843ac695b7592589787b320e))
+
 ## [1.0.0](https://github.com/GoogleCloudPlatform/data-agent-kit-plugin/compare/0.11.0...1.0.0) (2026-09-29)
 
 
