@@ -26715,7 +26715,7 @@ var args = process.argv;
 var mode = args.find((a) => a.startsWith("--mode="))?.split("=")[1];
 var server = new Server(
   {
-    name: mode === "visualization" ? "visualization" : "notebook",
+    name: mode === "visualization" ? "visualization" : mode === "data-agent-kit" ? "data-agent-kit" : "notebook",
     version: "0.1.0"
   },
   {
@@ -26726,6 +26726,7 @@ var server = new Server(
 );
 var notebookClient = null;
 var vizClient = null;
+var dakClient = null;
 var LOCAL_TOOLS = [
   {
     name: "list_cells",
@@ -26926,6 +26927,17 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       }
     }
   }
+  if (mode === "data-agent-kit") {
+    if (dakClient) {
+      try {
+        const response = await dakClient.listTools();
+        response.tools.forEach((t) => toolOwnerMap.set(t.name, "dak"));
+        aggregatedTools.push(...response.tools);
+      } catch (e) {
+        console.error("Error listing tools from dak client:", e);
+      }
+    }
+  }
   return { tools: aggregatedTools };
 });
 var NotebookPathSchema = external_exports.object({
@@ -26962,8 +26974,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   if (owner === "viz" && vizClient) {
     return await vizClient.callTool({ name, arguments: args2 });
   }
-  if (mode === "visualization" && !owner) {
-    throw new Error(`Tool ${name} not available in visualization mode`);
+  if (owner === "dak" && dakClient) {
+    return await dakClient.callTool({ name, arguments: args2 });
+  }
+  if ((mode === "visualization" || mode === "data-agent-kit") && !owner) {
+    throw new Error(`Tool ${name} not available in ${mode} mode`);
   }
   try {
     switch (name) {
@@ -27119,7 +27134,20 @@ async function run() {
         vizClient = null;
       }
     }
-    if (!notebookClient && !vizClient) {
+    if (mode === "data-agent-kit") {
+      try {
+        const dakTransport = new StdioClientTransport({
+          command: process.execPath,
+          args: [proxyCmd, `dataAgentKit-${ideName.toLowerCase()}`],
+          env: process.env
+        });
+        dakClient = new Client({ name: "dak-client", version: "0.1.0" }, { capabilities: {} });
+        await dakClient.connect(dakTransport);
+      } catch (e) {
+        dakClient = null;
+      }
+    }
+    if (!notebookClient && !vizClient && !dakClient) {
       await startStandaloneServer();
       return;
     }

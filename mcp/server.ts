@@ -46,7 +46,12 @@ const mode = args.find(a => a.startsWith('--mode='))?.split('=')[1];
 
 const server = new Server(
   {
-    name: mode === 'visualization' ? 'visualization' : 'notebook',
+    name:
+      mode === 'visualization'
+        ? 'visualization'
+        : mode === 'data-agent-kit'
+          ? 'data-agent-kit'
+          : 'notebook',
     version: '0.1.0',
   },
   {
@@ -58,6 +63,7 @@ const server = new Server(
 
 let notebookClient: any = null;
 let vizClient: any = null;
+let dakClient: any = null;
 
 const LOCAL_TOOLS = [
   {
@@ -232,7 +238,7 @@ const LOCAL_TOOLS = [
   },
 ];
 
-const toolOwnerMap = new Map<string, 'notebook' | 'viz'>();
+const toolOwnerMap = new Map<string, 'notebook' | 'viz' | 'dak'>();
 
 server.setRequestHandler(ListToolsRequestSchema, async () => {
   let aggregatedTools: any[] = [];
@@ -261,6 +267,18 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
         aggregatedTools.push(...response.tools);
       } catch (e) {
         console.error('Error listing tools from viz client:', e);
+      }
+    }
+  }
+
+  if (mode === 'data-agent-kit') {
+    if (dakClient) {
+      try {
+        const response = await dakClient.listTools();
+        response.tools.forEach((t: any) => toolOwnerMap.set(t.name, 'dak'));
+        aggregatedTools.push(...response.tools);
+      } catch (e) {
+        console.error('Error listing tools from dak client:', e);
       }
     }
   }
@@ -314,8 +332,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     return await vizClient.callTool({ name, arguments: args });
   }
 
-  if (mode === 'visualization' && !owner) {
-     throw new Error(`Tool ${name} not available in visualization mode`);
+  if (owner === 'dak' && dakClient) {
+    return await dakClient.callTool({ name, arguments: args });
+  }
+
+  if ((mode === 'visualization' || mode === 'data-agent-kit') && !owner) {
+     throw new Error(`Tool ${name} not available in ${mode} mode`);
   }
 
   try {
@@ -486,8 +508,23 @@ async function run() {
       }
     }
 
-    // Fallback strategy Scenario 4: Both fail -> Standalone
-    if (!notebookClient && !vizClient) {
+    // Connect to Data Agent Kit proxy
+    if (mode === 'data-agent-kit') {
+      try {
+        const dakTransport = new StdioClientTransport({
+          command: process.execPath,
+          args: [proxyCmd, `dataAgentKit-${ideName.toLowerCase()}`],
+          env: process.env
+        });
+        dakClient = new Client({ name: 'dak-client', version: '0.1.0' }, { capabilities: {} });
+        await dakClient.connect(dakTransport);
+      } catch (e) {
+        dakClient = null;
+      }
+    }
+
+    // Fallback strategy Scenario 4: All fail -> Standalone
+    if (!notebookClient && !vizClient && !dakClient) {
       await startStandaloneServer();
       return;
     }
