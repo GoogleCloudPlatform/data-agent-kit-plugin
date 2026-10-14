@@ -16,7 +16,7 @@ description: |
   - Troubleshooting failed Spark workloads (use @skill:gcp-spark-troubleshooting).
 license: Apache-2.0
 metadata:
-  version: v24
+  version: v25
   publisher: google
 ---
 
@@ -81,6 +81,13 @@ metadata:
     across other projects as it can take a long time. If an expected dataset or
     table does not exist, use `@skill:discovering-gcp-data-assets` to discover
     all similar tables in the namespace or project.
+
+    *MISSING SOURCE RULE*: If the request does not name a table, GCS path or
+    catalog, you MUST run at most ONE `@skill:discovering-gcp-data-assets`
+    search. If it does not return a single clear match, you MUST list the
+    candidates, ask the user which source to use, and STOP. You MUST NOT infer
+    the source by listing buckets, reading existing notebooks or scripts, or
+    running `SHOW NAMESPACES` / `SHOW TABLES`.
 
     *MINOR TYPO RULE*: If there is a minor typo (e.g. `employees` vs
     `employee`), you can fix the error and proceed.
