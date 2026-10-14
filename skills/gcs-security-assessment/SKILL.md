@@ -14,7 +14,7 @@ description: >-
   access failure or 403, managing or configuring storage, investigating a
   live outage, or non-GCS resources (Compute Engine, GKE, etc.).
 metadata:
-    version: v3
+    version: v4
     publisher: google
     tags:
       - gcs
