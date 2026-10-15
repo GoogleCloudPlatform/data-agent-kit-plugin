@@ -1,0 +1,192 @@
+{
+  "name": "extension-update",
+  "version": "0.4.0",
+  "description": "This plugin provides a specialized suite of skills for data engineers and database practitioners working on Google Cloud. It acts as an expert assistant, allowing you to use natural language prompts in your preferred coding agent to architect complex data pipelines, transform data with dbt, write Spark and BigQuery SQL notebooks, and orchestrate end-to-end workflows across GCP's data ecosystem.",
+  "mcpServers": {
+    "notebook": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "git+https://github.com/gemini-cli-extensions/data-agent-kit-starter-pack.git",
+        "--mode=notebook"
+      ],
+      "env": {}
+    },
+    "visualization": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "git+https://github.com/gemini-cli-extensions/data-agent-kit-starter-pack.git",
+        "--mode=visualization"
+      ],
+      "env": {}
+    },
+    "bigquery": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@toolbox-sdk/server@>=1.1.0",
+        "--prebuilt",
+        "bigquery",
+        "--stdio",
+        "--user-agent-metadata",
+        "datacloud.gemini-cli"
+      ],
+      "env": {
+        "BIGQUERY_LOCATION": "$BIGQUERY_LOCATION",
+        "BIGQUERY_PROJECT": "$PROJECT_ID"
+      }
+    },
+    "spanner": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@toolbox-sdk/server@>=1.1.0",
+        "--prebuilt",
+        "spanner",
+        "--stdio",
+        "--user-agent-metadata",
+        "datacloud.gemini-cli"
+      ],
+      "env": {
+        "SPANNER_DATABASE": "",
+        "SPANNER_DIALECT": "",
+        "SPANNER_INSTANCE": "",
+        "SPANNER_PROJECT": "$PROJECT_ID"
+      }
+    },
+    "alloydb-postgres-admin": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@toolbox-sdk/server@>=1.1.0",
+        "--prebuilt",
+        "alloydb-postgres-admin",
+        "--stdio",
+        "--user-agent-metadata",
+        "datacloud.gemini-cli"
+      ],
+      "env": {}
+    },
+    "alloydb-postgres": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@toolbox-sdk/server@>=1.1.0",
+        "--prebuilt",
+        "alloydb-postgres",
+        "--stdio",
+        "--user-agent-metadata",
+        "datacloud.gemini-cli"
+      ],
+      "env": {
+        "ALLOYDB_POSTGRES_CLUSTER": "",
+        "ALLOYDB_POSTGRES_DATABASE": "",
+        "ALLOYDB_POSTGRES_INSTANCE": "",
+        "ALLOYDB_POSTGRES_IP_TYPE": "",
+        "ALLOYDB_POSTGRES_PASSWORD": "",
+        "ALLOYDB_POSTGRES_PROJECT": "$PROJECT_ID",
+        "ALLOYDB_POSTGRES_REGION": "$GCP_REGION",
+        "ALLOYDB_POSTGRES_USER": ""
+      }
+    },
+    "cloud-sql-postgresql-admin": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@toolbox-sdk/server@>=1.1.0",
+        "--prebuilt",
+        "cloud-sql-postgres-admin",
+        "--stdio",
+        "--user-agent-metadata",
+        "datacloud.gemini-cli"
+      ],
+      "env": {}
+    },
+    "cloud-sql-postgresql": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@toolbox-sdk/server@>=1.1.0",
+        "--prebuilt",
+        "cloud-sql-postgres",
+        "--stdio",
+        "--user-agent-metadata",
+        "datacloud.gemini-cli"
+      ],
+      "env": {
+        "CLOUD_SQL_POSTGRES_DATABASE": "",
+        "CLOUD_SQL_POSTGRES_INSTANCE": "",
+        "CLOUD_SQL_POSTGRES_IP_TYPE": "",
+        "CLOUD_SQL_POSTGRES_PASSWORD": "",
+        "CLOUD_SQL_POSTGRES_PROJECT": "$PROJECT_ID",
+        "CLOUD_SQL_POSTGRES_REGION": "$GCP_REGION",
+        "CLOUD_SQL_POSTGRES_USER": ""
+      }
+    },
+    "knowledge_catalog": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@toolbox-sdk/server@>=1.1.0",
+        "--prebuilt",
+        "dataplex",
+        "--stdio",
+        "--user-agent-metadata",
+        "datacloud.gemini-cli"
+      ],
+      "env": {
+        "DATAPLEX_PROJECT": "$PROJECT_ID"
+      }
+    },
+    "dataproc": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@toolbox-sdk/server@>=1.1.0",
+        "--prebuilt",
+        "dataproc",
+        "--stdio",
+        "--user-agent-metadata",
+        "datacloud.gemini-cli"
+      ],
+      "env": {
+        "DATAPROC_PROJECT": "$PROJECT_ID",
+        "DATAPROC_REGION": "$GCP_REGION"
+      }
+    },
+    "serverless-spark": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@toolbox-sdk/server@>=1.1.0",
+        "--prebuilt",
+        "serverless-spark",
+        "--stdio",
+        "--user-agent-metadata",
+        "datacloud.gemini-cli"
+      ],
+      "env": {
+        "SERVERLESS_SPARK_PROJECT": "$PROJECT_ID",
+        "SERVERLESS_SPARK_LOCATION": "$GCP_REGION"
+      }
+    }
+  },
+  "settings": [
+    {
+      "name": "GCP Project ID",
+      "description": "Project ID when using the MCP toolbox for databases",
+      "envVar": "PROJECT_ID"
+    },
+    {
+      "name": "GCP Region",
+      "description": "Region for GCP services (e.g. us-west1)",
+      "envVar": "GCP_REGION"
+    },
+    {
+      "name": "BigQuery Location",
+      "description": "Location for BigQuery datasets (e.g. US)",
+      "envVar": "BIGQUERY_LOCATION"
+    }
+  ]
+}
