@@ -1,6 +1,6 @@
 # BigQuery AI.Generate
 
-`AI.GENERATE` is a general-purpose function text and content generation.
+`AI.GENERATE` is a general-purpose function for text and content generation.
 
 ## Syntax Reference
 
@@ -17,27 +17,25 @@ AI.GENERATE(
 
 ### Input Arguments
 
-| Argument            | Requirement  | Type   | Description           |
-| :------------------ | :----------- | :----- | :-------------------- |
-| **`prompt`**        | **Required** | String | The prompt text or    |
-:                     :              :        : instruction for the   :
-:                     :              :        : model.                :
-| **`connection_id`** | Optional     | String | The connection ID.    |
-:                     :              :        : Optional if           :
-:                     :              :        : configured via other  :
-:                     :              :        : means or testing.     :
-| **`endpoint`**      | Optional     | String | The model name, e.g., |
-:                     :              :        : `'gemini-2.5-flash'`. :
-| **`output_schema`** | Optional     | String | Schema definition for |
-:                     :              :        : structured output,    :
-:                     :              :        : e.g., `'answer BOOL,  :
-:                     :              :        : reason STRING'`.      :
-| **`request_type`**  | Optional     | String | `'DEDICATED'` or      |
-:                     :              :        : `'SHARED'`.           :
-| **`model_params`**  | Optional     | JSON   | JSON object for model |
-:                     :              :        : parameters (e.g.,     :
-:                     :              :        : `temperature`,        :
-:                     :              :        : `max_output_tokens`). :
+Argument            | Requirement  | Type   | Description
+:------------------ | :----------- | :----- | :----------
+**`prompt`**        | **Required** | String | The prompt text or instruction for the model.
+**`connection_id`** | Optional     | String | The connection ID. Optional if configured via other means or testing.
+**`endpoint`**      | Optional     | String | The model name, e.g., `'gemini-3.5-flash-lite'`.
+**`output_schema`** | Optional     | String | Schema definition for structured output, e.g., `'answer BOOL, reason STRING'`. Supported data types include `STRING`, `INT64`, `FLOAT64`, `BOOL`, `ARRAY`, and `STRUCT`.
+**`request_type`**  | Optional     | String | `'DEDICATED'` or `'SHARED'`.
+**`model_params`**  | Optional     | JSON   | JSON object for model parameters (e.g., `temperature`, `max_output_tokens`).
+
+### Supported Endpoints
+
+BigQuery supports the following models:
+
+*   `gemini-3.1-flash-lite`
+*   `gemini-3.5-flash`
+*   `gemini-3.5-flash-lite`
+*   `gemini-3.6-flash`
+*   `gemini-3.7-flash`
+*   `gemini-3.8-flash`
 
 ### Output Schema
 
@@ -63,9 +61,7 @@ Returns a `STRUCT` with the following fields:
 ```sql
 SELECT
   AI.GENERATE(
-    'Summarize this article: ' || article_content,
-    connection_id => 'my-project.us.my-connection',
-    endpoint => 'gemini-2.5-flash'
+    'Summarize this article: ' || article_content
   ) as summary
 FROM `dataset.articles`
 LIMIT 5;
@@ -77,7 +73,7 @@ LIMIT 5;
 SELECT
   AI.GENERATE(
     'Extract the date and amount from this invoice: ' || invoice_text,
-    output_schema => 'date DATE, amount FLOAT64'
+    output_schema => 'date STRING, amount FLOAT64'
   ) as extracted_data
 FROM `dataset.invoices`;
 ```
