@@ -215,10 +215,14 @@ For asynchronous execution, you must poll the batch status until state is
 -   **Dependency**: `--jars=gs://spark-lib/spanner/spark-3.5-spanner-1.4.0.jar`
 -   **Notes**: Pass `.option("projectId", ...)` in PySpark
 
-#### PostgreSQL
+#### PostgreSQL & JDBC Databases
 
--   **Dependency**: `spark.jars.packages=org.postgresql:postgresql:42.6.0`
--   **Notes**: Pass `--subnet=...` for private IP
+-   **Dependency**:
+    -   **GCS-Staged Driver JAR (`gs://...`)**: Pass `--jars=gs://<BUCKET_NAME>/<PATH_TO_DRIVER>.jar` on the `gcloud` CLI or set `spark.jars` (for `ManagedSparkSession`, set `session_config.runtime_config.properties["spark.jars"] = "gs://<BUCKET_NAME>/<PATH_TO_DRIVER>.jar"`). Never pass `gs://` URIs to `spark.jars.packages`.
+    -   **Maven Coordinates (requires outbound internet/Cloud NAT)**: `--properties="spark.jars.packages=<GROUP_ID>:<ARTIFACT_ID>:<VERSION>"`
+-   **Notes**:
+    -   Pass `--subnet=<SUBNET>` when connecting to a database on a VPC Private IP.
+    -   Retrieve database passwords from Google Cloud Secret Manager (either via the pre-installed `google.auth` + `urllib.request` REST API or by passing `--properties="spark.dataproc.pip.packages=google-cloud-secret-manager==<VERSION>"` on Dataproc Serverless, where `google-cloud-secret-manager` is not pre-installed).
 
 #### Iceberg REST
 
