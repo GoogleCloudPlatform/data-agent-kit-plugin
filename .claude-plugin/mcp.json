@@ -82,6 +82,17 @@
         "X_GOOG_PROXY_HEADERS": "{\"User-Agent\":\"datacloud.claude\"}"
       }
     },
+    "dak-firestore": {
+      "command": "node",
+      "type": "stdio",
+      "args": [
+        "${CLAUDE_PLUGIN_ROOT}/mcp/bin/mcp_proxy_bundle.cjs",
+        "https://firestore.googleapis.com/mcp"
+      ],
+      "env": {
+        "X_GOOG_PROXY_HEADERS": "{\"User-Agent\":\"datacloud.claude\"}"
+      }
+    },
     "dak-gcs": {
       "command": "node",
       "type": "stdio",
