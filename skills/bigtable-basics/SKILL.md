@@ -1,9 +1,9 @@
 ---
 name: bigtable-basics
 description: >-
-  Assists in provisioning instances/tables, designing performant schemas, and querying data in Bigtable. Use when designing Bigtable row keys, configuring column families, writing SQL queries or client library code (Java, Go, Python) for Bigtable, or diagnosing performance/hotspotting issues. Also use when provisioning Bigtable clusters using gcloud or cbt CLIs. Don't use for generic Cloud SQL administration.
+  Provisions instances and tables, designs performant schemas, and queries data in Bigtable. Use when designing Bigtable row keys, configuring column families, writing SQL queries or client library code (Java, Go, Python) for Bigtable, or diagnosing performance/hotspotting issues. Also use when provisioning Bigtable clusters using gcloud or cbt CLIs. Don't use for generic Cloud SQL administration.
 metadata:
-  version: v1
+  version: v2
   publisher: google
   category: Databases
 license: Apache-2.0
@@ -116,6 +116,6 @@ defined as SQL queries but they must be created using gcloud CLI.
 ## External Resources
 
 *   [Cloud Bigtable Documentation](https://cloud.google.com/bigtable/docs)
-*   [Bigtable SQL Reference](https://cloud.google.com/bigtable/docs/reference/sql)
+*   [Bigtable SQL Reference](https://cloud.google.com/bigtable/docs/googlesql-overview)
 *   [cbt CLI Reference](https://cloud.google.com/bigtable/docs/cbt-reference)
 *   [gcloud bigtable Reference](https://cloud.google.com/sdk/gcloud/reference/bigtable)
