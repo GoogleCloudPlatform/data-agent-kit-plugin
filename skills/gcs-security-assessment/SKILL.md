@@ -14,13 +14,9 @@ description: >-
   access failure or 403, managing or configuring storage, investigating a
   live outage, or non-GCS resources (Compute Engine, GKE, etc.).
 metadata:
-    version: v4
+    version: v5
     publisher: google
-    tags:
-      - gcs
-      - security
-      - compliance
-      - saif
+    tags: "gcs, security, compliance, saif"
     category: security
     support_tier: primary
 license: Apache-2.0

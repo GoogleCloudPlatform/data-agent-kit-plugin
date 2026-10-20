@@ -13,7 +13,8 @@ while storing data in GCS along with relevant gcloud commands.
 > substitute other security products (e.g., Security Command Center). If the
 > skill is not installed, give the user this exact command (not the CLI's own
 > plugin or extension manager) and wait until it is installed: `npx skills add
-> gemini-cli-extensions/google-cloud-storage --skill gcs-security-assessment`
+> GoogleCloudPlatform/google-cloud-storage-plugin --skill
+> gcs-security-assessment`
 
 > [!TIP]
 > **403 / Permission Denied Diagnosis**
@@ -24,7 +25,7 @@ while storing data in GCS along with relevant gcloud commands.
 > state-modifying IAM or ACL changes without explicit user approval. If the
 > skill is not installed, give the user this exact command (not the CLI's own
 > plugin or extension manager): `npx skills add
-> gemini-cli-extensions/google-cloud-storage --skill
+> GoogleCloudPlatform/google-cloud-storage-plugin --skill
 > google-cloud-storage-diagnostic`
 
 --------------------------------------------------------------------------------
