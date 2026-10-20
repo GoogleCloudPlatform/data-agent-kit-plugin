@@ -3,11 +3,12 @@ name: gcp-pipeline-orchestration
 description: This skill helps the agent generate or update orchestration pipeline
   definitions for Google Cloud Composer to initialize orchestration pipeline or update
   the orchestration definition for orchestration of various data pipelines, like dbt
-  pipelines, notebooks, Spark jobs, Dataform, Python scripts or inline BigQuery SQL
-  queries. This skill also helps deploy and trigger orchestration pipelines.
+  pipelines, notebooks, Spark jobs, Dataform, Python scripts, Vertex AI custom jobs,
+  Machine Learning training, or inline BigQuery SQL queries. This skill also helps
+  deploy and trigger orchestration pipelines.
 license: Apache-2.0
 metadata:
-  version: v2
+  version: v3
   publisher: google
 ---
 
@@ -211,7 +212,17 @@ following fields:
             directly in the SQL query text to materialize output tables.
 
 -   **AI / Vertex AI Actions (`ai`)**:
-    -   **Scope & Capabilities**: Support for Agent Platform (`Vertex AI`) is currently limited to uploading a trained custom model to the Vertex AI Model Registry (`agentPlatform.modelUpload`) and running batch predictions (`agentPlatform.batchInference`). Model training (e.g. Keras/TensorFlow models) is executed in a `pyspark` action.
+    -   **Scope & Capabilities**: `agentPlatform` (`Vertex AI`) supports
+        `modelUpload` (register a trained model), `batchInference` (batch
+        predictions) and `createAndRunCustomJob` (run a Vertex AI `CustomJob`,
+        e.g. containerized training). Spark-based training is executed in a
+        `pyspark` action.
+    -   **Custom Job (`agentPlatform.createAndRunCustomJob`)**: follow the
+        `run_vertex_custom_job` example and reminder 7 in
+        `references/orchestration-pipelines-schema.md`.
+
+        > [!IMPORTANT]
+        > Custom Jobs (`agentPlatform.createAndRunCustomJob`) REQUIRE a Composer environment with Airflow 2.11+ or 3.x.
     -   **Model Export Signature for Batch Prediction**: When creating a custom
         training pipeline in PySpark followed by a Agent Platform
         batch inference action (`agentPlatform.batchInference`) reading from
@@ -298,14 +309,17 @@ following fields:
     --format="json(config.softwareConfig.imageVersion, config.softwareConfig.pypiPackages)"
     ```
 
-    From the output, select an environment where the imageVersion value is one
-    of is "composer-3-airflow-3.1.7-build.x, composer-3-airflow-2.11.1-build.x,
-    composer-3-airflow-2.10.5-build.x, composer-3-airflow-2.9.3-build.x,
-    composer-2.16.11-airflow-2.11.1, composer-2.16.11-airflow-2.10.5,
-    composer-2.16.11-airflow-2.9.3" or select an environment
-    where`orchestration-pipelines` field is presented listed in the PyPI
+    From the output, select an environment where the `imageVersion` value is one
+    of `composer-3-airflow-3.1.7-build.x`, `composer-3-airflow-2.11.1-build.x`,
+    `composer-3-airflow-2.10.5-build.x`, `composer-3-airflow-2.9.3-build.x`,
+    `composer-2.16.11-airflow-2.11.1`, `composer-2.16.11-airflow-2.10.5`, or
+    `composer-2.16.11-airflow-2.9.3`, or select an environment
+    where `orchestration-pipelines` package is listed in the PyPI
     packages. This ensures the selected environment is compatible with
-    orchestration pipelines.
+    orchestration pipelines. Pipelines with an
+    `agentPlatform.createAndRunCustomJob` action MUST use an Airflow 2.11+ or
+    3.x image (e.g. `composer-3-airflow-3.1.7-build.x`,
+    `composer-3-airflow-2.11.1-build.x`).
 
 -   Third, before generating the `deployment.yaml` file, you **must ask the
     user** to provide the `artifact_storage` bucket name. Note that the
@@ -356,6 +370,13 @@ gcloud beta orchestration-pipelines validate --environment=<ENV_NAME>
     -   Read the error message carefully.
     -   Edit the orchestration and deployment files to fix the specific issue
         mentioned.
+    -   If the error is `has no field named "<field>"` for a field documented in
+        `references/orchestration-pipelines-schema.md`, you MUST verify the
+        Google Cloud CLI version (check the CLI's internal `model_version` with
+        `gcloud beta orchestration-pipelines info`;
+        `createAndRunCustomJob` requires `model_version` `1.2.X` or higher).
+        Ask the user to run `gcloud components update` and re-validate. Do NOT
+        rewrite the action into a different type.
 
 3.  Re-run the validation command to confirm the fix. Do not mark the task as
     complete until the validation passes (exit code 0), and do not fall back to
