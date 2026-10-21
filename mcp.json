@@ -17,6 +17,14 @@
         "--mode=visualization"
       ]
     },
+    "dak-data-agent-kit": {
+      "command": "node",
+      "type": "stdio",
+      "args": [
+        "${PLUGIN_ROOT}/mcp/dist/index.js",
+        "--mode=data-agent-kit"
+      ]
+    },
     "dak-alloydb": {
       "command": "node",
       "type": "stdio",
