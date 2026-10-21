@@ -3,7 +3,7 @@ name: gcp-spark-troubleshooting
 description: "Provides expert guidance for troubleshooting Google Cloud Spark and Dataproc workloads (Dataproc Serverless batches and standard Dataproc clusters), and inspecting, streaming, searching, tailing, or summarizing Spark driver outputs and event logs in Cloud Storage. Use when the user asks to debug, troubleshoot, diagnose, or perform Root Cause Analysis (RCA) on failed Spark jobs, PySpark batches, or Spark event logs."
 license: Apache-2.0
 metadata:
-  version: v3
+  version: v4
   publisher: google
 ---
 
@@ -73,8 +73,7 @@ rather than reading its source. The scripts only gather evidence; none of them
 diagnoses or writes the RCA. Use only actions and flags that this file or
 `--help` lists; never invent one.
 
--   **Required**: Python 3.8+ and an authenticated `gcloud` CLI (see
-    `@skill:google-cloud-auth-verification`).
+-   **Required**: Python 3.8+ and an authenticated `gcloud` CLI.
     -   `spark_applications.py` and `spark_stage_diagnostics.py` call
         the Dataproc REST API with a token from `gcloud auth
         print-access-token`. If that token is rejected (HTTP 401, for example
@@ -241,11 +240,12 @@ diagnostic plan or run any script before it passes.**
 
 0.  **Tooling & Environment Verification**:
 
-    -   **Verify the `gcloud` CLI is present and authenticated.** Use
-        `@skill:google-cloud-auth-verification`. Pass condition: an active
-        account is returned. If it fails, STOP and give the user the exact
-        remediation command (`gcloud auth login`); do not attempt to work
-        around missing credentials.
+    -   **Verify the `gcloud` CLI is present and authenticated** via `gcloud
+        auth list`. Pass condition: an active account is returned. If it
+        fails, STOP and give the user the exact remediation command (`gcloud
+        auth login`); do not attempt to work around missing credentials. If an
+        account is active but a call returns `403`, diagnose missing IAM roles
+        instead of asking the user to log in again.
     -   **Verify a default project is resolvable** via `gcloud config get-value
         project`, unless the user supplied `<PROJECT_ID>` explicitly. Pass
         condition: a non-empty value that is not `(unset)`.
@@ -267,9 +267,8 @@ diagnostic plan or run any script before it passes.**
 
     -   Determine if the workload is a **Dataproc Serverless Batch**, a
         **Dataproc Cluster Job**, or a **Direct GCS URI**.
-    -   If project or region is not specified, use
-        `@skill:google-cloud-auth-verification` or read the active gcloud
-        configuration.
+    -   If project or region is not specified, read the active gcloud
+        configuration (`gcloud config list`).
     -   Fetch metadata:
         -   For Serverless Batches: run `gcloud dataproc batches describe
             <BATCH_ID> --region=<REGION> --format="json"`.
