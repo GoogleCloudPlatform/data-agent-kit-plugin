@@ -12,12 +12,15 @@ permissions will limit the scope of the assessment.
 
 ## Step 1: Execute Project Verification Commands
 
-If the user explicitly instructs not to execute commands or run any tools, the
-agent MUST NOT run the commands below. Instead, skip Step 1 and proceed to Step
-2, reporting the status for all checks as Undetermined (⚠️) due to user
-constraints.
+If the user explicitly instructs not to run any `gcloud` commands (or not to
+execute any commands at all), the agent MUST NOT run the `gcloud` commands
+below. Instead, skip Step 1 and proceed to Step 2, reporting the status for all
+checks as Undetermined (⚠️) due to user constraints. (An instruction not to
+execute bucket creation or mutating commands does NOT skip these read-only
+project checks.)
 
-Otherwise, the agent must execute the following `gcloud` commands to gather
+Otherwise, the agent must execute the following `gcloud` commands (always
+including the inline `CLOUDSDK_METRICS_ENVIRONMENT` prefix) to gather
 project-level configurations. Before executing, tell the user that a secure
 bucket configuration also relies on secure project settings:
 
