@@ -13,7 +13,7 @@ description: |
 
 license: Apache-2.0
 metadata:
-  version: v1
+  version: v2
   publisher: google
 ---
 
@@ -34,7 +34,7 @@ Your goal is to upgrade Spark jobs from one version to another while maintaining
 
 ## Task Execution Workflow
 > [!IMPORTANT]
-> All GCP operations require active authentication. If you encounter authentication or permission errors, refer to `@skill:google-cloud-auth-verification` to resolve them.
+> All GCP operations require active authentication. If you encounter authentication errors, ask the user to run `gcloud auth login` and `gcloud auth application-default login`. If an account is active but a call returns `403`, diagnose missing IAM roles instead.
 
 > [!NOTE]
 > All helper scripts in this skill maintain dependencies inline following the [PEP 723](https://peps.python.org/pep-0723/) specification. Execute all Python helper scripts using [uv](https://docs.astral.sh/uv/) (e.g., `uv run scripts/<script_name>.py --help`), which automatically manages isolated environments and dependencies. Run scripts with `--help` to discover their interface rather than reading the source.
