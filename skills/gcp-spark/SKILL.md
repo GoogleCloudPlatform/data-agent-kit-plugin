@@ -1,22 +1,21 @@
 ---
 name: gcp-spark
 description: |
-  Develops, optimizes and runs PySpark/Spark code on Managed Spark (Dataproc
-  clusters and Serverless) on Google Cloud.
+  Authors, optimizes, and runs PySpark and Spark code on Google Cloud Managed Spark
+  (Dataproc Serverless, clusters, and Spark Connect).
   Use when:
-  - Authoring or running Spark/PySpark notebooks (any kernel), incl. data
-    analysis, reports and visualizations.
-  - Writing Spark ETL pipelines or preparing workloads for production.
-  - Training or running inference with ML models on Spark.
-  - Optimizing PySpark or Spark SQL for performance, memory, or OOM risks.
-  - Managing Spark clusters, jobs, batches, and interactive sessions.
-  Don't use when:
-  - Writing generic Python that doesn't use Spark.
-  - Performing simple SQL queries that can be done directly in BigQuery.
-  - Troubleshooting failed Spark workloads (use @skill:gcp-spark-troubleshooting).
+  - Authoring or running Spark/PySpark notebooks in any kernel (Local Kernel with
+    spark-remote templates, Remote Spark / Remote Kernel, ManagedSparkSession, Spark Connect).
+  - Querying, transforming, or writing data with PySpark or Spark SQL, including
+    Apache Iceberg / BigLake Iceberg tables, BigQuery, GCS, Spanner, or Cloud SQL.
+  - Building PySpark ETL pipelines, machine learning workloads, or batch jobs.
+  - Managing Dataproc clusters, serverless batches, or interactive sessions.
+  - Optimizing PySpark or Spark SQL queries for performance, memory, and OOM prevention.
+  Do NOT use when:
+  - Troubleshooting failed Spark jobs or Dataproc batches (use @skill:gcp-spark-troubleshooting).
 license: Apache-2.0
 metadata:
-  version: v29
+  version: v30
   publisher: google
 ---
 
