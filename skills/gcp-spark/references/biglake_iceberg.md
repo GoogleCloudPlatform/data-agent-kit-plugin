@@ -20,7 +20,9 @@
 
 When generating PySpark **notebook** code, assume the Dataproc kernel already
 has the Iceberg catalog configured via its Session Template. **MUST NOT add
-in-code catalog configuration.** Always use the simple `getOrCreate()` pattern:
+in-code catalog configuration.** On a **Remote Spark** kernel, `spark` is
+pre-initialized—use `spark.read.format("iceberg")...` directly. On a **Local
+Python** kernel, initialize `ManagedSparkSession`:
 
 ```python
 # Catalog and BigLake settings are pre-configured by the Dataproc Session Template.

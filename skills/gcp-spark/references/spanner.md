@@ -12,7 +12,9 @@ accepts Maven coordinates). Ensure the Spanner JAR's Spark version prefix
 `spark-4.0-spanner-*` for Dataproc runtime `3.0` / Spark 4.0) matches the
 Dataproc runtime version:
 
--   **Interactive Notebooks (`.ipynb`) & Spark Connect**: Attach the JAR via a
+-   **Interactive Notebooks (`.ipynb`) & Spark Connect**: On a **Remote Spark**
+    kernel, `spark` is pre-initialized (with the Spanner JAR configured on the
+    session/cluster). On a **Local Python** kernel, attach the JAR via a
     Session Template or `session_config.runtime_config.properties["spark.jars"]`
     (and ensure `session_config.runtime_config.version` matches the JAR's Spark
     version, as `ManagedSparkSession` defaults to runtime `3.0`):

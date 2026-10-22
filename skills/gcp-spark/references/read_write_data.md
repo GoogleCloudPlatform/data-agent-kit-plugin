@@ -36,8 +36,9 @@ BigQuery connector JARs (`spark-bigquery-with-dependencies`) are pre-installed
 in the runtime environment. Do **NOT** pass `com.google.cloud.spark:spark-*-bigquery`
 via `spark.jars.packages` when running on Dataproc.
 
--   **Interactive Notebooks (`.ipynb`) & Spark Connect**: Initialize with
-    `ManagedSparkSession` (see `SKILL.md`).
+-   **Interactive Notebooks (`.ipynb`) & Spark Connect**: Use the
+    pre-initialized `spark` variable on **Remote Spark** kernels, or initialize
+    with `ManagedSparkSession` on **Local Python** kernels (see `SKILL.md`).
 -   **Dataproc Batch & Cluster Jobs (`.py`)**: Initialize with standard
     `SparkSession.builder` (see `SKILL.md`).
 

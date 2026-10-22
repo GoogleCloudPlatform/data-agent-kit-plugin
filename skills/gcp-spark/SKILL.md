@@ -16,7 +16,7 @@ description: |
   - Troubleshooting failed Spark workloads (use @skill:gcp-spark-troubleshooting).
 license: Apache-2.0
 metadata:
-  version: v28
+  version: v29
   publisher: google
 ---
 
@@ -51,7 +51,8 @@ metadata:
 
     -   When asked to generate a new spark notebook you **MUST** clarify with
         the user which kernel type will be used: "Local Python" (Spark Connect)
-        or "Remote Spark". If the user selects "Local Python", you MUST
+        or "Remote Spark" where the Spark session (`spark` variable) is
+        automatically initialized. If the user selects "Local Python", you MUST
         additionally clarify which dataprocSessionConfig should be used (scan
         for existing serverless session templates), and **MUST** initialize the
         session with `ManagedSparkSession` by adding the following cells to the
@@ -122,29 +123,33 @@ metadata:
         > [!IMPORTANT] Initializing a Spark session on Google Cloud can take 2-3
         > minutes. You MUST inform the user about the potential delay.
 
-        > [!CAUTION] **NEVER** create a local Spark session. The following are
-        > **BANNED**: - `SparkSession.builder.master("local")` -
+        > [!CAUTION] You **MUST NOT** create a local Spark session. The
+        > following are **BANNED**: - `SparkSession.builder.master("local")` -
         > `pyspark.sql.SparkSession.builder.getOrCreate()` in notebooks or local
-        > Spark Connect scripts when used without `ManagedSparkSession` - Any
-        > `try/except` fallbacks that revert to a local `SparkSession`.
+        > Spark Connect scripts - Any `try/except` fallbacks that revert to a
+        > local `SparkSession`.
         >
-        > - **Interactive Notebooks (`.ipynb`) & Spark Connect scripts**: You
-        >   **MUST ALWAYS** use `ManagedSparkSession` from
-        >   `google-cloud-spark-connect` to connect to **Managed Spark
-        >   Serverless**. No exceptions.
+        > - **Remote Kernel Notebooks (`.ipynb`)**: `spark` is pre-initialized;
+        >   use it directly without calling `ManagedSparkSession` or
+        >   `SparkSession.builder.getOrCreate()`.
+        > - **Local Python Notebooks (`.ipynb`) & Spark Connect scripts**: You
+        >   **MUST** use `ManagedSparkSession` from `google-cloud-spark-connect`
+        >   to connect to **Managed Spark Serverless**.
         > - **Dataproc Batch & Cluster jobs (`.py` submitted via `gcloud dataproc batches submit pyspark` or `gcloud dataproc jobs submit pyspark`)**:
         >   Use standard `SparkSession.builder.appName("<APP_NAME>").getOrCreate()`
         >   (never `.master("local")`).
 
         Refer to `references/gcloud_dataproc.md` for detailed configuration.
-        Minimal initialization for notebooks / Spark Connect:
+        Minimal initialization for **Local Python** notebooks / Spark Connect:
 
         ```python
         from google.cloud.managed_spark_connect import ManagedSparkSession
 
-        spark = ManagedSparkSession.builder.projectId(<PROJECT_ID>)
-            .location(<REGION>)
+        spark = (
+            ManagedSparkSession.builder.projectId("<PROJECT_ID>")
+            .location("<REGION>")
             .getOrCreate()
+        )
         ```
     *   **Production Logging**: In standalone
         production PySpark batch jobs and scripts (`.py`), you MUST use the
