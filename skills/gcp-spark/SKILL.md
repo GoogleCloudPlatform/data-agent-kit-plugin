@@ -16,7 +16,7 @@ description: |
   - Troubleshooting failed Spark workloads (use @skill:gcp-spark-troubleshooting).
 license: Apache-2.0
 metadata:
-  version: v27
+  version: v28
   publisher: google
 ---
 
@@ -101,8 +101,11 @@ metadata:
     Do NOT proceed with code generation, do NOT add fallback logic to code, and
     do NOT automatically substitute any alternative table (even if its schema
     seems to match) without explicit user permission.
-3.  **Verify source accessibility**: verify access/existence using `gcloud
-    storage ls gs://<path-to-dataset>`. If accessing or reading a GCS path fails
+3.  **Verify source accessibility**: For Google Cloud Storage (`gs://`) paths,
+    verify access/existence using `gcloud storage ls gs://<path-to-dataset>`
+    (skip `gcloud storage ls` for external cloud URIs such as `s3a://`,
+    `abfss://`, `wasbs://`, or `wasb://`, which are accessed directly by Spark's
+    Hadoop FileSystem connectors). If accessing or reading a GCS path fails
     with a storage error e.g., permission errors like `403
     Forbidden`/`Forbidden`/`PermissionDenied`, or location errors like `404 Not
     Found`/`NotFound`/`FileNotFoundException` you should report the error
@@ -172,6 +175,10 @@ metadata:
         -   **Cloud Spanner**: `references/spanner.md`
         -   **JDBC, Cloud SQL (PostgreSQL / MySQL / SQL Server), AlloyDB & Secret Manager**:
             `references/jdbc_cloudsql.md`
+        -   **Amazon S3 (`s3a://` / S3-compatible object storage)**:
+            `references/aws_s3.md`
+        -   **Azure Blob Storage & ADLS Gen2 (`abfss://`, `wasbs://`,
+            `wasb://`)**: `references/azure_storage.md`
     *   **Machine Learning Tasks**: Refer to `@skill:ml-best-practices` skill and `references/ml_tasks.md` when generating Machine Learning code.
     *   **Spark Optimizations & Broadcast Joins**: **ALWAYS** refer to
         `references/spark_optimizations.md`. When joining a large DataFrame with

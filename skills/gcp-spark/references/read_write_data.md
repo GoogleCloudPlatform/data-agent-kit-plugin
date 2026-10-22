@@ -20,6 +20,10 @@ destination:
 -   **Cloud Spanner**: Refer to `references/spanner.md`.
 -   **JDBC & Cloud SQL (PostgreSQL / MySQL) & Secret Manager Credentials**:
     Refer to `references/jdbc_cloudsql.md`.
+-   **Amazon S3 (`s3a://` / S3-compatible object storage)**: Refer to
+    `references/aws_s3.md`.
+-   **Azure Blob Storage & ADLS Gen2 (`abfss://`, `wasbs://`, `wasb://`)**:
+    Refer to `references/azure_storage.md`.
 
 --------------------------------------------------------------------------------
 
