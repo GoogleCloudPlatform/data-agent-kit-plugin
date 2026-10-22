@@ -10,23 +10,23 @@ and points to the corresponding query in `bigquery-observability`.
 
 ## Table of Contents
 
--   [1. 4-Step Diagnostic Funnel](#1-4-step-diagnostic-funnel) (Lines 33-109)
+-   [1. 4-Step Diagnostic Funnel](#1-4-step-diagnostic-funnel) (Lines 31-107)
 -   [2. Diagnostic Workflows by Symptom & Root Cause](#2-diagnostic-workflows-by-symptom-root-cause)
-    (Lines 111-252)
+    (Lines 109-250)
     -   [Scenario 1: Historical Partition Timer Reset (The DML Trap)](#scenario-1-historical-partition-timer-reset-the-dml-trap)
-        (Lines 113-140)
+        (Lines 111-138)
     -   [Scenario 2: The Unpartitioned Table Active Trap](#scenario-2-the-unpartitioned-table-active-trap)
-        (Lines 142-165)
+        (Lines 140-163)
     -   [Scenario 3: Time Travel & Fail-Safe Churn on Physical Billing](#scenario-3-time-travel-fail-safe-churn-on-physical-billing)
-        (Lines 167-193)
+        (Lines 165-191)
     -   [Scenario 4: Deleted Table / Dataset "Phantom Spend" & Long-Term Promotion](#scenario-4-deleted-table-dataset-phantom-spend-long-term-promotion)
-        (Lines 195-234)
+        (Lines 193-232)
     -   [Scenario 5: Table Clones and Snapshots Overestimation](#scenario-5-table-clones-and-snapshots-overestimation)
-        (Lines 236-252)
+        (Lines 234-250)
 -   [3. Execution Limitations & Footguns](#3-execution-limitations-footguns)
-    (Lines 254-286)
+    (Lines 252-284)
 -   [4. Telemetry & Data Retrieval Reference](#4-telemetry-data-retrieval-reference)
-    (Lines 288-305)
+    (Lines 286-303)
 
 ## 1. 4-Step Diagnostic Funnel
 

@@ -9,31 +9,31 @@ and Assignment views in BigQuery `INFORMATION_SCHEMA`.
 -   [View Scoping & Qualification Matrix](#view-scoping-qualification-matrix)
     (Lines 38-57)
 -   [1. Jobs & Compute Telemetry Views](#1-jobs-compute-telemetry-views) (Lines
-    58-268)
+    58-266)
     -   [`INFORMATION_SCHEMA.JOBS` (and `_BY_PROJECT`, `_BY_ORGANIZATION`, `_BY_USER`, `_BY_FOLDER`)](#information_schemajobs-and-_by_project-_by_organization-_by_user-_by_folder)
-        (Lines 60-177)
+        (Lines 60-176)
     -   [`INFORMATION_SCHEMA.JOBS_TIMELINE` (and `_BY_PROJECT`, `_BY_ORGANIZATION`, `_BY_USER`, `_BY_FOLDER`)](#information_schemajobs_timeline-and-_by_project-_by_organization-_by_user-_by_folder)
-        (Lines 178-233)
+        (Lines 177-232)
     -   [`INFORMATION_SCHEMA.SESSIONS_BY_USER` (and `_BY_PROJECT`)](#information_schemasessions_by_user-and-_by_project)
-        (Lines 234-268)
+        (Lines 233-266)
 -   [2. Capacity, Reservations & Commitments Views](#2-capacity-reservations-commitments-views)
-    (Lines 269-588)
+    (Lines 267-586)
     -   [`INFORMATION_SCHEMA.RESERVATIONS` (and `_BY_PROJECT`)](#information_schemareservations-and-_by_project)
-        (Lines 271-309)
+        (Lines 269-307)
     -   [`INFORMATION_SCHEMA.RESERVATION_CHANGES` (and `_BY_PROJECT`)](#information_schemareservation_changes-and-_by_project)
-        (Lines 310-352)
+        (Lines 308-350)
     -   [`INFORMATION_SCHEMA.RESERVATIONS_TIMELINE` (and `_BY_PROJECT`)](#information_schemareservations_timeline-and-_by_project)
-        (Lines 353-426)
+        (Lines 351-424)
     -   [`INFORMATION_SCHEMA.CAPACITY_COMMITMENTS` (and `_BY_PROJECT`)](#information_schemacapacity_commitments-and-_by_project)
-        (Lines 427-457)
+        (Lines 425-455)
     -   [`INFORMATION_SCHEMA.CAPACITY_COMMITMENT_CHANGES_BY_PROJECT` (and `_CHANGES`)](#information_schemacapacity_commitment_changes_by_project-and-_changes)
-        (Lines 458-496)
+        (Lines 456-494)
     -   [`INFORMATION_SCHEMA.ASSIGNMENTS` (and `_BY_PROJECT`)](#information_schemaassignments-and-_by_project)
-        (Lines 497-527)
+        (Lines 495-525)
     -   [`INFORMATION_SCHEMA.ASSIGNMENT_CHANGES_BY_PROJECT` (and `_CHANGES`)](#information_schemaassignment_changes_by_project-and-_changes)
-        (Lines 528-562)
+        (Lines 526-560)
     -   [`INFORMATION_SCHEMA.BI_CAPACITIES` (and `BI_CAPACITY_CHANGES`)](#information_schemabi_capacities-and-bi_capacity_changes)
-        (Lines 563-588)
+        (Lines 561-586)
 
 ## View Scoping & Qualification Matrix
 
@@ -69,9 +69,8 @@ parent-child script hierarchy, and error classifications. Retention is 180 days.
 #### Required IAM Permissions & Predefined Roles
 
 *   **`JOBS_BY_USER` (Least Privilege):** Requires `bigquery.jobs.list` on the
-    project. Granted by **BigQuery User** (`roles/bigquery.user`), **BigQuery
-    Job User** (`roles/bigquery.jobUser`), or **BigQuery Admin**
-    (`roles/bigquery.admin`).
+    project. Granted by **BigQuery User** (`roles/bigquery.user`) or **BigQuery
+    Admin** (`roles/bigquery.admin`).
 *   **`JOBS` / `JOBS_BY_PROJECT`:** Requires `bigquery.jobs.listAll` on the
     project. Granted by **BigQuery Resource Admin**
     (`roles/bigquery.resourceAdmin`), **BigQuery Resource Viewer**
@@ -186,18 +185,18 @@ starvation.
 
 #### Required IAM Permissions & Predefined Roles
 
-*   **`JOBS_BY_USER` (Least Privilege):** Requires `bigquery.jobs.list` on the
-    project. Granted by **BigQuery User** (`roles/bigquery.user`), **BigQuery
-    Job User** (`roles/bigquery.jobUser`), or **BigQuery Admin**
-    (`roles/bigquery.admin`).
-*   **`JOBS` / `JOBS_BY_PROJECT`:** Requires `bigquery.jobs.listAll` on the
-    project. Granted by **BigQuery Resource Admin**
-    (`roles/bigquery.resourceAdmin`), **BigQuery Resource Viewer**
+*   **`JOBS_TIMELINE_BY_USER` (Least Privilege):** Requires `bigquery.jobs.list`
+    on the project. Granted by **BigQuery User** (`roles/bigquery.user`) or
+    **BigQuery Admin** (`roles/bigquery.admin`).
+*   **`JOBS_TIMELINE` / `JOBS_TIMELINE_BY_PROJECT`:** Requires
+    `bigquery.jobs.listAll` on the project. Granted by **BigQuery Resource
+    Admin** (`roles/bigquery.resourceAdmin`), **BigQuery Resource Viewer**
     (`roles/bigquery.resourceViewer`), **BigQuery Studio Admin**
     (`roles/bigquery.studioAdmin`), or **BigQuery Admin**
     (`roles/bigquery.admin`).
-*   **`JOBS_BY_FOLDER`:** Requires `bigquery.jobs.listAll` on the parent folder.
-*   **`JOBS_BY_ORGANIZATION`:** Requires `bigquery.jobs.listAll` on the
+*   **`JOBS_TIMELINE_BY_FOLDER`:** Requires `bigquery.jobs.listAll` on the
+    parent folder.
+*   **`JOBS_TIMELINE_BY_ORGANIZATION`:** Requires `bigquery.jobs.listAll` on the
     organization.
 
 <!-- mdformat off -->
@@ -242,9 +241,8 @@ table allocations.
 #### Required IAM Permissions & Predefined Roles
 
 *   **`SESSIONS_BY_USER` (Least Privilege):** Requires `bigquery.jobs.list` on
-    the project. Granted by **BigQuery User** (`roles/bigquery.user`),
-    **BigQuery Job User** (`roles/bigquery.jobUser`), or **BigQuery Admin**
-    (`roles/bigquery.admin`).
+    the project. Granted by **BigQuery User** (`roles/bigquery.user`) or
+    **BigQuery Admin** (`roles/bigquery.admin`).
 *   **`SESSIONS_BY_PROJECT`:** Requires `bigquery.jobs.listAll` on the project.
     Granted by **BigQuery Resource Viewer** (`roles/bigquery.resourceViewer`),
     **BigQuery Resource Admin** (`roles/bigquery.resourceAdmin`), or **BigQuery

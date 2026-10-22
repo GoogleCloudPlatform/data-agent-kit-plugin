@@ -6,17 +6,17 @@ operations, and query plan metrics in BigQuery.
 
 ## Table of Contents
 
--   [Diagnostic Workflows](#diagnostic-workflows) (Lines 21-109)
+-   [Diagnostic Workflows](#diagnostic-workflows) (Lines 21-112)
     -   [1. Single-Job Stage Bottleneck Triage & REST API Lookup](#1-single-job-stage-bottleneck-triage-rest-api-lookup)
         (Lines 23-43)
     -   [2. General Telemetry & Stage Metrics Cross-Reference](#2-general-telemetry-stage-metrics-cross-reference)
         (Lines 45-54)
     -   [3. Join Explosion, Shuffle Spill & Partition Skew Diagnosis](#3-join-explosion-shuffle-spill-partition-skew-diagnosis)
-        (Lines 56-109)
+        (Lines 56-112)
 -   [Execution Graph & UI Grounding Concepts](#execution-graph-ui-grounding-concepts)
-    (Lines 111-157)
+    (Lines 114-160)
 -   [Strict Disambiguation Invariants](#strict-disambiguation-invariants) (Lines
-    159-174)
+    162-183)
 
 ## Diagnostic Workflows
 
@@ -86,9 +86,12 @@ as `records_read`, `records_written`, `shuffle_output_bytes_spilled`, and
         `insight.insufficient_shuffle_quota = TRUE` to identify stages spilling
         intermediate data to disk or starving for shuffle quota.
     -   **Wait vs. Skew Check**: Compare `stage.wait_ratio_avg` (`wait_ms_avg`)
-        and `stage.wait_ratio_max` (`wait_ms_max`) to detect worker slot
-        starvation (`insight.slot_contention = TRUE`), and compare
-        `stage.compute_ratio_max` against `stage.compute_ratio_avg` alongside
+        and `stage.wait_ratio_max` (`wait_ms_max`)—and check whether
+        `wait_ms_max >> compute_ms_max` (`waitMsMax >> computeMsMax` in
+        `queryPlan`)—to detect worker slot starvation and shard scheduling wait
+        (`insight.slot_contention = TRUE`), and compare
+        `stage.compute_ratio_max` (`compute_ms_max` / `computeMsMax`) against
+        `stage.compute_ratio_avg` (`compute_ms_avg` / `computeMsAvg`) alongside
         `insight.partition_skew.skew_sources` (`stage_id`) to isolate hot keys
         overloading a single worker shard.
 -   **Remediation & Actions**:

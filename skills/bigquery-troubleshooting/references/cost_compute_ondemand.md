@@ -9,21 +9,21 @@ corresponding query in `bigquery-observability`.
 
 ## Table of Contents
 
--   [1. 4-Step Diagnostic Funnel](#1-4-step-diagnostic-funnel) (Lines 30-83)
+-   [1. 4-Step Diagnostic Funnel](#1-4-step-diagnostic-funnel) (Lines 28-81)
 -   [2. Diagnostic Workflows by Symptom & Root Cause](#2-diagnostic-workflows-by-symptom-root-cause)
-    (Lines 85-262)
+    (Lines 83-260)
     -   [Scenario 1: The Bully Query (Unpartitioned Runaway Scan)](#scenario-1-the-bully-query-unpartitioned-runaway-scan)
-        (Lines 87-148)
+        (Lines 85-146)
     -   [Scenario 2: Hidden RLS Redacted Costs](#scenario-2-hidden-rls-redacted-costs)
-        (Lines 150-176)
+        (Lines 148-174)
     -   [Scenario 3: BQML Model Training Rates](#scenario-3-bqml-model-training-rates)
-        (Lines 178-204)
+        (Lines 176-202)
     -   [Scenario 4: User / Service Account Bursting & Missing Quotas](#scenario-4-user-service-account-bursting-missing-quotas)
-        (Lines 206-230)
+        (Lines 204-228)
     -   [Scenario 5: Querying Very Small Tables (10 MiB Minimum Billed Data Floor)](#scenario-5-querying-very-small-tables-10-mib-minimum-billed-data-floor)
-        (Lines 232-262)
+        (Lines 230-260)
 -   [3. Telemetry & Data Retrieval Reference](#3-telemetry-data-retrieval-reference)
-    (Lines 264-286)
+    (Lines 262-284)
 
 ## 1. 4-Step Diagnostic Funnel
 

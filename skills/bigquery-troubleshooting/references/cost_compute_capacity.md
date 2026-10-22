@@ -10,19 +10,19 @@ root causes and points to the corresponding audit query in
 
 ## Table of Contents
 
--   [1. 4-Step Diagnostic Funnel](#1-4-step-diagnostic-funnel) (Lines 29-129)
+-   [1. 4-Step Diagnostic Funnel](#1-4-step-diagnostic-funnel) (Lines 27-127)
 -   [2. Diagnostic Workflows by Symptom & Root Cause](#2-diagnostic-workflows-by-symptom-root-cause)
-    (Lines 131-261)
+    (Lines 129-259)
     -   [Scenario 1: Uncovered Baseline Slots Penalty & Commitment Expiration](#scenario-1-uncovered-baseline-slots-penalty-commitment-expiration)
-        (Lines 133-170)
+        (Lines 131-168)
     -   [Scenario 2: Baseline Reduction Triggering Autoscale Surge](#scenario-2-baseline-reduction-triggering-autoscale-surge)
-        (Lines 172-192)
+        (Lines 170-190)
     -   [Scenario 3: Reservation Autoscaler Thrashing & Concurrency Spikes](#scenario-3-reservation-autoscaler-thrashing-concurrency-spikes)
-        (Lines 194-220)
+        (Lines 192-218)
     -   [Scenario 4: Unexpected "BigQuery Reservation API" Charges (Serverless & Managed Features)](#scenario-4-unexpected-bigquery-reservation-api-charges-serverless-managed-features)
-        (Lines 222-261)
+        (Lines 220-259)
 -   [3. Telemetry & Data Retrieval Reference](#3-telemetry-data-retrieval-reference)
-    (Lines 263-280)
+    (Lines 261-278)
 
 ## 1. 4-Step Diagnostic Funnel
 

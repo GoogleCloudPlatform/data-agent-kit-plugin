@@ -2,7 +2,7 @@
 name: bigquery-observability
 license: Apache-2.0
 metadata:
-  version: v1
+  version: v2
   publisher: google
 description: >-
   Provides data-retrieval best practices, tool selection guidance, and
@@ -102,8 +102,11 @@ analytical need:
 1.  **User-Level over Project-Level (`_BY_USER`):** When diagnosing queries or
     sessions executed by the current user, use `_BY_USER` (e.g. `JOBS_BY_USER`,
     `SESSIONS_BY_USER`). This requires only `bigquery.jobs.list` (granted via
-    `roles/bigquery.user` or `roles/bigquery.jobUser`), avoiding the need for
-    `bigquery.jobs.listAll` or `roles/bigquery.admin`.
+    `roles/bigquery.user`), avoiding the need for `bigquery.jobs.listAll` or
+    `roles/bigquery.admin`. If `JOBS_BY_USER` also returns `403 Access Denied`
+    (e.g. when the caller only holds `roles/bigquery.jobUser`, which grants
+    `bigquery.jobs.create` but not `bigquery.jobs.list`), fall back to `bq ls -j
+    -n {max_results} {project_id}` for a zero-compute CLI job listing.
 2.  **Dataset-Level over Region/Project-Level:** When querying table metadata,
     columns, or views for a specific dataset, qualify with `{dataset_id}` rather
     than `region-{region}` when project-level metadata access is restricted.
