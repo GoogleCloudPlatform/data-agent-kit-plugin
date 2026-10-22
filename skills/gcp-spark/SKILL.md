@@ -16,7 +16,7 @@ description: |
   - Troubleshooting failed Spark workloads (use @skill:gcp-spark-troubleshooting).
 license: Apache-2.0
 metadata:
-  version: v26
+  version: v27
   publisher: google
 ---
 
@@ -170,7 +170,7 @@ metadata:
         -   **BigQuery, GCS, or Pub/Sub**: `references/read_write_data.md`
         -   **BigLake Iceberg Catalog**: `references/biglake_iceberg.md`
         -   **Cloud Spanner**: `references/spanner.md`
-        -   **JDBC & Cloud SQL (PostgreSQL / MySQL) & Secret Manager**:
+        -   **JDBC, Cloud SQL (PostgreSQL / MySQL / SQL Server), AlloyDB & Secret Manager**:
             `references/jdbc_cloudsql.md`
     *   **Machine Learning Tasks**: Refer to `@skill:ml-best-practices` skill and `references/ml_tasks.md` when generating Machine Learning code.
     *   **Spark Optimizations & Broadcast Joins**: **ALWAYS** refer to
