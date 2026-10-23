@@ -37,7 +37,13 @@ lets the target's compiler find the affected code.
     -   for the Java runtime, the build changes, and the dependencies
         (`jvm_build_reference.md`, sections 2–4);
     -   for binary compatibility (section 1) and, if the binary version changes,
-        the language and library changes (section 2).
+        the language and library changes (section 2);
+    -   if the code executes inline SQL (`spark.sql(...)`,
+        `sqlContext.sql(...)`, `selectExpr(...)`, `expr(...)`), sets
+        `spark.sql.*` properties, or loads `.sql` resource files, check those
+        queries and properties with `spark_sql_analysis.md` (sections 1–2) and
+        run its Catalyst parser check (`spark_sql_analysis.md`, section 4.1) in
+        step 4 (`scalac` does not validate SQL strings).
 4.  Check the toolchain (section 3), then run the build checks
     (`jvm_build_reference.md`, section 5) with the compiler options in
     section 3.
