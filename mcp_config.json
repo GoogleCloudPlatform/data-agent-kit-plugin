@@ -8,14 +8,6 @@
         "--mode=notebook"
       ]
     },
-    "dak-viz": {
-      "command": "node",
-      "type": "stdio",
-      "args": [
-        "mcp/dist/index.js",
-        "--mode=visualization"
-      ]
-    },
     "dak-data-agent-kit": {
       "command": "node",
       "type": "stdio",
