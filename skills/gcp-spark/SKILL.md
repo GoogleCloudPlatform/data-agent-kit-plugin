@@ -12,10 +12,11 @@ description: |
   - Managing Dataproc clusters, serverless batches, or interactive sessions.
   - Optimizing PySpark or Spark SQL queries for performance, memory, and OOM prevention.
   Do NOT use when:
+  - Auditing multi-region fleet inventory, DCU/cost consumption, idle/zombie clusters, or workload observability (use @skill:gcp-spark-observability).
   - Troubleshooting failed Spark jobs or Dataproc batches (use @skill:gcp-spark-troubleshooting).
 license: Apache-2.0
 metadata:
-  version: v30
+  version: v31
   publisher: google
 ---
 
@@ -260,10 +261,17 @@ The Managed Spark (Dataproc) service account needs:
 
 --------------------------------------------------------------------------------
 
-## Spark resource management
+## Spark resource management & observability
 
 Refer to `references/gcloud_dataproc.md` for detailed guidelines on managing
 Spark clusters, jobs, batches, interactive sessions, and Spark Connect sessions.
+
+For fleet-wide and multi-region observability — including active workload
+inventory across Batches, Sessions, Clusters, and Jobs, failed batch discovery,
+Serverless compute consumption (`DCU-Hours` and `Shuffle-GB-Months`), idle or
+zombie cluster waste detection, scheduled pipeline cadence health, configuration
+auditing, and Cloud Monitoring / Cloud Logging telemetry — use the
+`@skill:gcp-spark-observability` skill.
 
 --------------------------------------------------------------------------------
 
