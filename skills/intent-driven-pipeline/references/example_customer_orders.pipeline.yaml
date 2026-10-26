@@ -1,0 +1,51 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Customer Orders declarative data pipeline (MVP format).
+#
+# Raw request: "Populate the gold order table from ERP and storefront orders.
+# Storefront is the source of truth from July."
+#
+# Repository layout this file assumes:
+#   deployment.yaml                  (defines gold_dataset, erp_dataset,
+#                                     storefront_dataset per environment)
+#   pipelines/customer_orders.pipeline.yaml
+#   dbt_customer_orders/dbt_project.yml
+intent:
+  goal: >-
+    Union ERP orders (erp.orders_raw) and Storefront orders
+    (storefront.shop_orders) into the Gold table customer_orders, one row per
+    order. Before 2026-07-01 ERP is the source of truth. From 2026-07-01
+    Storefront is the source of truth: when both sources have the same order,
+    keep the Storefront row and deduplicate on shop_orders.erp_ref =
+    orders_raw.ord_id. Storefront orders with no erp_ref are kept. Refresh daily
+    at 06:00 UTC. Drop the ERP branch once the ERP migration is complete.
+execution_mode: TRIGGERED
+triggers:
+  - inline_trigger:
+      schedule:
+        interval: "0 6 * * *"
+        time_zone: "UTC"
+parameters:
+  - name: storefront_cutover_date
+    type: STRING
+    default: "2026-07-01"
+  - name: target_dataset
+    type: STRING
+    default: "{{ gold_dataset }}"
+data_models:
+  - name: customer_orders_dbt
+    dbt:
+      source: ./dbt_customer_orders
+      select: ["tag:customer_orders"]
