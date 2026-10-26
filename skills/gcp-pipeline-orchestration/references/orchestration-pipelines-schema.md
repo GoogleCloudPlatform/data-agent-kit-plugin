@@ -52,13 +52,43 @@ enum TriggerRule {
 message Defaults {
   string project_id = 1 [(pipeline_models.validation.is_required) = true];
   string location = 2 [(pipeline_models.validation.is_required) = true];
-  ExecutionConfig execution_config = 3 [(pipeline_models.validation.is_required) = true];
+  // Deprecated in v1.2.0 in favor of retry_policy.
+  ExecutionConfig execution_config = 3 [deprecated = true];
+  RetryPolicy retry_policy = 4;
 }
 
 message ExecutionConfig {
   // Per proto3 design, scalar fields like int32 have a default value (0) and
   // cannot be truly 'required'. The `min_value` option is used instead.
-  int32 retries = 1 [(pipeline_models.validation.min_value) = 0];
+  int32 retries = 1 [deprecated = true, (pipeline_models.validation.min_value) = 0];
+}
+
+/////////////////////////
+// Retry Policies
+/////////////////////////
+message FixedDelayStrategy {
+  // Validated by time_utils.check_duration(): must be `<number><unit>` (e.g., "30s", "5m").
+  string retry_delay = 1 [(pipeline_models.validation.is_required) = true];
+}
+
+message ExponentialBackoffStrategy {
+  // Validated by time_utils.check_duration(): must be `<number><unit>` (e.g., "10s", "5m").
+  string initial_delay = 1 [(pipeline_models.validation.is_required) = true];
+  string max_delay = 2;
+  double multiplier = 3; // Default: 2.0.
+  bool randomize_jitter = 4; // Default: false.
+}
+
+message RetryPolicy {
+  // Hard ceiling on maximum retry attempts across all strategies.
+  optional int32 max_retries = 1 [
+    (pipeline_models.validation.is_required) = true,
+    (pipeline_models.validation.min_value) = 0
+  ];
+  oneof strategy {
+    FixedDelayStrategy fixed_delay = 2;
+    ExponentialBackoffStrategy exponential_backoff = 3;
+  }
 }
 
 message OnPipelineFailure {
@@ -251,6 +281,7 @@ message PythonAction {
   PythonEnvironment environment = 7;
   PythonEngine engine = 8 [(pipeline_models.validation.is_required) = true];
   TriggerRule trigger_rule = 9; // Default: all_success.
+  RetryPolicy retry_policy = 10;
 }
 
 message PythonEnvironment {
@@ -302,6 +333,7 @@ message PysparkAction {
     (pipeline_models.validation.map_value_regex) = "^[^';|`&]+$"
   ];
   map<string, string> labels = 12;
+  RetryPolicy retry_policy = 13;
 }
 
 message PysparkEngine {
@@ -348,6 +380,7 @@ message NotebookAction {
     (pipeline_models.validation.map_value_regex) = "^[^';|`&]+$"
   ];
   map<string, string> labels = 11;
+  RetryPolicy retry_policy = 12;
 }
 
 message NotebookEngine {
@@ -393,6 +426,7 @@ message SqlAction {
     (pipeline_models.validation.map_value_regex) = "^[^';|`&]+$"
   ];
   map<string, string> labels = 8;
+  RetryPolicy retry_policy = 9;
 }
 
 message Query {
@@ -433,6 +467,7 @@ message PipelineAction {
   ];
   // Note: 'labels' is currently not supported when executing DBT or Dataform using Dataform Service.
   map<string, string> labels = 7;
+  RetryPolicy retry_policy = 8;
 }
 
 message PipelineFramework {
@@ -499,6 +534,7 @@ message DataIngestionAction {
     BigQueryDtsSpec bigquery_dts = 4;
   }
   TriggerRule trigger_rule = 5; // Default: all_success.
+  RetryPolicy retry_policy = 6;
 }
 
 message BigQueryDtsSpec {
@@ -544,6 +580,7 @@ message OrchestrationPipelineAction {
   string bundle_id = 5;
   bool wait_for_completion = 6; // Default: false.
   TriggerRule trigger_rule = 7; // Default: all_success.
+  RetryPolicy retry_policy = 8;
 }
 
 /////////////////////////////////////
@@ -565,6 +602,7 @@ message AIAction {
   }
 
   map<string, string> labels = 6;
+  RetryPolicy retry_policy = 7;
 }
 
 message AgentPlatform {
@@ -632,8 +670,13 @@ notifications:
 defaults:
   projectId: your-project-id
   location: us-central1
-  executionConfig:
-    retries: 1
+  retryPolicy:
+    maxRetries: 3
+    exponentialBackoff:
+      initialDelay: "10s"
+      maxDelay: "5m"
+      multiplier: 2.0
+      randomizeJitter: true
 
 triggers:
   - schedule:
@@ -653,6 +696,10 @@ actions:
             location: us-central1
             projectId: your-project-id
       mainFilePath: path/to/script.py
+      retryPolicy:
+        maxRetries: 2
+        fixedDelay:
+          retryDelay: "30s"
 
   - pipeline:
       name: my_dbt_pipeline
@@ -711,3 +758,7 @@ actions:
 8. **Vertex AI Batch Prediction Serving Signature & Output Schema**:
    - **Model Export**: When training custom TensorFlow/Keras models for Vertex AI batch prediction (`agentPlatform.batchInference`) with BigQuery sources, the model MUST be saved with an explicit serving signature accepting `instances` (e.g. `tf.TensorSpec(..., name="instances")`) and returning a dictionary (e.g. `{"prediction": ...}`) to match Vertex AI's batch payload format.
    - **Downstream Querying (dbt / SQL)**: For regression/scalar predictions, Vertex AI writes the output column as a scalar (not an array). Access it directly using `SAFE_CAST(prediction AS FLOAT64)` rather than array indexing `prediction[OFFSET(0)]`.
+9. **Retry Policies (`retryPolicy`)**:
+    - Configure optional pipeline-wide default retry behavior under `defaults.retryPolicy` and/or per-action overrides under `<action>.retryPolicy`. You **MUST NOT** use the deprecated `defaults.executionConfig`.
+    - When specified, `retryPolicy` **MUST** include `maxRetries` (integer $\ge 0$; `0` disables retries and needs no strategy). Optionally add exactly one strategy: `fixedDelay` (with required `retryDelay`) or `exponentialBackoff` (with required `initialDelay`, and optional `maxDelay`, `multiplier`, `randomizeJitter`).
+    - Duration strings (`retryDelay`, `initialDelay`, `maxDelay`) **MUST** use `<number><unit>` format (`s`, `m`, `h`, `d`, `w`, e.g. `"10s"`, `"30s"`, `"5m"`, NOT ISO-8601 `"PT30S"`).
