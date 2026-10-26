@@ -8,12 +8,12 @@
         "--mode=notebook"
       ]
     },
-    "dak-viz": {
+    "dak-data-agent-kit": {
       "command": "node",
       "type": "stdio",
       "args": [
         "${CLAUDE_PLUGIN_ROOT}/mcp/dist/index.js",
-        "--mode=visualization"
+        "--mode=data-agent-kit"
       ]
     },
     "dak-alloydb": {
