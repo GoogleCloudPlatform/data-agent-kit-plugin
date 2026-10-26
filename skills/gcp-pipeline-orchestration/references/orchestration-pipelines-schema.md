@@ -65,8 +65,13 @@ message OnPipelineFailure {
   repeated string email = 1;
 }
 
+message OnPipelineSuccess {
+  repeated string email = 1;
+}
+
 message Notification {
   OnPipelineFailure on_pipeline_failure = 1;
+  OnPipelineSuccess on_pipeline_success = 2;
 }
 
 /////////////////////////
@@ -615,6 +620,14 @@ runner: airflow
 owner: data-eng-team
 tags:
   - "job:datacloud:antigravity"
+
+notifications:
+  onPipelineFailure:
+    email:
+      - "alerts@example.com"
+  onPipelineSuccess:
+    email:
+      - "alerts@example.com"
 
 defaults:
   projectId: your-project-id

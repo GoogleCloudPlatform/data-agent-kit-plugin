@@ -8,7 +8,7 @@ description: This skill helps the agent generate or update orchestration pipelin
   deploy and trigger orchestration pipelines.
 license: Apache-2.0
 metadata:
-  version: v3
+  version: v4
   publisher: google
 ---
 
@@ -284,6 +284,11 @@ following fields:
             FROM {{ source('vertex_ai_predictions', 'batch_predictions') }}
             ```
 
+-   **Pipeline Notifications (`notifications`)**: This block is **optional**.
+    Configure top-level email notifications under
+    `notifications.onPipelineSuccess.email` and
+    `notifications.onPipelineFailure.email` (each a list of email strings).
+
 -   Before creating or updating the `deployment.yaml` file, you **must** first
     run the following command to get the list of available Composer environments
     for the user's project.
@@ -374,7 +379,7 @@ gcloud beta orchestration-pipelines validate --environment=<ENV_NAME>
         `references/orchestration-pipelines-schema.md`, you MUST verify the
         Google Cloud CLI version (check the CLI's internal `model_version` with
         `gcloud beta orchestration-pipelines info`;
-        `createAndRunCustomJob` requires `model_version` `1.2.X` or higher).
+        `createAndRunCustomJob` and `onPipelineSuccess` require `model_version` `1.2.X` or higher).
         Ask the user to run `gcloud components update` and re-validate. Do NOT
         rewrite the action into a different type.
 
