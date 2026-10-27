@@ -57,7 +57,10 @@ Configure `fs.azure.*` properties using either:
 Never hardcode Azure Storage Account keys, SAS tokens, or OAuth client secrets
 in code or CLI flags. Retrieve them at runtime from Google Cloud Secret Manager
 using the pre-installed `google.auth` + `urllib.request` REST API (zero extra
-PyPI packages required):
+PyPI packages required). If the Secret Manager secret ID is not provided by the
+user or fails with `404 Not Found` / `403 PermissionDenied`, you MUST **STOP and
+ask the user** for the secret ID—do NOT guess secret names, scan unrelated
+secrets, or create new secrets without user confirmation:
 
 ```python
 import base64
@@ -177,9 +180,10 @@ spark.conf.set(
 
 ## 6. Networking & IAM Requirements
 
-1.  **Secret Manager IAM**: Grant `roles/secretmanager.secretAccessor` to the
-    Dataproc runtime service account so it can read the Azure credentials
-    secrets.
+1.  **Secret Manager IAM & GCE Scopes**: Grant
+    `roles/secretmanager.secretAccessor` to the Dataproc runtime service account
+    so it can read the Azure credentials secrets (and pass
+    `--scopes=cloud-platform` when creating a Dataproc on GCE cluster).
 2.  **Outbound Internet Egress (Cloud NAT)**: Dataproc Serverless batches and
     sessions run on VPC subnets with Private Google Access (`enable_private_ip`
     is default). Because Azure Storage endpoints (`*.core.windows.net`) live
