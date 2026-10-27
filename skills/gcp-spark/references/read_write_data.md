@@ -3,12 +3,6 @@
 > [!IMPORTANT]
 > You MUST ALWAYS follow the Task Execution Workflow when writing spark code.
 
-## Task Execution Workflow
-
-1. Configure the spark session to read or write data from the required source
-   or destination.
-2. Read or write the data from the required source or destination.
-
 ## Connector Reference Routing
 
 Load only the reference file(s) needed for your target data source or
@@ -18,8 +12,8 @@ destination:
     file (`references/read_write_data.md`).
 -   **BigLake Iceberg Catalog**: Refer to `references/biglake_iceberg.md`.
 -   **Cloud Spanner**: Refer to `references/spanner.md`.
--   **JDBC & Cloud SQL (PostgreSQL / MySQL) & Secret Manager Credentials**:
-    Refer to `references/jdbc_cloudsql.md`.
+-   **JDBC, Cloud SQL (PostgreSQL / MySQL / SQL Server), AlloyDB & Secret
+    Manager**: Refer to `references/jdbc_cloudsql.md`.
 -   **Amazon S3 (`s3a://` / S3-compatible object storage)**: Refer to
     `references/aws_s3.md`.
 -   **Azure Blob Storage & ADLS Gen2 (`abfss://`, `wasbs://`, `wasb://`)**:
