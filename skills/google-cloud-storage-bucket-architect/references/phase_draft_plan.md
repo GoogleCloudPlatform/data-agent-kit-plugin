@@ -62,15 +62,20 @@ location, bucket type, replication) that contradicts the "Highly Recommended" or
 "Required" settings in the matched use case reference file (or is explicitly
 listed as "Do not use"), the agent MUST:
 
-1.  **Advise Against**: Explicitly explain to the user why their requested
-    configuration is not recommended for this use case, referencing the specific
-    reasons in the reference document (e.g., cost, performance, replication
-    limitations).
-2.  **Recommend Best Practice**: Propose the recommended configuration from the
-    reference document as the primary plan. Clearly label any alternative plan
-    as discouraged and explicitly require risk confirmation acknowledgement from
-    the user if they attempt to override strict requirements from the primary
-    plan.
+1.  **Warn / Advise Against**: Explicitly warn the user and explain why their
+    requested configuration is not recommended for this use case, referencing
+    the specific reasons in the reference document (e.g., cost, performance,
+    replication limitations).
+2.  **Recommend Best Practice**: Clearly state the recommended configuration
+    from the reference document (e.g., Regional bucket + Storage Transfer
+    Service instead of dual-region for Backup/DR).
+3.  **Confirmation vs. Immediate Output**: In the normal interactive flow, ask
+    the user for confirmation on whether to adopt the recommended configuration
+    or proceed with their original request. However, if the user instructs you
+    to skip confirmation and provide the commands immediately, you MUST generate
+    the commands using the user's explicitly requested parameters (e.g., their
+    requested location such as `nam4`) while still surfacing the warning and
+    recommended alternative.
 
 --------------------------------------------------------------------------------
 
@@ -80,6 +85,15 @@ If the user specifies a location for the bucket:
 
 *   **Do NOT run commands** like `gcloud compute regions list` or `gcloud
     compute zones list` to verify locations.
+*   **Predefined Dual-Regions (`nam4`, `eur4`, `asia1`)**: When a named
+    (predefined) dual-region such as `nam4` (`us-east1`, `us-central1`), `eur4`
+    (`europe-north1`, `europe-west4`), or `asia1` (`asia-northeast1`,
+    `asia-northeast2`) is specified—even if the user also names its constituent
+    regions—you MUST set `--location` directly to the predefined dual-region
+    name (e.g., `--location=nam4`) and MUST NOT configure it as a custom
+    dual-region (`--location=US --placement=us-east1,us-central1`). Cloud
+    Storage rejects custom dual-region placement for region pairs that match a
+    predefined dual-region with an `HTTPError 400`.
 *   **Invalid Locations**: If the user requests an invalid or unsupported Cloud
     Storage location (e.g., "Kenya"), you MUST:
     1.  Explicitly state that the requested location is not a valid Cloud
@@ -179,14 +193,17 @@ before the user applies any configuration or command.
 > known (either supplied by the user or proposed by the agent), and before the
 > draft plan is presented (Step 4).
 >
-> **Skip Rule**: If the user has instructed the agent not to run commands or
-> tools (the same condition that skips Step 1 of Phase 1 in
-> `references/phase_project_checks.md`), the agent MUST NOT run the check and
-> reports the status as ⚠️ Not verified, giving the user's instruction as the
-> reason. An instruction not to execute bucket creation or modification commands
-> does NOT trigger this skip: the check is read-only and is still run.
+> **Skip Rule**: If the user has instructed the agent not to run any `gcloud`
+> commands (the same condition that skips Step 1 of Phase 1 in
+> `references/phase_project_checks.md`), the agent MUST NOT run the check,
+> reports the status as ⚠️ Not verified (giving the user's instruction as the
+> reason), and **warns that bucket creation will fail with a 409 conflict error
+> if the name is already taken**. An instruction not to execute bucket creation
+> or mutating commands does NOT trigger this skip: the check is read-only and is
+> still run.
 
-Execute the following `gcloud` command to check bucket name availability (no
+Execute the following `gcloud` command (always including the inline
+`CLOUDSDK_METRICS_ENVIRONMENT` prefix) to check bucket name availability (no
 `--project` flag is used because bucket names are global and lookup does not
 depend on a project):
 
