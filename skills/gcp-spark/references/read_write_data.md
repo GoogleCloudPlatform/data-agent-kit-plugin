@@ -3,12 +3,6 @@
 > [!IMPORTANT]
 > You MUST ALWAYS follow the Task Execution Workflow when writing spark code.
 
-## Task Execution Workflow
-
-1. Configure the spark session to read or write data from the required source
-   or destination.
-2. Read or write the data from the required source or destination.
-
 ## Connector Reference Routing
 
 Load only the reference file(s) needed for your target data source or
