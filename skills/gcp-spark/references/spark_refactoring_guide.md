@@ -12,13 +12,7 @@ deploy a pipeline to production, the agent **MUST** perform static verification
 before calling any submission tool (such as `gcloud dataproc jobs submit
 pyspark` or Dataproc batch create).
 
-This applies equally to PySpark, Spark SQL, and Scala/Java jobs.
-
---------------------------------------------------------------------------------
-
 ## 2. How to Apply the Review
-
-There is no automated checker. Work through the code by reading it:
 
 1.  Open the script or notebook and read it end to end. For notebooks, review
     every code cell — an anti-pattern in cell 3 still costs you even if cell 12
@@ -29,11 +23,6 @@ There is no automated checker. Work through the code by reading it:
 3.  Look especially at control flow. The same `.collect()` is cheap once and
     ruinous inside a `for` loop or a list comprehension, so note the nesting
     context, not just the call.
-
-> A job you did not read is a job you did not verify — never report a clean
-> result for code you have not actually inspected.
-
---------------------------------------------------------------------------------
 
 ## 3. Mandatory User Confirmation Protocol
 
@@ -52,10 +41,3 @@ If any refactoring or optimization is identified:
 
 4.  Only proceed with modifying the code and submitting the job in a subsequent
     turn after explicit user approval.
-
---------------------------------------------------------------------------------
-
-## 4. Reference
-
--   `spark_optimizations.md` — the catalog of Spark anti-patterns: what to look
-    for, why it is slow or unsafe, and how to rewrite it.
