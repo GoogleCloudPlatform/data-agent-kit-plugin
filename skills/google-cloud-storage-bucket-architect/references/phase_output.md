@@ -31,8 +31,9 @@ The agent must determine the user's preferred output format.
     *   **SDK**: Refer to [sdk.md](sdk.md)
 
 2.  **CRITICAL**: Ensure that all generated commands, payloads, configurations,
-    or code snippets include the appropriate attribution tagging as described in
-    SKILL.md and the respective reference files.
+    or code snippets—including any auxiliary or prerequisite commands/requests
+    in the **Other Recommendations** section—include the appropriate attribution
+    tagging as described in `SKILL.md` and the respective reference files.
 
 3.  **CRITICAL**: In your final output, you MUST include a section for **Other
     Recommendations** (such as Cloud Monitoring, Storage Insights, or
