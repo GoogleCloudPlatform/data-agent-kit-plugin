@@ -8,12 +8,12 @@
         "--mode=notebook"
       ]
     },
-    "dak-viz": {
+    "dak-data-agent-kit": {
       "command": "node",
       "type": "stdio",
       "args": [
         "mcp/dist/index.js",
-        "--mode=visualization"
+        "--mode=data-agent-kit"
       ]
     },
     "dak-alloydb": {
@@ -77,6 +77,17 @@
       "args": [
         "mcp/bin/mcp_proxy_bundle.cjs",
         "https://sqladmin.googleapis.com/mcp"
+      ],
+      "env": {
+        "X_GOOG_PROXY_HEADERS": "{\"User-Agent\":\"datacloud.antigravity\"}"
+      }
+    },
+    "dak-firestore": {
+      "command": "node",
+      "type": "stdio",
+      "args": [
+        "mcp/bin/mcp_proxy_bundle.cjs",
+        "https://firestore.googleapis.com/mcp"
       ],
       "env": {
         "X_GOOG_PROXY_HEADERS": "{\"User-Agent\":\"datacloud.antigravity\"}"
