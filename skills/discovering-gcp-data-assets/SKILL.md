@@ -6,6 +6,7 @@ description: |
     1. The user request involves finding, exploring, or inspecting data assets
        in Google Cloud, such as:
          - BigQuery datasets, tables, or views
+         - Dataplex Knowledge Catalog semantic models, entities, metrics, or Context Sets
          - BigLake catalog or tables
          - Spanner instances, databases or tables
          - etc.
@@ -19,7 +20,7 @@ description: |
     - Assets are outside Google Cloud
 license: Apache-2.0
 metadata:
-  version: v4
+  version: v5
   publisher: google
 ---
 
@@ -189,6 +190,14 @@ gcloud dataplex context lookup --resources="<FULL_ENTRY_NAME>"
 
 *Completion Criteria*: The command returns the detailed schema and business
 context.
+
+## Step 5: Semantic Models (When Applicable)
+
+If the task needs a governed semantic model / ontology (`OSI+G`) for the data
+in scope — e.g. schema mapping, dbt/ELT pipeline generation, or semantic
+modeling — use **@skill:semantic-ontology-context**. It resolves the model
+from the local workspace first, then Dataplex Knowledge Catalog, and returns it
+as authored.
 
 --------------------------------------------------------------------------------
 

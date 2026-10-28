@@ -2,7 +2,7 @@
 name: schema-mapping
 license: Apache-2.0
 metadata:
-  version: v1
+  version: v2
   publisher: google
 description: >-
   Guides the process of analyzing, mapping, and documenting transformations between source and target schemas for any database, data warehouse, or data platform. Focuses exclusively on creating a high-fidelity mapping plan (Mapping Manifesto).
@@ -60,6 +60,16 @@ Before creating the plan, you must obtain or request:
 > sequentially before moving to the next table. Do not attempt to map or
 > summarize multiple tables in a single batch, as this leads to hallucinations,
 > overlooked constraints, and context window bloat.
+
+### Step 0: Discover the Semantic Model (Mandatory, Once Per Task)
+
+A governed semantic model (`OSI+G`) may exist for the source or target data.
+Before inspecting raw schemas, sampling data, or asking the user for business
+rules, run **@skill:semantic-ontology-context** to find it (local workspace,
+then Dataplex Knowledge Catalog). If a model or Context Set is found, use its
+entities, relationships, metrics, and `ai_context` as authored throughout
+Steps 1–6 and cite it in the Mapping Manifesto. Do not skip this step because
+the table names are already known.
 
 ### Step 1: Semantic & Terminology Translation
 
@@ -156,9 +166,10 @@ source tables:
     -   Many-to-many risks or potential duplicate generation.
     -   Type mismatches on join keys (e.g., joining an `INT` column to a
         `STRING` column).
-4.  **Graph Validation**: If a graph was identified in input, cross-reference
-    the proposed join conditions with the graph's edge table definitions to
-    validate foreign key relationships.
+4.  **Model / Graph Validation**: If a semantic model or graph was identified
+    in input, cross-reference the proposed join conditions with the model's
+    `relationships[]` or the graph's edge table definitions to validate foreign
+    key relationships.
 
 ### Step 6: Draft the "Mapping Manifesto" (Output Format & Example)
 

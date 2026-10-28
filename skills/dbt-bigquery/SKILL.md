@@ -7,7 +7,7 @@ description: Expert guidance for creating, modifying, and optimizing dbt pipelin
   **setting up a new dbt project** or configuring existing one
 license: Apache-2.0
 metadata:
-  version: v6
+  version: v8
   publisher: google
 ---
 
@@ -53,6 +53,10 @@ Follow these steps when fulfilling dbt-related requests:
 ### 2. Gather Information
 
 -   Read existing model files and configurations.
+-   A governed semantic model (`OSI+G`) may exist for the source or target
+    data. Discover it with **@skill:semantic-ontology-context** and use its
+    entities, relationships, metrics, and `ai_context` as authored when
+    generating models.
 -   Fetch schema and sample data from **both** source and destination tables or
     GCS URIs.
     -   **List Datasets**: `bq ls --project_id=<PROJECT_ID>`
@@ -84,7 +88,8 @@ Follow these steps when fulfilling dbt-related requests:
     -   If cleaning is not applied, provide **strong evidence** in the response.
     -   Include an **"Automatic Cleaning Summary"** section in every response.
 -   **SQL Optimizations:**
-    -   Follow the optimization protocol in **@skill:bigquery-sql** strictly.
+    -   Follow the [SQL Optimization Rules](#sql-optimization-rules) protocol
+        strictly.
     -   Include an **"Optimization Summary"** section when applied.
 
 ### 4. Implement Changes
@@ -155,25 +160,38 @@ Follow these steps when fulfilling dbt-related requests:
 
 > [!TIP]
 >
-> Always include a **"Summary of Optimizations"** section listing only the
+> Always include an **"Optimization Summary"** section listing only the
 > optimizations applied.
+
+### Always Apply (Automatic)
+
+-   **Column Pruning**: Remove unnecessary columns from all query stages.
+-   **Common Subexpression Reuse**: Factor out identical expressions to avoid
+    redundant computation.
+-   **Predicate Pushdown**: Apply `WHERE` filters as early as possible.
+-   **Early Aggregation**: Perform `GROUP BY` before joins when possible.
+-   **Intermediate Materialization**: Choose `VIEW` vs `TABLE` for intermediate
+    nodes based on efficiency.
+
+#### Intermediate Node Strategy
+
+-   **`VIEW`**: Small datasets or simple transformations.
+-   **`TABLE`**: Large datasets, expensive computations, or nodes reused
+    multiple times.
 
 ### Always Rewrite (Mandatory)
 
-Pattern                           | Replace With
---------------------------------- | ----------------------------------
-`WHERE <col> IN (SELECT ...)`     | `WHERE EXISTS (SELECT 1 FROM ...)`
-`WHERE (SELECT COUNT(*) ...) > 0` | `WHERE EXISTS (SELECT 1 FROM ...)`
+-   **`WHERE <col> IN (SELECT ...)`**: Replace With `WHERE EXISTS (SELECT 1 FROM
+    ...)`
+-   **`WHERE (SELECT COUNT(*) ...) > 0`**: Replace With `WHERE EXISTS (SELECT 1
+    FROM ...)`
 
 ### Propose with Confirmation (Conditional)
 
-These require **explicit user confirmation** before applying: - **`UNION` →
-`UNION ALL`** - *Tradeoff:* Faster (skips deduplication), but permits duplicate
-rows. - *Prompt:* "Replace `UNION` with `UNION ALL`? Faster but keeps duplicates
-— confirm if acceptable." - **`COUNT(DISTINCT)` → `APPROX_COUNT_DISTINCT`** -
-*Tradeoff:* Faster and lower memory, but returns an approximate count. -
-*Prompt:* "Use `APPROX_COUNT_DISTINCT`? Faster but approximate — confirm if
-acceptable."
+-   **`UNION` → `UNION ALL`**: Faster (skips deduplication), but permits
+    duplicate rows.
+-   **`COUNT(DISTINCT)` → `APPROX_COUNT_DISTINCT`**: Faster and lower memory,
+    but approximate.
 
 ## Coding Standards
 
@@ -204,13 +222,10 @@ Every new dbt model **must** include a `config` block e.g.:
 
 ### References & Sources
 
-| Context              | Syntax                    | Notes                    |
-| -------------------- | ------------------------- | ------------------------ |
-| Referencing a model  | `{{ ref('model_name') }}` | **Never** hardcode table |
-:                      :                           : names.                   :
-| Referencing a source | `{{ source('source_name', | `source_name` must match |
-:                      : 'table_name') }}`         : `sources.yml`            :
-:                      :                           : (`sources\: - name\:`)   :
+-   **Referencing a model**: `{{ ref('model_name') }}` — **Never** hardcode
+    table names.
+-   **Referencing a source**: `{{ source('source_name', 'table_name') }}` —
+    `source_name` must match `sources.yml` (`sources: - name:`).
 
 ## BigLake Iceberg Support (4-Part Naming)
 
