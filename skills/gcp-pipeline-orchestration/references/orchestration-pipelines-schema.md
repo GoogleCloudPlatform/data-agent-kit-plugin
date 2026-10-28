@@ -3,7 +3,7 @@ Defines the orchestration pipelines schema using Protocol Buffers.
 Source of truth for schema: https://github.com/GoogleCloudPlatform/orchestration-pipelines/blob/main/orchestration_pipelines_models/pipeline_v1_model/protos/orchestration_pipeline.proto
 
 Field names in YAML should generally be camelCase (e.g., use `pipelineId` for the proto field `pipeline_id`).
-However, fields of type `Struct` which represent configuration objects for other systems (e.g., `cluster_config`, `environment_config`, `job`, `workflow_invocation`) must use snake_case in YAML.
+However, keys inside `Struct` fields that are passed through to another system (e.g., `config`/`cluster_config`, `environment_config`, `runtime_config`, `workflow_invocation`) should use that system's native snake_case field names, and keys that become Python keyword arguments (`op_kwargs` on `python` actions and `params` on `airflowTask` actions) MUST be valid snake_case Python identifiers. `createAndRunCustomJob.customJob` is the exception: it is the Vertex AI REST body and uses camelCase (see the `run_vertex_custom_job` example and Reminder 7).
 ## Syntax
 /////////////////////////
 // Pipeline Models (YAML fields)
@@ -52,21 +52,56 @@ enum TriggerRule {
 message Defaults {
   string project_id = 1 [(pipeline_models.validation.is_required) = true];
   string location = 2 [(pipeline_models.validation.is_required) = true];
-  ExecutionConfig execution_config = 3 [(pipeline_models.validation.is_required) = true];
+  // Deprecated in v1.2.0 in favor of retry_policy.
+  ExecutionConfig execution_config = 3 [deprecated = true];
+  RetryPolicy retry_policy = 4;
 }
 
 message ExecutionConfig {
   // Per proto3 design, scalar fields like int32 have a default value (0) and
   // cannot be truly 'required'. The `min_value` option is used instead.
-  int32 retries = 1 [(pipeline_models.validation.min_value) = 0];
+  int32 retries = 1 [deprecated = true, (pipeline_models.validation.min_value) = 0];
+}
+
+/////////////////////////
+// Retry Policies
+/////////////////////////
+message FixedDelayStrategy {
+  // Validated by time_utils.check_duration(): must be `<number><unit>` (e.g., "30s", "5m").
+  string retry_delay = 1 [(pipeline_models.validation.is_required) = true];
+}
+
+message ExponentialBackoffStrategy {
+  // Validated by time_utils.check_duration(): must be `<number><unit>` (e.g., "10s", "5m").
+  string initial_delay = 1 [(pipeline_models.validation.is_required) = true];
+  string max_delay = 2;
+  double multiplier = 3; // Default: 2.0.
+  bool randomize_jitter = 4; // Default: false.
+}
+
+message RetryPolicy {
+  // Hard ceiling on maximum retry attempts across all strategies.
+  optional int32 max_retries = 1 [
+    (pipeline_models.validation.is_required) = true,
+    (pipeline_models.validation.min_value) = 0
+  ];
+  oneof strategy {
+    FixedDelayStrategy fixed_delay = 2;
+    ExponentialBackoffStrategy exponential_backoff = 3;
+  }
 }
 
 message OnPipelineFailure {
   repeated string email = 1;
 }
 
+message OnPipelineSuccess {
+  repeated string email = 1;
+}
+
 message Notification {
   OnPipelineFailure on_pipeline_failure = 1;
+  OnPipelineSuccess on_pipeline_success = 2;
 }
 
 /////////////////////////
@@ -209,9 +244,10 @@ message Action {
   // actions:
   //   - pyspark: { ... }
   //   - pipeline: { ... }
-  //   - data_ingestion: { ... }
-  //   - orchestration_pipeline: { ... }
+  //   - dataIngestion: { ... }
+  //   - orchestrationPipeline: { ... }
   //   - ai: { ... }
+  //   - airflowTask: { ... }
   // Do NOT use a "type" field.
   oneof action {
     PythonAction python = 1;
@@ -222,6 +258,7 @@ message Action {
     DataIngestionAction data_ingestion = 6;
     OrchestrationPipelineAction orchestration_pipeline = 7;
     AIAction ai = 8;
+    AirflowTaskAction airflow_task = 9;
   }
 }
 
@@ -246,6 +283,7 @@ message PythonAction {
   PythonEnvironment environment = 7;
   PythonEngine engine = 8 [(pipeline_models.validation.is_required) = true];
   TriggerRule trigger_rule = 9; // Default: all_success.
+  RetryPolicy retry_policy = 10;
 }
 
 message PythonEnvironment {
@@ -297,6 +335,7 @@ message PysparkAction {
     (pipeline_models.validation.map_value_regex) = "^[^';|`&]+$"
   ];
   map<string, string> labels = 12;
+  RetryPolicy retry_policy = 13;
 }
 
 message PysparkEngine {
@@ -343,6 +382,7 @@ message NotebookAction {
     (pipeline_models.validation.map_value_regex) = "^[^';|`&]+$"
   ];
   map<string, string> labels = 11;
+  RetryPolicy retry_policy = 12;
 }
 
 message NotebookEngine {
@@ -388,6 +428,7 @@ message SqlAction {
     (pipeline_models.validation.map_value_regex) = "^[^';|`&]+$"
   ];
   map<string, string> labels = 8;
+  RetryPolicy retry_policy = 9;
 }
 
 message Query {
@@ -428,6 +469,7 @@ message PipelineAction {
   ];
   // Note: 'labels' is currently not supported when executing DBT or Dataform using Dataform Service.
   map<string, string> labels = 7;
+  RetryPolicy retry_policy = 8;
 }
 
 message PipelineFramework {
@@ -494,6 +536,7 @@ message DataIngestionAction {
     BigQueryDtsSpec bigquery_dts = 4;
   }
   TriggerRule trigger_rule = 5; // Default: all_success.
+  RetryPolicy retry_policy = 6;
 }
 
 message BigQueryDtsSpec {
@@ -539,6 +582,7 @@ message OrchestrationPipelineAction {
   string bundle_id = 5;
   bool wait_for_completion = 6; // Default: false.
   TriggerRule trigger_rule = 7; // Default: all_success.
+  RetryPolicy retry_policy = 8;
 }
 
 /////////////////////////////////////
@@ -560,6 +604,7 @@ message AIAction {
   }
 
   map<string, string> labels = 6;
+  RetryPolicy retry_policy = 7;
 }
 
 message AgentPlatform {
@@ -569,6 +614,7 @@ message AgentPlatform {
   oneof type {
     AgentPlatformModelUpload model_upload = 3;
     AgentPlatformBatchInference batch_inference = 4;
+    AgentPlatformCreateAndRunCustomJob create_and_run_custom_job = 5;
   }
 }
 
@@ -597,9 +643,39 @@ message AgentPlatformBatchInference {
   repeated string impersonation_chain = 12;
 }
 
+// Requires `apache-airflow-providers-google>=22.5.0` (Airflow 2.11+ / 3.x).
+message AgentPlatformCreateAndRunCustomJob {
+  google.protobuf.Struct custom_job = 1 [(pipeline_models.validation.is_required) = true];
+  // Validated by time_utils.check_duration(): must be <number><unit> (e.g. "2h", "90m", "30s").
+  string execution_timeout = 2;
+  repeated string impersonation_chain = 3;
+}
+
+/////////////////////////
+// Airflow Task Action
+////////////////////////
+message AirflowTaskAction {
+  string name = 1 [
+    (pipeline_models.validation.is_required) = true,
+    (pipeline_models.validation.regex) = "^[a-zA-Z0-9_.-]+$",
+    (pipeline_models.validation.min_len) = 1,
+    (pipeline_models.validation.max_len) = 64
+  ];
+  repeated string depends_on = 2;
+  // Validated by time_utils.check_duration(): must be `<number><unit>` (e.g. "5m", "30s", "2h"; do NOT use ISO-8601 "PT5M").
+  string execution_timeout = 3;
+  // Default: all_success. Valid values: all_success, all_failed, all_done, one_failed, one_success, always.
+  TriggerRule trigger_rule = 4;
+  string operator_class = 5 [(pipeline_models.validation.is_required) = true];
+  // Keyword arguments passed to the Airflow operator's constructor. The validator only enforces the
+  // regex below; keys must additionally be valid snake_case Python identifiers (no hyphens, no leading digit).
+  google.protobuf.Struct params = 6 [(pipeline_models.validation.map_key_regex) = "^[a-zA-Z0-9_-]+$"];
+  RetryPolicy retry_policy = 7;
+}
+
 ## Orchestration Pipeline YAML File example
 ```yaml
-modelVersion: 1.0
+modelVersion: "1.0"  # DSL schema version (always "1.0", even for v1.2.X CLI features). MUST be quoted to avoid float parsing errors.
 pipelineId: sample_orchestration
 description: Orchestrate dbt after pyspark
 runner: airflow
@@ -607,11 +683,24 @@ owner: data-eng-team
 tags:
   - "job:datacloud:antigravity"
 
+notifications:
+  onPipelineFailure:
+    email:
+      - "alerts@example.com"
+  onPipelineSuccess:
+    email:
+      - "alerts@example.com"
+
 defaults:
   projectId: your-project-id
   location: us-central1
-  executionConfig:
-    retries: 1
+  retryPolicy:
+    maxRetries: 3
+    exponentialBackoff:
+      initialDelay: "10s"
+      maxDelay: "5m"
+      multiplier: 2.0
+      randomizeJitter: true
 
 triggers:
   - schedule:
@@ -631,6 +720,10 @@ actions:
             location: us-central1
             projectId: your-project-id
       mainFilePath: path/to/script.py
+      retryPolicy:
+        maxRetries: 2
+        fixedDelay:
+          retryDelay: "30s"
 
   - pipeline:
       name: my_dbt_pipeline
@@ -648,11 +741,38 @@ actions:
           description: "Model description"
           modelArtifactUri: path/to/model/artifact
           servingContainerImageUri: path/to/serving/image
+  - ai:
+      name: "run_vertex_custom_job"
+      agentPlatform:
+        createAndRunCustomJob:
+          executionTimeout: "2h"
+          customJob:
+            displayName: "my_custom_training_job"
+            jobSpec:
+              workerPoolSpecs:
+                - machineSpec:
+                    machineType: "n1-standard-4"
+                  replicaCount: 1
+                  containerSpec:
+                    imageUri: "us-docker.pkg.dev/vertex-ai/training/tf-cpu.2-12.py310:latest"
+                    command: ["python", "train.py"]
+  - airflowTask:
+      name: "air_simple_http"
+      dependsOn:
+        - my_dbt_pipeline
+      executionTimeout: "5m"
+      triggerRule: "all_success"
+      operatorClass: "airflow.providers.http.operators.http.HttpOperator"
+      params:
+        http_conn_id: "my_test_http"
+        endpoint: "post"
+        method: "POST"
+        log_response: true
 
 ```
 
 ## Key Schema Reminders:
-1. **Action Key**: Use `- pyspark:`, `- notebook:`, `- sql:`, `- pipeline:`, `- data_ingestion:`, `- orchestration_pipeline:`, or `- ai:` directly as the key. Do NOT use `- type: pyspark`.
+1. **Action Key**: Use `- pyspark:`, `- notebook:`, `- sql:`, `- pipeline:`, `- python:`, `- dataIngestion:`, `- orchestrationPipeline:`, `- ai:`, or `- airflowTask:` directly as the key (camelCase, like all other YAML fields). Do NOT use `- type: pyspark`.
 2. **Dataproc Engine**: Under `dataprocOnGce`, you **MUST** specify either `existingCluster` (with `clusterName`) or `ephemeralCluster` (with `clusterName` and `resourceProfile`). For Serverless Dataproc, use `dataprocServerless: {}`.
 3. **Environment Requirements**:
    - The `environment` field is **optional** on `python` actions. Omit `environment` to run using standard `PythonOperator` when extra dependencies are not required.
@@ -660,14 +780,25 @@ actions:
      - For file dependencies: `environment.requirements.path: "requirements.txt"`
      - For inline dependencies: **MUST** use nested `list` under `inline` (`environment.requirements.inline.list: ["pkg1", "pkg2"]`). Do NOT pass an array directly to `inline`.
 4. **Action Params (`params`)**:
-   - Keys must match regex `^[a-zA-Z0-9_-]+$` (only alphanumeric, underscores, and hyphens).
-   - Values must match regex `^[^';|`&]+$` (cannot contain `'`, `;`, `|`, `` ` ``, `&`).
+   - For standard `map<string, string>` action `params` (`pyspark`, `notebook`, `sql`, `pipeline`; `python` actions use `op_kwargs` instead), keys must match regex `^[a-zA-Z0-9_-]+$` (only alphanumeric, underscores, and hyphens) and values must match regex `^[^';|`&]+$` (cannot contain `'`, `;`, `|`, `` ` ``, `&`). (For `airflowTask.params`, which is a `Struct` of Python keyword arguments, see Reminder 10.)
 5. **SQL Action Location & Query Guidelines**:
    - **BigQuery (`engine.bigquery`)**: Always set `location` to match the dataset's region/multi-region. Specify the target table via `destinationTable` and use pure `SELECT` queries without DDL statements (do NOT use `CREATE TABLE` or `CREATE OR REPLACE TABLE`).
    - **Dataproc (`engine.dataprocServerless` / `engine.dataprocOnGce`)**: Dataproc engines do not have a `destinationTable` field; include DDL/DML statements (`CREATE TABLE ... AS SELECT ...` or `INSERT OVERWRITE ...`) directly within the SQL query text to persist tables.
-6. **Agent Platform (Vertex AI) Scope & Serving Signature**:
-   - **Supported Scope**: Support for Agent Platform (`Vertex AI`) is currently limited to uploading a trained custom model to the agent platform Registry (`agentPlatform.modelUpload`) and running batch predictions (`agentPlatform.batchInference`). Model training (e.g. Keras/TensorFlow models) is executed in a `pyspark` action.
-   - **Batch Prediction Serving Signature**: When training custom TensorFlow/Keras models in a `pyspark` action for downstream Agent Platform batch prediction (`agentPlatform.batchInference`) with BigQuery sources, the model must be saved with an explicit serving signature accepting `instances` (e.g. `tf.TensorSpec(..., name="instances")`) and returning a dictionary (e.g. `{"prediction": ...}`) to match Agent Platform's batch payload format.
-6. **Vertex AI Batch Prediction Serving Signature & Output Schema**:
-   - **Model Export**: When training custom TensorFlow/Keras models for Vertex AI batch prediction (`agentPlatform.batchInference`) with BigQuery sources, the model must be saved with an explicit serving signature accepting `instances` (e.g. `tf.TensorSpec(..., name="instances")`) and returning a dictionary (e.g. `{"prediction": ...}`) to match Vertex AI's batch payload format.
+6. **Agent Platform (Vertex AI) Scope**:
+   - **Supported Scope**: `agentPlatform` supports exactly three action types (one key per `ai` action): `modelUpload` (register a trained model in the Model Registry), `batchInference` (run batch predictions), and `createAndRunCustomJob` (create and run a Vertex AI `CustomJob`, e.g. containerized model training). Spark-based training (PySpark/MLlib) is executed in a `pyspark` action.
+7. **Vertex AI Custom Job (`agentPlatform.createAndRunCustomJob`)**:
+   - `customJob` is the Vertex AI `CustomJob` body (`displayName`, `jobSpec.workerPoolSpecs[]` with `machineSpec.machineType`, `replicaCount`, and `containerSpec` or `pythonPackageSpec`), as in the `run_vertex_custom_job` example.
+   - You MUST set `executionTimeout` using `<number><unit>` format (`s`, `m`, `h`, `d`, `w`, e.g. `"2h"` or `"90m"`, NOT `"PT2H"`) under `createAndRunCustomJob`.
+   - You MUST use a Composer environment on Airflow 2.11+ or 3.x (`apache-airflow-providers-google>=22.5.0`).
+8. **Vertex AI Batch Prediction Serving Signature & Output Schema**:
+   - **Model Export**: When training custom TensorFlow/Keras models for Vertex AI batch prediction (`agentPlatform.batchInference`) with BigQuery sources, the model MUST be saved with an explicit serving signature accepting `instances` (e.g. `tf.TensorSpec(..., name="instances")`) and returning a dictionary (e.g. `{"prediction": ...}`) to match Vertex AI's batch payload format.
    - **Downstream Querying (dbt / SQL)**: For regression/scalar predictions, Vertex AI writes the output column as a scalar (not an array). Access it directly using `SAFE_CAST(prediction AS FLOAT64)` rather than array indexing `prediction[OFFSET(0)]`.
+9. **Retry Policies (`retryPolicy`)**:
+   - Configure optional pipeline-wide default retry behavior under `defaults.retryPolicy` and/or per-action overrides under `<action>.retryPolicy`. You **MUST NOT** use the deprecated `defaults.executionConfig`.
+   - When specified, `retryPolicy` **MUST** include `maxRetries` (integer >= 0; `0` disables retries and needs no strategy). Optionally add exactly one strategy: `fixedDelay` (with required `retryDelay`) or `exponentialBackoff` (with required `initialDelay`, and optional `maxDelay`, `multiplier`, `randomizeJitter`).
+   - Duration strings (`retryDelay`, `initialDelay`, `maxDelay`) **MUST** use `<number><unit>` format (`s`, `m`, `h`, `d`, `w`, e.g. `"10s"`, `"30s"`, `"5m"`, NOT ISO-8601 `"PT30S"`).
+10. **Airflow Task Action (`airflowTask`)**:
+    - Prefer the built-in actions (`sql`, `python`, `pyspark`, `notebook`, `pipeline`, `dataIngestion`, `ai`, `orchestrationPipeline`). Use `- airflowTask:` only when no native action covers the operator; it runs an arbitrary Apache Airflow operator given its fully qualified Python class path in `operatorClass` (e.g., `"airflow.providers.http.operators.http.HttpOperator"`).
+    - `validate` cannot check the operator's runtime prerequisites: the provider package **MUST** be installed in the Composer environment and any Airflow connection it uses (e.g. `http_conn_id`) **MUST** already exist. Ask the user to confirm these values; do NOT invent connection IDs.
+    - `params` is a `Struct` representing Python keyword arguments (supports booleans, numbers, strings, lists, and dicts) passed directly to the operator's constructor—keys inside `params` **MUST** be valid `snake_case` Python identifiers (e.g., `http_conn_id`, `log_response`, `bash_command`).
+    - When specified, `executionTimeout` on `airflowTask` **MUST** use `<number><unit>` format (e.g., `"5m"`, `"30s"`).
