@@ -65,8 +65,13 @@ message OnPipelineFailure {
   repeated string email = 1;
 }
 
+message OnPipelineSuccess {
+  repeated string email = 1;
+}
+
 message Notification {
   OnPipelineFailure on_pipeline_failure = 1;
+  OnPipelineSuccess on_pipeline_success = 2;
 }
 
 /////////////////////////
@@ -569,6 +574,7 @@ message AgentPlatform {
   oneof type {
     AgentPlatformModelUpload model_upload = 3;
     AgentPlatformBatchInference batch_inference = 4;
+    AgentPlatformCreateAndRunCustomJob create_and_run_custom_job = 5;
   }
 }
 
@@ -597,15 +603,31 @@ message AgentPlatformBatchInference {
   repeated string impersonation_chain = 12;
 }
 
+// Requires `apache-airflow-providers-google>=22.5.0` (Airflow 2.11+ / 3.x).
+message AgentPlatformCreateAndRunCustomJob {
+  google.protobuf.Struct custom_job = 1 [(pipeline_models.validation.is_required) = true];
+  // Validated by time_utils.check_duration(): must be <number><unit> (e.g. "2h", "90m", "30s").
+  string execution_timeout = 2;
+  repeated string impersonation_chain = 3;
+}
+
 ## Orchestration Pipeline YAML File example
 ```yaml
-modelVersion: 1.0
+modelVersion: "1.0"  # DSL schema version (always "1.0", even for v1.2.X CLI features). MUST be quoted to avoid float parsing errors.
 pipelineId: sample_orchestration
 description: Orchestrate dbt after pyspark
 runner: airflow
 owner: data-eng-team
 tags:
   - "job:datacloud:antigravity"
+
+notifications:
+  onPipelineFailure:
+    email:
+      - "alerts@example.com"
+  onPipelineSuccess:
+    email:
+      - "alerts@example.com"
 
 defaults:
   projectId: your-project-id
@@ -648,6 +670,21 @@ actions:
           description: "Model description"
           modelArtifactUri: path/to/model/artifact
           servingContainerImageUri: path/to/serving/image
+  - ai:
+      name: "run_vertex_custom_job"
+      agentPlatform:
+        createAndRunCustomJob:
+          executionTimeout: "2h"
+          customJob:
+            displayName: "my_custom_training_job"
+            jobSpec:
+              workerPoolSpecs:
+                - machineSpec:
+                    machineType: "n1-standard-4"
+                  replicaCount: 1
+                  containerSpec:
+                    imageUri: "us-docker.pkg.dev/vertex-ai/training/tf-cpu.2-12.py310:latest"
+                    command: ["python", "train.py"]
 
 ```
 
@@ -665,9 +702,12 @@ actions:
 5. **SQL Action Location & Query Guidelines**:
    - **BigQuery (`engine.bigquery`)**: Always set `location` to match the dataset's region/multi-region. Specify the target table via `destinationTable` and use pure `SELECT` queries without DDL statements (do NOT use `CREATE TABLE` or `CREATE OR REPLACE TABLE`).
    - **Dataproc (`engine.dataprocServerless` / `engine.dataprocOnGce`)**: Dataproc engines do not have a `destinationTable` field; include DDL/DML statements (`CREATE TABLE ... AS SELECT ...` or `INSERT OVERWRITE ...`) directly within the SQL query text to persist tables.
-6. **Agent Platform (Vertex AI) Scope & Serving Signature**:
-   - **Supported Scope**: Support for Agent Platform (`Vertex AI`) is currently limited to uploading a trained custom model to the agent platform Registry (`agentPlatform.modelUpload`) and running batch predictions (`agentPlatform.batchInference`). Model training (e.g. Keras/TensorFlow models) is executed in a `pyspark` action.
-   - **Batch Prediction Serving Signature**: When training custom TensorFlow/Keras models in a `pyspark` action for downstream Agent Platform batch prediction (`agentPlatform.batchInference`) with BigQuery sources, the model must be saved with an explicit serving signature accepting `instances` (e.g. `tf.TensorSpec(..., name="instances")`) and returning a dictionary (e.g. `{"prediction": ...}`) to match Agent Platform's batch payload format.
-6. **Vertex AI Batch Prediction Serving Signature & Output Schema**:
-   - **Model Export**: When training custom TensorFlow/Keras models for Vertex AI batch prediction (`agentPlatform.batchInference`) with BigQuery sources, the model must be saved with an explicit serving signature accepting `instances` (e.g. `tf.TensorSpec(..., name="instances")`) and returning a dictionary (e.g. `{"prediction": ...}`) to match Vertex AI's batch payload format.
+6. **Agent Platform (Vertex AI) Scope**:
+   - **Supported Scope**: `agentPlatform` supports exactly three action types (one key per `ai` action): `modelUpload` (register a trained model in the Model Registry), `batchInference` (run batch predictions), and `createAndRunCustomJob` (create and run a Vertex AI `CustomJob`, e.g. containerized model training). Spark-based training (PySpark/MLlib) is executed in a `pyspark` action.
+7. **Vertex AI Custom Job (`agentPlatform.createAndRunCustomJob`)**:
+   - `customJob` is the Vertex AI `CustomJob` body (`displayName`, `jobSpec.workerPoolSpecs[]` with `machineSpec.machineType`, `replicaCount`, and `containerSpec` or `pythonPackageSpec`), as in the `run_vertex_custom_job` example.
+   - You MUST set `executionTimeout` using `<number><unit>` format (`s`, `m`, `h`, `d`, `w`, e.g. `"2h"` or `"90m"`, NOT `"PT2H"`) under `createAndRunCustomJob`.
+   - You MUST use a Composer environment on Airflow 2.11+ or 3.x (`apache-airflow-providers-google>=22.5.0`).
+8. **Vertex AI Batch Prediction Serving Signature & Output Schema**:
+   - **Model Export**: When training custom TensorFlow/Keras models for Vertex AI batch prediction (`agentPlatform.batchInference`) with BigQuery sources, the model MUST be saved with an explicit serving signature accepting `instances` (e.g. `tf.TensorSpec(..., name="instances")`) and returning a dictionary (e.g. `{"prediction": ...}`) to match Vertex AI's batch payload format.
    - **Downstream Querying (dbt / SQL)**: For regression/scalar predictions, Vertex AI writes the output column as a scalar (not an array). Access it directly using `SAFE_CAST(prediction AS FLOAT64)` rather than array indexing `prediction[OFFSET(0)]`.
