@@ -7,7 +7,7 @@ description: Expertise in generating clean, correct, and efficient Dataform pipe
   up a new Dataform project or configuring workflow_settings.yaml.
 license: Apache-2.0
 metadata:
-  version: v6
+  version: v7
   publisher: google
 ---
 
@@ -115,7 +115,8 @@ Follow these steps when fulfilling Dataform-related requests:
     -   If cleaning is not applied, provide **strong evidence** in the response.
     -   Include an **"Automatic Cleaning Summary"** section in every response.
 -   **SQL Optimizations:**
-    -   Follow the optimization protocol in **@skill:bigquery-sql** strictly.
+    -   Follow the [SQL Optimization Rules](#sql-optimization-rules) protocol
+        strictly.
     -   Include an **"Optimization Summary"** section when applied.
 
 ### 4. Planning guidelines
@@ -207,6 +208,43 @@ compile`, manual SQL inspection, and `bq query --dry_run`.
 :                           : unknown.                                         :
 | **No target declaration** | Do **not** create a `declaration` file for the   |
 :                           : target table when using `type\: "incremental"`.  :
+
+## SQL Optimization Rules
+
+> [!TIP]
+>
+> Always include an **"Optimization Summary"** section listing only the
+> optimizations applied.
+
+### Always Apply (Automatic)
+
+-   **Column Pruning**: Remove unnecessary columns from all query stages.
+-   **Common Subexpression Reuse**: Factor out identical expressions to avoid
+    redundant computation.
+-   **Predicate Pushdown**: Apply `WHERE` filters as early as possible.
+-   **Early Aggregation**: Perform `GROUP BY` before joins when possible.
+-   **Intermediate Materialization**: Choose `VIEW` vs `TABLE` for intermediate
+    nodes based on efficiency.
+
+#### Intermediate Node Strategy
+
+-   **`VIEW`**: Small datasets or simple transformations.
+-   **`TABLE`**: Large datasets, expensive computations, or nodes reused
+    multiple times.
+
+### Always Rewrite (Mandatory)
+
+-   **`WHERE <col> IN (SELECT ...)`**: Replace With `WHERE EXISTS (SELECT 1 FROM
+    ...)`
+-   **`WHERE (SELECT COUNT(*) ...) > 0`**: Replace With `WHERE EXISTS (SELECT 1
+    FROM ...)`
+
+### Propose with Confirmation (Conditional)
+
+-   **`UNION` → `UNION ALL`**: Faster (skips deduplication), but permits
+    duplicate rows.
+-   **`COUNT(DISTINCT)` → `APPROX_COUNT_DISTINCT`**: Faster and lower memory,
+    but approximate.
 
 ## Coding Standards
 

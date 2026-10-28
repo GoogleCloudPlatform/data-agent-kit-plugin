@@ -24,17 +24,13 @@ CLI or building HTTP requests. It comes in two forms:
 
 ## Choosing a Server
 
-| Your need                                               | Use               |
-| :------------------------------------------------------ | :---------------- |
-| Zero setup: inspect buckets, read small text/PDF/image  | Remote server     |
-: objects                                                 :                   :
-| Small text writes from a managed endpoint               | Remote server     |
-| Enterprise guardrails: Model Armor screening of tool    | Remote server     |
-: calls, IAM deny policies (e.g. enforce read-only)       :                   :
-| Upload/download local files, binary content, or objects | Local MCP Toolbox |
-: over 8 MiB                                              :                   :
-| Copy, move, or rename objects; bucket metadata/IAM      | Local MCP Toolbox |
-: inspection                                              :                   :
+Your need                                                                                              | Use
+:----------------------------------------------------------------------------------------------------- | :--
+Zero setup: inspect buckets, read small text/PDF/image objects                                         | Remote server
+Small text writes from a managed endpoint                                                              | Remote server
+Enterprise guardrails: Model Armor screening of tool calls, IAM deny policies (e.g. enforce read-only) | Remote server
+Upload/download local files, binary content, or objects over 8 MiB                                     | Local MCP Toolbox
+Copy, move, or rename objects; bucket IAM inspection                                                   | Local MCP Toolbox
 
 When requirements conflict, the hard limits win: the remote server cannot write
 binary content, exceed 8 MiB per read or write, or touch the local filesystem —
@@ -142,7 +138,7 @@ full set of bucket and object operations.
 
 If you installed these skills individually (for example via `npx skills add` or
 from a skills-only collection), you can either install the full
-[Google Cloud Storage plugin](https://github.com/gemini-cli-extensions/google-cloud-storage)
+[Google Cloud Storage plugin](https://github.com/GoogleCloudPlatform/google-cloud-storage-plugin)
 (which registers the `cloud-storage` MCP Toolbox server automatically) or add
 the server directly to your MCP client using `npx` (Option A) or the standalone
 binary (Option B).
@@ -171,7 +167,7 @@ binary (Option B).
           "command": "npx",
           "args": [
             "-y",
-            "@toolbox-sdk/server@1.13.0",
+            "@toolbox-sdk/server@1.13.1",
             "--prebuilt",
             "cloud-storage",
             "--stdio",
@@ -192,7 +188,7 @@ binary (Option B).
     command = "npx"
     args = [
       "-y",
-      "@toolbox-sdk/server@1.13.0",
+      "@toolbox-sdk/server@1.13.1",
       "--prebuilt",
       "cloud-storage",
       "--stdio",
@@ -260,20 +256,19 @@ and the Toolbox has `write_object`, `download_object`, `upload_object`, and the
 copy/move tools (which the remote server does not). Call only the tools that
 exist on the server you are connected to.
 
-**Remote server (8 tools):**
+**Remote server (9 tools):**
 
-| Tool                  | Description                                        |
-| :-------------------- | :------------------------------------------------- |
-| `list_buckets`        | List buckets in a project.                         |
-| `list_objects`        | List objects in a bucket.                          |
-| `get_object_metadata` | Get an object's metadata.                          |
-| `read_object`         | Read object content, including images and PDFs (up |
-:                       : to 8 MiB).                                         :
-| `create_bucket`       | Create a bucket.                                   |
-| `delete_bucket`       | Delete a bucket.                                   |
-| `write_text`          | Write text to an object (overwrites existing       |
-:                       : content).                                          :
-| `delete_object`       | Delete an object.                                  |
+Tool                  | Description
+:-------------------- | :----------
+`list_buckets`        | List buckets in a project.
+`list_objects`        | List objects in a bucket.
+`get_bucket_metadata` | Get a bucket's metadata.
+`get_object_metadata` | Get an object's metadata.
+`read_object`         | Read object content, including images and PDFs (up to 8 MiB).
+`create_bucket`       | Create a bucket.
+`delete_bucket`       | Delete a bucket.
+`write_text`          | Write text to an object (overwrites existing content).
+`delete_object`       | Delete an object.
 
 **Local MCP Toolbox (14 tools):**
 
