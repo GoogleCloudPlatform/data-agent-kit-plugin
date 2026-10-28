@@ -7,7 +7,7 @@ description: Expert guidance for creating, modifying, and optimizing dbt pipelin
   **setting up a new dbt project** or configuring existing one
 license: Apache-2.0
 metadata:
-  version: v7
+  version: v8
   publisher: google
 ---
 
@@ -65,9 +65,8 @@ Follow these steps when fulfilling dbt-related requests:
     -   **Preview Data**: `bq head --format=prettyjson
         <PROJECT_ID>:<DATASET_ID>.<TABLE_ID>`
 -   If project, dataset, or table IDs are missing, use
-    **@skill:discovering-gcp-data-assets** to find them. **Ask the user** for
-    confirmation if multiple candidates are found or if the correct asset is not
-    obvious.
+    **@skill:knowledge-catalog** to find them. **Ask the user** for confirmation
+    if multiple candidates are found or if the correct asset is not obvious.
 -   Review resolved SQL from the DAG to understand data context.
 
 ### 3. Apply Automatic Data Cleaning and SQL Optimizations
