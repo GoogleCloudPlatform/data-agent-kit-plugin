@@ -1,5 +1,41 @@
 # Changelog
 
+## [1.2.0](https://github.com/GoogleCloudPlatform/data-agent-kit-plugin/compare/1.1.0...1.2.0) (2026-10-29)
+
+
+### Features
+
+* **dak:** add cloud_databases_onboarding skill and evalbench suite to Data Agent Kit. ([05d8b85](https://github.com/GoogleCloudPlatform/data-agent-kit-plugin/commit/05d8b85f6a17c50fecf77e175921fbdf3b784625))
+* **dak:** proxy MCP resources in the data-agent-kit CLI MCP server. ([a29f288](https://github.com/GoogleCloudPlatform/data-agent-kit-plugin/commit/a29f28873ff068e323630160a82861f77efd15bf))
+* **dak:** register data-agent-kit MCP server in plugin configs and update bundle. ([36cc29f](https://github.com/GoogleCloudPlatform/data-agent-kit-plugin/commit/36cc29f4d30c38db526d8a7a742da32faca53b9b))
+* **gcp-managed-spark-upgrades:** Added PySpark Upgrade Skill for Serverless Spark ([4a63d89](https://github.com/GoogleCloudPlatform/data-agent-kit-plugin/commit/4a63d899719d39dcea4c7ab292d23fa7e16db5e4))
+* **mcp:** add Firestore remote MCP server (dak-firestore) ([e5ab3f3](https://github.com/GoogleCloudPlatform/data-agent-kit-plugin/commit/e5ab3f3ac8586472f11edf25bd9e60f640bb38d3))
+* **mcp:** consolidate visualization `render_chart` tool into `data-agent-kit` MCP server ([7d7bbb3](https://github.com/GoogleCloudPlatform/data-agent-kit-plugin/commit/7d7bbb3362f15eb999cc54d42528f25cd442b6d8))
+* **skills:** add bigquery-observability, bigquery-optimization, and bigquery-troubleshooting skills to Data Agent Kit ([e2f6401](https://github.com/GoogleCloudPlatform/data-agent-kit-plugin/commit/e2f6401c77e1cc1fbe1cb27afabb3c83f08db492))
+* **skills:** add gcp-spark-observability skill and evalbench suite ([751cbb6](https://github.com/GoogleCloudPlatform/data-agent-kit-plugin/commit/751cbb6f077d77714e1d54a09f8795e7c1a1b70b))
+* **skills:** fold BigQuery workload monitoring deltas into bigquery-observability and bigquery-troubleshooting ([e5bd77e](https://github.com/GoogleCloudPlatform/data-agent-kit-plugin/commit/e5bd77ecfb348e8df8c4db147dd413d12e455d44))
+* support notifications.onPipelineSuccess in the gcp_pipeline_orchestration skill ([62b5941](https://github.com/GoogleCloudPlatform/data-agent-kit-plugin/commit/62b594101c59ef3499e3932069cff114843c3146))
+* support Vertex AI createAndRunCustomJob in the gcp_pipeline_orchestration skill ([3c25afb](https://github.com/GoogleCloudPlatform/data-agent-kit-plugin/commit/3c25afb1fb10048fefdf15e45222db75b2d31b52))
+* Update BigQuery AI skills/references in data_agent_common ([439c66e](https://github.com/GoogleCloudPlatform/data-agent-kit-plugin/commit/439c66e3c7ea5c4f669d7ca628b65b80af721ccf))
+
+
+### Bug Fixes
+
+* **bigtable-basics:** update broken Bigtable SQL reference link. ([191e5b3](https://github.com/GoogleCloudPlatform/data-agent-kit-plugin/commit/191e5b38a11517f3c996cce9bca43385ed66772c))
+* **gcp-spark:** add Amazon S3 and Azure Blob Storage / ADLS Gen2 support ([44b58bf](https://github.com/GoogleCloudPlatform/data-agent-kit-plugin/commit/44b58bfb4ea2ab3b6a8b226150e5abbf0901c44f))
+* **gcp-spark:** add Cloud SQL and AlloyDB Socket Factory and IAM auth support ([ce9f362](https://github.com/GoogleCloudPlatform/data-agent-kit-plugin/commit/ce9f3623c82b4ec6610001f5e27be8c2b7c154f8))
+* **gcp-spark:** add parallel JDBC read, custom driver JAR, and Secret Manager patterns ([f1ade85](https://github.com/GoogleCloudPlatform/data-agent-kit-plugin/commit/f1ade8590219aa1220560f327bdc4ac60bdd102a))
+* **gcp-spark:** Ask the user when no data source is named ([79377a4](https://github.com/GoogleCloudPlatform/data-agent-kit-plugin/commit/79377a40f3266467cb18d38c6a3c244ca8baf995))
+* **gcp-spark:** clarify Remote Kernel Spark session initialization ([2c71b4a](https://github.com/GoogleCloudPlatform/data-agent-kit-plugin/commit/2c71b4aea82880af9d2a94b6d3e7fa60752af556))
+* **gcp-spark:** refine skill description for reliable routing in Claude harnesses ([40358fd](https://github.com/GoogleCloudPlatform/data-agent-kit-plugin/commit/40358fd5a6bd86d937b1f2fc20543887c656f382))
+* **internal:** Add automatic sanitization / cleaning to external release pipeline and fix existing leak ([ddb8a2e](https://github.com/GoogleCloudPlatform/data-agent-kit-plugin/commit/ddb8a2eb6ce5a837ac7a6f2cfec208f1ccd38b97))
+* **skills:** Remove the google-cloud-auth-verification skill. ([323c760](https://github.com/GoogleCloudPlatform/data-agent-kit-plugin/commit/323c7605506bb6e58fd4faa400f1c48219d9a094))
+
+
+### Miscellaneous Chores
+
+* force release 1.2.0 ([904dc9b](https://github.com/GoogleCloudPlatform/data-agent-kit-plugin/commit/904dc9bb1940e9f312d2d95126d788d3514759d9))
+
 ## [1.1.0](https://github.com/GoogleCloudPlatform/data-agent-kit-plugin/compare/1.0.0...1.1.0) (2026-10-13)
 
 
