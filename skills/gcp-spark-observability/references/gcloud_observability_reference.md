@@ -1,6 +1,7 @@
 # gcloud Dataproc & Spark Observability Reference
 
-Concise `gcloud` commands and field paths for observing Dataproc Serverless (batches, sessions) and Dataproc on Compute Engine (clusters, jobs, operations).
+Concise `gcloud` commands and field paths for observing Dataproc Serverless
+(batches, sessions) and Dataproc on Compute Engine (clusters, jobs, operations).
 
 ---
 
@@ -27,7 +28,8 @@ gcloud logging read 'resource.type=("cloud_dataproc_batch" OR "cloud_dataproc_cl
 
 ## 2. Active Fleet & Environment Inventory (All 4 Surfaces)
 
-Always inspect all 4 active workload surfaces per region (`batches`, `sessions`, `clusters`, `jobs`) and always pass `--limit`:
+Always inspect all 4 active workload surfaces per region (`batches`, `sessions`,
+`clusters`, `jobs`) and always pass `--limit`:
 
 ```bash
 for REGION in us-central1 asia-east1; do
@@ -78,19 +80,32 @@ gcloud dataproc jobs describe <JOB_ID> --region="${REGION}" --format="yaml(refer
 
 # Recurring batch runs & orchestrator labels for cadence/duration health
 gcloud dataproc batches list --region="${REGION}" --sort-by=~createTime --limit=200 \
-  --format="table(name.basename():label=BATCH,state,createTime,stateTime,labels.'airflow-dag-id':label=DAG,labels.'airflow-task-id':label=TASK,labels.'goog-dataproc-workflow-template-id':label=WF_TEMPLATE,creator)"
+  --format="table(name.basename():label=BATCH,state,createTime,stateTime,labels.'airflow-dag-id':label=DAG,labels.'airflow-task-id':label=TASK,labels.'goog-dataproc-workflow-template-id':label=WF_TEMPLATE,labels.'goog-orchestration-pipeline-id':label=ORCH_PIPELINE,creator)"
 ```
-* **Cadence grouping:** group runs by `labels.airflow-dag-id`/`airflow-task-id` (Composer batches), `labels.goog-dataproc-workflow-template-id` (Workflow Templates), or batch-ID prefix (strip trailing run hash/timestamp). Compute median runtime (`stateTime - createTime`) and median interval between `createTime` values to flag missed runs (`> 1.5x` median interval) or runtime regressions.
+
+* **Cadence grouping:** group runs by `labels.airflow-dag-id`/`airflow-task-id`
+  (Composer batches), `labels.goog-dataproc-workflow-template-id` (Workflow
+  Templates), `labels.goog-orchestration-pipeline-id`/
+  `goog-orchestration-model-id` or `labels.dcs_pipeline_id`/`dcs_task_id` (DCS
+  Serverless Orchestration), custom pipeline labels, or batch-ID prefix (strip
+  trailing run hash/timestamp). Compute median runtime
+  (`stateTime - createTime`) and median interval between `createTime` values to
+  flag missed runs (`> 1.5x` median interval) or runtime regressions.
 * **Safe cancellation (only after explicit user confirmation):**
-  * Stop running batch: `gcloud dataproc batches cancel <BATCH_ID> --region=<REGION>` (`batches delete` only deletes terminal records).
+  * Stop running batch:
+    `gcloud dataproc batches cancel <BATCH_ID> --region=<REGION>`
+    (`batches delete` only deletes terminal records).
   * Kill running job: `gcloud dataproc jobs kill <JOB_ID> --region=<REGION>`.
-  * Terminate active session: `gcloud beta dataproc sessions terminate <SESSION_ID> --location=<REGION>`.
+  * Terminate active session:
+    `gcloud beta dataproc sessions terminate <SESSION_ID> --location=<REGION>`.
 
 ---
 
 ## 4. Serverless Usage (DCU-Hours), Idle Clusters & Config Audit
 
-* **Formulas:** $\text{DCU-Hours} = \text{milliDcuSeconds} / 3{,}600{,}000$, $\text{Shuffle-GB-Months} = \text{shuffleStorageGbSeconds} / 2{,}592{,}000$.
+* **Formulas:**
+  $\text{DCU-Hours} = \text{milliDcuSeconds} / 3{,}600{,}000$,
+  $\text{Shuffle-GB-Months} = \text{shuffleStorageGbSeconds} / 2{,}592{,}000$.
 
 ```bash
 # Top Serverless compute consumers (completed batches sorted numerically by milliDcuSeconds)
@@ -113,11 +128,26 @@ gcloud dataproc jobs list --region="${REGION}" --cluster="${CLUSTER}" --sort-by=
 gcloud dataproc clusters list --region="${REGION}" --filter="status.state=STOPPED" --limit=100 \
   --format="table(clusterName,status.stateStartTime:label=STOPPED_SINCE)"
 ```
-* **Idle remediation (always report `config.lifecycleConfig` TTLs `idleDeleteTtl`/`idleStopTtl` and recommend only; never execute without confirmation):** `gcloud dataproc clusters update <CLUSTER> --region=<REGION> --max-idle=30m` (or `--stop-max-idle=30m` / `--delete-max-idle=30m`).
+
+* **Idle remediation (always report `config.lifecycleConfig` TTLs
+  `idleDeleteTtl`/`idleStopTtl` and recommend only; never execute without
+  confirmation):**
+  `gcloud dataproc clusters update <CLUSTER> --region=<REGION> --max-idle=30m`
+  (or `--stop-max-idle=30m` / `--delete-max-idle=30m`).
 * **Key config fields to audit (`describe --format=json`):**
-  * Serverless (`batches`/`sessions`): `runtimeConfig.version`, `runtimeConfig.properties` (`dataproc:dataproc.tier`, `spark:spark.dataproc.engine`, `spark.dynamicAllocation.*`, `spark.sql.adaptive.enabled`), `runtimeConfig.autotuningConfig.scenarios`, `environmentConfig.executionConfig.idleTtl`/`ttl`, `environmentConfig.peripheralsConfig.sparkHistoryServerConfig`.
-  * Clusters: `config.softwareConfig.imageVersion`, `config.clusterTier`, `config.lifecycleConfig.*`, `config.autoscalingConfig.policyUri`, `config.secondaryWorkerConfig.preemptibility`, `config.*Config.diskConfig` (`bootDiskType`, `numLocalSsds`), `config.endpointConfig.enableHttpPortAccess`.
-  * Workload-level tuning: hand off individual top-DCU or slow workloads to `@skill:gcp-spark-troubleshooting`.
+  * Serverless (`batches`/`sessions`): `runtimeConfig.version`,
+    `runtimeConfig.properties` (`dataproc:dataproc.tier`,
+    `spark:spark.dataproc.engine`, `spark.dynamicAllocation.*`,
+    `spark.sql.adaptive.enabled`), `runtimeConfig.autotuningConfig.scenarios`,
+    `environmentConfig.executionConfig.idleTtl`/`ttl`,
+    `environmentConfig.peripheralsConfig.sparkHistoryServerConfig`.
+  * Clusters: `config.softwareConfig.imageVersion`, `config.clusterTier`,
+    `config.lifecycleConfig.*`, `config.autoscalingConfig.policyUri`,
+    `config.secondaryWorkerConfig.preemptibility`,
+    `config.*Config.diskConfig` (`bootDiskType`, `numLocalSsds`),
+    `config.endpointConfig.enableHttpPortAccess`.
+  * Workload-level tuning: hand off individual top-DCU or slow workloads to
+    `@skill:gcp-spark-troubleshooting`.
 
 ---
 
@@ -153,10 +183,52 @@ gcloud monitoring policies list --project="${PROJECT_ID}" --limit=100 --format="
 
 ## 6. Cloud Monitoring Metrics & Cloud Logging
 
-* **Key Dataproc metrics (`dataproc.googleapis.com/...`):**
-  * Serverless (`cloud_dataproc_batch`, `cloud_dataproc_session`): `batch/spark/executors` and `session/spark/executors` (labels: `status` = `running`, `pending-delete`, `required`, `maximum-needed`, `target`).
-  * Clusters (`cloud_dataproc_cluster`): `cluster/yarn/allocated_memory_percentage`, `cluster/yarn/pending_memory_size`, `cluster/yarn/apps` (`status` = `running`, `pending`, `failed`), `cluster/yarn/nodemanagers` (`status` = `active`, `lost`, `unhealthy`), `cluster/hdfs/storage_utilization`, `cluster/hdfs/unhealthy_blocks`, `cluster/job/failed_count`, `cluster/operation/failed_count`.
-  * Spark metrics (`custom.googleapis.com/spark/...`): enabled by default on Serverless; opt-in via `--metric-sources=spark` on clusters.
+* **Key Dataproc, Spark & Orchestration metrics:**
+  * Serverless (`cloud_dataproc_batch`, `cloud_dataproc_session`):
+    `dataproc.googleapis.com/{batch,session}/spark/executors` (`status` =
+    `running`, `pending-delete`, `required`, `maximum-needed`, `target`),
+    `dataproc.googleapis.com/{batch,session}/operation/{completed_by_terminal_state,failed,start_latency,gce_creation_latency}`
+    (`terminal_state`, `error_code`, `error_source`). Note: internal
+    `dataproc.googleapis.com/{spark,run}/*` metrics are `is_public = false` and
+    are never queryable in customer Cloud Monitoring.
+  * Clusters (`cloud_dataproc_cluster`):
+    `dataproc.googleapis.com/cluster/yarn/allocated_memory_percentage`,
+    `cluster/yarn/pending_memory_size`, `cluster/yarn/apps` (`status` =
+    `running`, `pending`, `failed`), `cluster/yarn/nodemanagers` (`status` =
+    `active`, `lost`, `unhealthy`),
+    `cluster/nodes/{active_count,decommissioned_count,yarn_decommissioning_count}`,
+    `cluster/hdfs/{storage_utilization,unhealthy_blocks}`,
+    `cluster/job/{submitted_count,running_count,completed_count,failed_count,duration}`,
+    `cluster/operation/failed_count`, and cluster-scoped
+    `dataproc.googleapis.com/node/{problem_count,problem_state}` (`reason` =
+    `OOM` | `ShuffleReadError` | `LateCheckin` | `Preempted`; lacks `job_id`, so
+    correlate by timestamp window on shared clusters).
+  * Cluster Jobs (`cloud_dataproc_job`): `dataproc.googleapis.com/job/state`
+    (`state`), `dataproc.googleapis.com/job/yarn/vcore_seconds` (BETA, per
+    `application_id`), `dataproc.googleapis.com/job/yarn/memory_seconds` (BETA,
+    per `application_id`).
+  * Spark & VM host time series: on Serverless Runtime `>= 3.0` (OpenTelemetry,
+    controlled via `spark.dataproc.{driver,executor,system}.metrics`), exported
+    under `workload.googleapis.com/spark/driver/*` (`DAGScheduler/*`,
+    `BlockManager/*`, `JVMCPU/jvmCpuTime`, `ExecutorAllocationManager/*`),
+    `workload.googleapis.com/spark/executor/*` (`runTime`, `jvmGCTime`,
+    `JVMCPU/jvmCpuTime`, `bytesRead`, `bytesWritten`, `recordsRead`,
+    `recordsWritten`, `memoryBytesSpilled`, `diskBytesSpilled`, `shuffle*`,
+    `ExecutorMetrics/JVMHeapMemory`, `ExecutorMetrics/JVMOffHeapMemory`, labeled
+    by `executor_id`), and `workload.googleapis.com/system.*` (`node` ending
+    `-m` for driver vs `-w-*` for executors). On Serverless Runtime `1.x`/`2.x`
+    and opt-in clusters (`--metric-sources=spark`), exported under
+    `custom.googleapis.com/spark/...`.
+  * DCS Serverless Orchestration (`orchestration.googleapis.com/Pipeline`,
+    labels: `resource_container`, `location`, `pipeline_id`):
+    `orchestration.googleapis.com/pipeline/{run_count,run_durations,model_execution_count,model_execution_durations}`
+    (plus `action_execution_{count,durations}` when publicly exposed).
+    Orchestration does not duplicate low-level Spark metrics; correlate
+    downstream Spark runs via `labels.goog-orchestration-*` or
+    `labels.dcs_{pipeline_id,version_id,run_id,task_id,sdp_dataset}` on
+    batches/jobs, or `jsonPayload.external_job_reference` in
+    `orchestration.googleapis.com%2F{action_execution_activity,model_execution_activity}`
+    logs.
 
 ```bash
 # Query Cloud Monitoring time series via REST (use application-default token)
@@ -170,10 +242,163 @@ curl -sS -G "https://monitoring.googleapis.com/v3/projects/${PROJECT_ID}/timeSer
   --data-urlencode "aggregation.alignmentPeriod=300s" \
   --data-urlencode "aggregation.perSeriesAligner=ALIGN_MEAN"
 
-# Cloud Logging: batch/cluster errors and cross-region Admin Activity audit trail
+# Cloud Logging: batch/cluster errors, autoscaler decisions, Spot VM preemptions, orchestration, and audit trail
 gcloud logging read 'resource.type="cloud_dataproc_batch" AND resource.labels.batch_id="<BATCH_ID>" AND severity>=ERROR' \
   --project="${PROJECT_ID}" --limit=50 --format="table(timestamp,severity,jsonPayload.message,textPayload)"
+gcloud logging read 'logName:"dataproc.googleapis.com%2Fautoscaler" AND (resource.labels.batch_id="<BATCH_ID>" OR resource.labels.cluster_name="<CLUSTER>")' \
+  --project="${PROJECT_ID}" --limit=50 --format="table(timestamp,jsonPayload.scalingDecisionType,jsonPayload.scalingReason,jsonPayload.message)"
+gcloud logging read 'logName:"cloudaudit.googleapis.com%2Fsystem_event" AND (protoPayload.methodName="compute.instances.preempted" OR protoPayload.serviceName="dataprocrm.googleapis.com")' \
+  --project="${PROJECT_ID}" --freshness=7d --limit=50 --format="table(timestamp,protoPayload.methodName,protoPayload.resourceName)"
+gcloud logging read 'resource.type="orchestration.googleapis.com/Pipeline" AND resource.labels.pipeline_id="<PIPELINE_ID>"' \
+  --project="${PROJECT_ID}" --limit=50 --format="table(timestamp,labels.pipeline_run_id,labels.engine,labels.state,jsonPayload.external_job_reference,jsonPayload.duration_seconds)"
 gcloud logging read 'logName:"cloudaudit.googleapis.com%2Factivity" AND protoPayload.serviceName="dataproc.googleapis.com"' \
   --project="${PROJECT_ID}" --freshness=7d --limit=50 \
   --format="table(timestamp,protoPayload.methodName,protoPayload.authenticationInfo.principalEmail,resource.labels.region,protoPayload.resourceName,protoPayload.status.message)"
 ```
+
+---
+
+## 7. Workload & Ingestion Key Metrics Extraction
+
+When answering questions about a workload's or pipeline's key metrics (duration,
+compute usage, rows/bytes read & written, file/partition counts, source/sink
+schemas, shuffle/spill/GC, peak memory, or partition skew), combine **Dataproc
+control-plane metadata**, **Spark application / event-log telemetry** (via
+`@skill:gcp-spark-troubleshooting` helper scripts), and **source/sink storage
+metadata**:
+
+### A. Control-Plane Duration & Resource Usage
+
+```bash
+# 1. Serverless Batch (or beta sessions describe --location=...)
+gcloud dataproc batches describe "<BATCH_ID>" --region="${REGION}" --project="${PROJECT_ID}" --format=json
+# Extract:
+# - Total elapsed time: stateTime - createTime
+# - Active RUNNING wall-clock: stateTime - stateHistory[state=="RUNNING"].stateStartTime
+# - Startup overhead: RUNNING.stateStartTime - createTime (also tracked in batch/operation/start_latency)
+# - Compute & shuffle usage: runtimeInfo.approximateUsage.{milliDcuSeconds, shuffleStorageGbSeconds}
+#   (DCU-Hours = milliDcuSeconds / 3600000; Shuffle-GB-Months = shuffleStorageGbSeconds / 2592000)
+
+# 2. Dataproc GCE Cluster Job (persists even after ephemeral cluster deletion)
+gcloud dataproc jobs describe "<JOB_ID>" --region="${REGION}" --project="${PROJECT_ID}" --format=json
+# Extract:
+# - Active RUNNING wall-clock: status.stateStartTime - statusHistory[state=="RUNNING"].stateStartTime
+# - YARN resource consumption: yarnApplications[].{vcoreSeconds, memoryMbSeconds, state, trackingUrl}
+# - Spark application ID: trailing application_<ts>_<id> segment of yarnApplications[].trackingUrl
+```
+
+### B. Spark Stage, SQL Operator, Peak Memory, Schema & Partition Skew Telemetry
+
+* **Dataproc Serverless (`batches` / `sessions`):** activate
+  `@skill:gcp-spark-troubleshooting` first to get its resolved skill directory
+  (`<TROUBLESHOOTING_SKILL_DIR>`; do not search symlinked skill directories with
+  `find` without `-L`), then run `scripts/spark_applications.py` (works after
+  completion without a History Server):
+  ```bash
+  # App attempt duration, jobs/stages/tasks, cores/maxTasks, GC overhead %, dead executors
+  python3 <TROUBLESHOOTING_SKILL_DIR>/scripts/spark_applications.py --project="${PROJECT_ID}" --region="${REGION}" --batch-id="<BATCH_ID>" --action=summary
+  # Per-stage & summed I/O + task duration/partition skew table (stage_skew_score & job_skew_score)
+  python3 <TROUBLESHOOTING_SKILL_DIR>/scripts/spark_applications.py --project="${PROJECT_ID}" --region="${REGION}" --batch-id="<BATCH_ID>" --action=stages --quantiles
+  # Per-executor Cores (maxTasks) & Peak Heap / Off-Heap (JVMHeapMemory/JVMOffHeapMemory; storage memoryUsed is 0% unless RDDs are cached)
+  python3 <TROUBLESHOOTING_SKILL_DIR>/scripts/spark_applications.py --project="${PROJECT_ID}" --region="${REGION}" --batch-id="<BATCH_ID>" --action=executors
+  # SQL execution durations, join counts, operator I/O metrics, and Source & Sink Operator Schemas
+  python3 <TROUBLESHOOTING_SKILL_DIR>/scripts/spark_applications.py --project="${PROJECT_ID}" --region="${REGION}" --batch-id="<BATCH_ID>" --action=sql
+  python3 <TROUBLESHOOTING_SKILL_DIR>/scripts/spark_applications.py --project="${PROJECT_ID}" --region="${REGION}" --batch-id="<BATCH_ID>" --action=sql --execution-id=0
+  ```
+  * **Normalized skew & worker utilization formulas:**
+    `stage_skew_score = max(0, T_max / (5 * max(T_median, 1ms)) - 1)` (`> 0`
+    indicates tasks exceeding `5x` median; `job_skew_score` weights completed
+    stages by stage duration);
+    `worker_utilization_pct = (sum(activeTasks) / sum(maxTasks)) * 100` (`< 40%`
+    indicates over-provisioning).
+* **Dataproc GCE Cluster Jobs (including deleted clusters):** locate the Spark
+  event log from `spark:spark.eventLog.dir` (in job/cluster properties) or
+  `gcloud storage ls "gs://<BUCKET>/**/*application_<ts>_<id>*"`, activate
+  `@skill:gcp-spark-troubleshooting`, and run `scripts/spark_gcs_log_reader.py`:
+  ```bash
+  python3 <TROUBLESHOOTING_SKILL_DIR>/scripts/spark_gcs_log_reader.py --uri="gs://<BUCKET>/<PATH>/application_<ts>_<id>" --action=summarize_events
+  # Supports single-file (.zstd/.gz/plain) and rolling eventlog_v2_application_<ts>_<id> shards;
+  # reports Spark app duration, executors/cores, peak JVMHeap/JVMOffHeap/PyRSS memory,
+  # deduplicated task-summed input/output/shuffle bytes & rows, GC %, stage_skew_score & job_skew_score,
+  # SQL operator metrics + source/sink column schemas, and Spark Connect / SDP operations.
+  ```
+
+### C. Connector, Pushdown, Construct Artifacts & Failed-Run Precedence Rules
+
+1. **DataSourceV2, `spark-bigquery-connector` & `avg file size written`:**
+   Spark Hadoop RDD counters (`stageInputMetrics.bytesRead`,
+   `stageOutputMetrics.bytesWritten`/`recordsWritten`) report `0 B` on
+   DataSourceV2 scans (`BatchScan` BigQuery Storage Read, Iceberg) and
+   `SaveIntoDataSourceCommand` writes (`spark-bigquery-connector` Direct V2).
+   In addition, Spark's `BasicWriteJobStatsTracker` declares `avg file size
+   written` as a `size`-summed accumulator across tasks/driver, inflating its
+   `total` on multi-file writes — always compute true average file size as
+   `written output / number of written files`. Inspect
+   `--action=sql --execution-id=<ID>` **and** verify storage metadata directly:
+   * **BigQuery table:**
+     `bq show --project_id="${PROJECT_ID}" --format=json <DATASET>.<TABLE>`
+     (`numRows`, `numBytes`, and `schema.fields` column count/names).
+   * **BigLake Iceberg REST catalog table:**
+     `gcloud biglake iceberg tables describe <TABLE> --catalog=<CATALOG>`
+     `--namespace=<NAMESPACE> --project="${PROJECT_ID}" --format=json`
+     (`metadata.snapshots[-1].summary` for `app-id`, `total-records`,
+     `added-records`, `added-data-files`, `added-files-size`,
+     `total-files-size`, and `metadata.schemas[-1].fields` for schema).
+   * **Cloud Storage Parquet/ORC/CSV/JSON:**
+     `gcloud storage ls -l -r "gs://<BUCKET>/<PREFIX>/"` (count non-empty data
+     files excluding `_SUCCESS`, count `col=val/` partition directories, sum
+     object byte sizes, and inspect per-file sizes when checking output
+     partition skew).
+2. **Filter pushdown vs. raw source rows:** CSV/JSON/Parquet pushed filters can
+   make stage `inputRecords` and SQL scan `number of output rows` report
+   **post-filter** surviving rows while `size of files read` reflects raw file
+   bytes. If `Filter` / `PushedFilters` is present in the plan (or code),
+   inspect `pysparkBatch.mainPythonFileUri` / `pysparkJob.mainPythonFileUri` and
+   any unfiltered Spark SQL/stage scan or driver log output (never stream or
+   download full GCS data files or event logs via `gcloud storage cat` or
+   `mcp_cloud_storage_download_object` to count lines), and state clearly
+   whether reported input rows are raw or post-filter.
+3. **Failed or aborted runs guardrail:** a `FAILED` batch or `ERROR` job can
+   complete upstream scan/count stages (`inputRecords > 0`,
+   `milliDcuSeconds > 0`) before raising an exception prior to sink commit.
+   Never report scanned or intermediate rows as written output: verify whether
+   any write execution committed and check the target BigQuery table, BigLake
+   Iceberg snapshot, or GCS sink prefix directly (`0` committed rows/bytes if
+   untouched), alongside `stateMessage` / driver error details.
+4. **Multi-batch & orchestrated pipeline rollups:** filter runs with
+   `--limit=100` and explicit field projection across custom pipeline labels
+   (`labels.pipeline=<ID>`), Composer (`labels.airflow-dag-id`), Workflow
+   Templates (`labels.goog-dataproc-workflow-template-id`), or DCS Serverless
+   Orchestration (`labels.goog-orchestration-pipeline-id` /
+   `labels.goog-orchestration-run-id`, `labels.dcs_pipeline_id` /
+   `labels.dcs_run_id` / `labels.dcs_task_id`, or downstream batch URIs from
+   `jsonPayload.external_job_reference` in `orchestration.googleapis.com`
+   activity logs):
+   `gcloud dataproc batches list --region="${REGION}" --project="${PROJECT_ID}"`
+   `--filter="labels.<key>=<value>" --limit=100`
+   `--format="json(name,uuid,state,createTime,stateTime,stateHistory,runtimeInfo.approximateUsage,labels)"`
+   (never run unfiltered `batches list --format=json` without `--filter` and
+   field projection on shared projects). Sum `milliDcuSeconds`,
+   `shuffleStorageGbSeconds`, and active/total durations across pipeline stages,
+   and inspect each batch via `spark_applications.py` (`stages --quantiles` +
+   `sql`) to attribute bottleneck duration, skew, shuffle volume, and I/O.
+5. **Construct-specific pipeline artifacts (Notebooks, `dbt-spark`, & SDP):**
+   * **Papermill notebooks (`NotebookAction`):** inspect the executed `.ipynb`
+     in GCS for per-cell
+     `cells[].metadata.papermill.{status,duration,start_time,end_time,exception}`.
+   * **`dbt-spark` (`DbtAction` / `DbtDataModel`):** inspect GCS
+     `target/run_results.json`
+     (`results[].{unique_id,status,execution_time,adapter_response,timing[]}`)
+     and `target/manifest.json`. Note: Multi-Tenant Service
+     (`cloud-dataform-mst-*`) runtimes execute inside a Google-managed tenant
+     project, so customer projects expose `orchestration.googleapis.com`
+     telemetry and target sink audit logs rather than `cloud_dataproc_*`
+     resources.
+   * **Spark Declarative Pipelines (`PipelineAction (sdp)` / `SdpDataModel`):**
+     on Spark 4.1+ Connect, use
+     `spark_gcs_log_reader.py --action=summarize_events` on the batch's GCS
+     event log to extract `SparkListenerConnectOperation*` (`operationId`,
+     `jobTag` such as `dcs_sdp_dataset:<dataset>`, `sessionId`, per-flow
+     duration, `producedRowCount`, `errorMessage`); apportion shared batch
+     `milliDcuSeconds` across flows proportional to each flow's
+     `sum(executorRunTimeMillis)`.
