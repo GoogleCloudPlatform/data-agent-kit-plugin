@@ -5,30 +5,6 @@ Serverless), including setting up clusters; launching jobs and batches; managing
 serverless session templates; running Spark Connect sessions; and inspecting
 outputs.
 
-## Background
-
-Managed Spark on Google Cloud (Dataproc) is Google Cloud's managed service for
-running Hadoop and Spark workloads. The two basic flavors are:
-
--   **Clusters** aka **Dataproc on GCE**: users create a cluster, then submit
-    one or more Spark or other jobs. Users have control over the underlying VM
-    resources.
--   **Serverless Spark** aka **Dataproc Serverless**, where users do not control
-    the underlying VM resources:
-    -   Users may submit **batches**, which provision the underlying resources,
-        launch a job, and tear down the resources, all in a single operation.
-    -   Users may also create persistent **interactive sessions**. These are
-        generally created through a Jupyter interface rather than gcloud, but
-        existing sessions may be inspected with gcloud.
-    -   Users can create **session templates** as a way to create multiple
-        sessions using the same configuration.
-
-Users may not always know the technically correct terminology for Clusters vs.
-Serverless, for example they may ask for "jobs" or "spark jobs" but mean
-Serverless Batches.
-
-## Setup
-
 ## Project and region/location preferences
 
 Users configure `gcloud` to point at their desired project and region/location.
@@ -139,16 +115,6 @@ gcloud dataproc jobs submit pyspark <LOCAL_SCRIPT_PATH> \
 > upload your scripts before submission.
 
 ## Dataproc Serverless
-
-Use this section if the user requests:
-
--   batches, serverless batches, spark batches, serverless jobs
--   spark sessions, serverless spark sessions, spark interactive sessions,
-    serverless interactive sessions, spark notebooks, spark kernels
-
-**Do not** use this section if the user requests spark jobs, cluster jobs, or
-just jobs, **unless** you have confirmed with the user that they are using
-Serverless.
 
 ### Listing batches
 

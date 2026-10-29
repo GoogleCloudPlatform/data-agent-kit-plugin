@@ -16,7 +16,7 @@ description: |
   - Troubleshooting failed Spark jobs or Dataproc batches (use @skill:gcp-spark-troubleshooting).
 license: Apache-2.0
 metadata:
-  version: v31
+  version: v32
   publisher: google
 ---
 
@@ -259,33 +259,3 @@ The Managed Spark (Dataproc) service account needs:
 *   `roles/spanner.databaseUser`: Spanner reads and writes
 *   `roles/secretmanager.secretAccessor`: Accessing database passwords and credentials stored in Secret Manager
 
---------------------------------------------------------------------------------
-
-## Spark resource management & observability
-
-Refer to `references/gcloud_dataproc.md` for detailed guidelines on managing
-Spark clusters, jobs, batches, interactive sessions, and Spark Connect sessions.
-
-For fleet-wide and multi-region observability — including active workload
-inventory across Batches, Sessions, Clusters, and Jobs, failed batch discovery,
-Serverless compute consumption (`DCU-Hours` and `Shuffle-GB-Months`), idle or
-zombie cluster waste detection, scheduled pipeline cadence health, configuration
-auditing, and Cloud Monitoring / Cloud Logging telemetry — use the
-`@skill:gcp-spark-observability` skill.
-
---------------------------------------------------------------------------------
-
-## Code Optimization & Pre-Submission Verification
-
-Before submitting any Spark job or Dataproc batch, enforce the pre-submission
-verification protocol in `references/spark_refactoring_guide.md`: inspect the
-code for the anti-patterns catalogued in `references/spark_optimizations.md` and
-obtain explicit user confirmation before applying refactoring.
-
---------------------------------------------------------------------------------
-
-## Troubleshooting & Root Cause Analysis
-
-For troubleshooting failed Spark jobs or Dataproc batches, inspecting/tailing
-GCS driver output logs, analyzing Spark event logs, or performing Root Cause
-Analysis (RCA), use the `@skill:gcp-spark-troubleshooting` skill.
