@@ -1,9 +1,9 @@
 ---
 name: gcp-spark-troubleshooting
-description: "Provides expert guidance for troubleshooting Google Cloud Spark and Dataproc workloads (Dataproc Serverless batches and standard Dataproc clusters), and inspecting, streaming, searching, tailing, or summarizing Spark driver outputs and event logs in Cloud Storage. Use when the user asks to debug, troubleshoot, diagnose, or perform Root Cause Analysis (RCA) on failed Spark jobs, PySpark batches, or Spark event logs."
+description: "Provides expert guidance for troubleshooting Google Cloud Spark and Dataproc workloads (Dataproc Serverless batches and standard Dataproc clusters), and inspecting, streaming, searching, tailing, or summarizing Spark driver outputs and event logs in Cloud Storage. Use when the user asks to debug, troubleshoot, diagnose, or perform Root Cause Analysis (RCA) on failed Spark jobs, PySpark batches, or Spark event logs. Also covers interactive sessions, IAM/VPC/classpath environment checks (.py, .jar, .zst, gs://), OutOfMemoryError, 403 PERMISSION_DENIED, NoSuchMethodError, ClassNotFoundException, and slow Spark pipelines. Do NOT use for authoring new Spark jobs, runtime upgrades, or non-Spark engines such as Dataflow or BigQuery Data Transfer Service."
 license: Apache-2.0
 metadata:
-  version: v4
+  version: v5
   publisher: google
 ---
 
@@ -122,6 +122,9 @@ optional extra input; they have no per-stage records and cannot replace
     workload ends.
 -   **Code**: `pysparkBatch.mainPythonFileUri` or `sparkBatch.mainJarFileUri`,
     with `scripts/spark_code_inspector.py`.
+-   **Environment**: `scripts/spark_env_inspector.py` (`--batch_id` or
+    `--session_id`, `--action=identity|network|classpath`) when IAM/KMS/secrets,
+    VPC/DNS/NAT, or runtime JAR/catalog properties are implicated.
 
 ### Dataproc cluster job
 
@@ -132,6 +135,9 @@ optional extra input; they have no per-stage records and cannot replace
     --action=summarize_events`.
 -   **Code**: `pysparkJob.mainPythonFileUri` or the job's JAR, with
     `scripts/spark_code_inspector.py`.
+-   **Environment**: `scripts/spark_env_inspector.py --job_id=<ID>
+    --action=identity|network|classpath` when cluster IAM/scopes/secrets,
+    VPC/DNS/firewall, or JAR/file distribution is implicated.
 
 ### Direct GCS URI
 
@@ -212,6 +218,37 @@ evidence:
 "No Spark application found" means the driver never started; zero stages
 means the job failed before its first Spark action. In both cases the cause is
 in the logs. Failed tasks show never-collected metrics as `n/a`.
+
+--------------------------------------------------------------------------------
+
+## Spark Environment Inspection Workflow (Identity, Network & Classpath)
+
+When logs or `stateMessage` point to IAM/KMS/Secret Manager denials, network
+timeouts or DNS failures, or missing/incompatible JARs and Spark properties
+across Serverless batches (`--batch_id`), interactive sessions (`--session_id`),
+or cluster jobs (`--job_id`), run `scripts/spark_env_inspector.py` (run with
+`--help` for all flags):
+
+```
+python3 scripts/spark_env_inspector.py --batch_id=<ID> --region=<REGION> --action=identity
+```
+
+-   `--action=identity`: reports configured vs. inferred default service
+    account (`END_USER_CREDENTIALS` by default on Serverless Runtime `3.0+`),
+    cluster OAuth `serviceAccountScopes`, `kmsKey`, project IAM roles, redacted
+    auth/catalog properties, and optional `--secret_id=<SECRET>` version states
+    and secret IAM bindings (never accesses secret payloads).
+-   `--action=network` (optional `--target_port=<PORT>`): reports VPC and
+    subnetwork (including Shared VPC host project), CIDR usable host capacity,
+    `privateIpGoogleAccess`, public Cloud NAT subnet coverage, matching
+    egress/deny firewall rules, and private Cloud DNS zone network bindings.
+-   `--action=classpath`: maps runtime/image version to Spark and Scala binary
+    versions (`2.13` on Serverless `2.x`/`3.0` and Cluster Image `3.0`; `2.12`
+    on GCE Cluster `2.x` and Serverless `1.x`), checks attached JARs and
+    `spark.jars.packages` for Scala ABI mismatches, lists distributed
+    `--files` / `--py-files` / `--archives` and cluster `optionalComponents`,
+    and surfaces catalog, SQL, and execution properties. Secondary `403`/`404`
+    checks degrade into `warnings` without failing the run.
 
 --------------------------------------------------------------------------------
 
