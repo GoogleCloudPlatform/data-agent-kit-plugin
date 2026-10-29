@@ -5,8 +5,7 @@
       "command": "node",
       "type": "stdio",
       "args": [
-        "${PLUGIN_ROOT}/mcp/dist/index.js",
-        "--mode=notebook"
+        "${PLUGIN_ROOT}/mcp/dist/notebook-mcp.js"
       ]
     },
     "dak-data-agent-kit": {

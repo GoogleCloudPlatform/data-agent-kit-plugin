@@ -13,17 +13,17 @@ How to run the optional verification (SKILL.md Step 2) for a Serverless workload
 - **Custom container image:** `--container-image=<TARGET_IMAGE_URI>` only if the source batch used a custom container; the image must be rebuilt for the target runtime.
 - **Carry forward from the source batch:** the entry point, job arguments, properties, and dependency flags (for PySpark: `--py-files`, `--jars`, `--files`, `--archives`), with the Step 1 changes applied.
 - **Resources:** Serverless has no machine types: the source batch's [resource allocation properties](https://docs.cloud.google.com/managed-spark/docs/concepts/spark-properties-serverless#resource_allocation_properties), passed with `--properties`, set the hardware. Keep them as the source set them: driver and executor cores, memory, and memory overhead; disk size and tier; compute tier and `dataproc.tier`; `spark.executor.instances`; and the `spark.dynamicAllocation.*` limits. Anything the source didn't set uses the Serverless default (e.g. 4 cores per executor, autoscaling up to 1000 executors).
-- **Staged code:** upload the changed code and its dependencies to `<target_path>/upg-verify_<app_id>_temp/`.
-- **Output:** every output, redirected as SKILL.md rule 4 describes: list each job argument or property you changed, or the `_temp` copy of the code.
+- **Staged code:** if the job's output paths are hardcoded in the script (rather than passed via CLI arguments), create a separate temporary file `<script>_<app_id>_temp.py` in which every output path is redirected to `<target_path>/test-output_<app_id>_temp/` (while keeping the original production output path untouched in `<script>.py`). Upload the verification script (`<script>_<app_id>_temp.py` or `<script>.py`) and its dependencies to the temporary staging location (or `<target_path>/upg-verify_<app_id>_temp/`).
+- **Output:** every output, redirected as SKILL.md rule 4 describes: list each job argument or property you changed, or the `_temp` copy of the code. Never submit the un-redirected script that writes to production output paths during Step 2 verification.
 
 **Confirm before you submit the batch (checkpoint 2).** Show the user every value above, resource properties included, and where each came from (SKILL.md rule 1): the user, the source batch, or the Serverless default. Ask them to confirm the configuration or say what to change, e.g. a lower `spark.dynamicAllocation.maxExecutors` to cap the cost. Apply any changes, and re-check changed inputs as `serverless_input_validations.md` describes. Retries (SKILL.md Step 2.3) reuse the confirmed configuration; ask again only if a fix needs a different one. If the user asked to automatically approve the workflow (SKILL.md rule 5), show the configuration and continue without waiting, here and on retries.
 
 ## V2. Submit the test batch
 
-Submit with the `gcloud dataproc batches submit` subcommand for the job type, keeping the flags shown here. For PySpark:
+Submit with the `gcloud dataproc batches submit` subcommand for the job type, keeping the flags shown here. For PySpark (using the `_temp` script copy if outputs were hardcoded in the script):
 
 ```bash
-gcloud dataproc batches submit pyspark <target_path>/upg-verify_<app_id>_temp/<SCRIPT>.py \
+gcloud dataproc batches submit pyspark <STAGED_VERIFY_SCRIPT_GCS_URI> \
     --batch=upg-verify-<unique-id> \
     --project=<PROJECT_ID> \
     --region=<REGION> \
