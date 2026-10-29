@@ -61,7 +61,16 @@ code line.
 
 --------------------------------------------------------------------------------
 
-### 4. Remediation Plan
+### 4. Later Blockers
+
+Faults on code paths that this run never reached, such as a write that comes
+after the failing step. Each would fail the workload once the root cause is
+fixed, so list each one with its evidence and its own least-privilege fix, and
+keep it out of the root cause above. Omit this section when there are none.
+
+--------------------------------------------------------------------------------
+
+### 5. Remediation Plan
 
 #### Immediate Fix
 
