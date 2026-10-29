@@ -9,10 +9,10 @@
     before tables can be read.
 -   Multiple Iceberg catalogs can be configured in the same spark session.
 -   [!IMPORTANT] You **MUST** identify the storage layer for the BigLake Iceberg
-    table before configuring the spark session. Use
-    `@skill:discovering-gcp-data-assets` to **search** and **lookup** the table
-    details. Check the value for the `metadataPath` field from the lookup
-    results to confirm it uses GCS storage (starts with `gs:`).
+    table before configuring the spark session. Use `@skill:knowledge-catalog`
+    to **search** and **lookup** the table details. Check the value for the
+    `metadataPath` field from the lookup results to confirm it uses GCS storage
+    (starts with `gs:`).
 -   [!WARNING] **DO NOT** assume catalog_name, project_id, io implementation for
     a table, **ALWAYS lookup** table details before proceeding.
 
