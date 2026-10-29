@@ -67,8 +67,8 @@ region.
 
     -   **Single Transfer Found**:
 
-        -   Check if the transfer has at least one successful run: `bq ls
-            --transfer_run --transfer_config=<RESOURCE_NAME>`
+        -   Check if the transfer has at least one successful run:
+            `bq ls --transfer_run --transfer_config=<RESOURCE_NAME>`
         -   If found: Use existing transfer config.
         -   If not found: Confirm with user if it's ok to trigger the transfer
             run.
