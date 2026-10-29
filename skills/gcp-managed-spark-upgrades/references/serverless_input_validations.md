@@ -76,9 +76,11 @@ For a Shared VPC subnet (`projects/<HOST_PROJECT_ID>/regions/<REGION>/subnetwork
 
 Reuse the source batch's `environmentConfig.executionConfig.serviceAccount`. If none was recorded, the source ran as its runtime's default identity (the Compute Engine default service account on 1.x/2.x, end-user credentials on 3.x): don't ask for one, even for a 3.x target, and submit the verification batch without `--service-account`. On a 1.x/2.x target it then runs as the same default identity; on a 3.x target it runs with the end-user credentials of the account that submits it. Show that identity and its source (the Serverless default) in the V1 configuration. For a 3.x target, also report the identity change and that automated production submitters must pass `--service-account` (see "Runtime 3.x platform changes"); if the verification batch fails with a permission error on the job's data, ask the user for a service account that has access instead of changing the code. Without a Batch ID there is no source identity to reuse: ask whether to provide one for the verification run.
 
-### Custom container image (only if the source batch used one)
+### Custom container image
 
-Don't ask about a container image unless the source batch had `runtimeConfig.containerImage`. An image built for the source runtime isn't automatically valid for the target, so ask for an image rebuilt for the target runtime, and review its configuration or Dockerfile when available:
+When a Batch ID is provided and `runtimeConfig.containerImage` is empty, the source batch used the standard Serverless container—don't ask for a custom container image. When **no Batch ID** is provided, ask the user for the Custom container image (noting `NO` is acceptable if using the standard runtime container) alongside the other missing mandatory inputs (`Target Project ID`, `Target Region`, `Temporary GCS staging location`, `Target GCS bucket`, and `Subnet`).
+
+When a custom container image is used, an image built for the source runtime isn't automatically valid for the target, so ask for an image rebuilt for the target runtime, and review its configuration or Dockerfile when available:
 - It is hosted in Artifact Registry or Container Registry.
 - It contains no Spark and no JRE: the runtime mounts them.
 - For PySpark: it contains no installed `pyspark` package (an old `pyspark` in the image shadows the target version), and if it sets `PYSPARK_PYTHON` to its own environment, that Python (not the runtime's) runs the job, so it must meet the target Spark's Python requirement and its packages must be built for it.

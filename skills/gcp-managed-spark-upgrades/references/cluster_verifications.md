@@ -11,8 +11,8 @@ How to run the optional verification (SKILL.md Step 2) for a cluster job: a temp
 - **Hardware:** match the source cluster's machine types, worker count, disks, and accelerators.
 - **Cluster properties and initialization actions:** carry forward the source cluster's (e.g. `dataproc:pip.packages`, Conda settings, GPU or RAPIDS initialization actions), with the Step 1 compatibility changes applied (e.g. the target `rapids-version` metadata).
 - **Job settings:** the source job's entry point, arguments, properties, and dependency flags (for PySpark: `--py-files`, `--jars`, `--files`, `--archives`), with the Step 1 changes applied.
-- **Staged code:** upload the changed code and its dependencies to `<target_path>/upg-verify_<app_id>_temp/`.
-- **Output:** every output, redirected as SKILL.md rule 4 describes: list each job argument or property you changed, or the `_temp` copy of the code.
+- **Staged code:** if the job's output paths are hardcoded in the script (rather than passed via CLI arguments), create a separate temporary file `<script>_<app_id>_temp.py` in which every output path is redirected to `<target_path>/test-output_<app_id>_temp/` (while keeping the original production output path untouched in `<script>.py`). Upload the verification script (`<script>_<app_id>_temp.py` or `<script>.py`) and its dependencies to the temporary staging location (or `<target_path>/upg-verify_<app_id>_temp/`).
+- **Output:** every output, redirected as SKILL.md rule 4 describes: list each job argument or property you changed, or the `_temp` copy of the code. Never submit the un-redirected script that writes to production output paths during Step 2 verification.
 
 **Confirm before you create the cluster (checkpoint 2).** Show the user every value above and where each came from (SKILL.md rule 1). Ask them to confirm the configuration or say what to change, e.g. fewer workers to lower the cost. Apply any changes, and re-check changed inputs as `cluster_input_validations.md` describes. Retries (SKILL.md Step 2.3) reuse the confirmed configuration; ask again only if a fix needs a different one. If the user asked to automatically approve the workflow (SKILL.md rule 5), show the configuration and continue without waiting, here and on retries.
 
@@ -34,10 +34,10 @@ gcloud dataproc clusters create upg-verify-<unique-id> \
 
 ## V3. Submit the job and confirm the result
 
-Submit with the `gcloud dataproc jobs submit` subcommand for the job type, keeping the cluster, project, region, label, and output redirection shown here. For PySpark:
+Submit with the `gcloud dataproc jobs submit` subcommand for the job type, keeping the cluster, project, region, label, and output redirection shown here. For PySpark (using the `_temp` script copy if outputs were hardcoded in the script):
 
 ```bash
-gcloud dataproc jobs submit pyspark <target_path>/upg-verify_<app_id>_temp/<SCRIPT>.py \
+gcloud dataproc jobs submit pyspark <STAGED_VERIFY_SCRIPT_GCS_URI> \
     --cluster=upg-verify-<unique-id> \
     --project=<PROJECT_ID> \
     --region=<REGION> \
