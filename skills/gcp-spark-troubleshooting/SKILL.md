@@ -1,9 +1,9 @@
 ---
 name: gcp-spark-troubleshooting
-description: "Provides expert guidance for troubleshooting Google Cloud Spark and Dataproc workloads (Dataproc Serverless batches and standard Dataproc clusters), and inspecting, streaming, searching, tailing, or summarizing Spark driver outputs and event logs in Cloud Storage. Use when the user asks to debug, troubleshoot, diagnose, or perform Root Cause Analysis (RCA) on failed Spark jobs, PySpark batches, or Spark event logs."
+description: "Provides expert guidance for troubleshooting Google Cloud Spark and Dataproc workloads (Dataproc Serverless batches/sessions and standard Dataproc clusters), extracting stage, SQL plan, and event-log workload telemetry (rows/bytes read and written, source/sink schemas, shuffle/spill/GC, and partition skew), and streaming, searching, tailing, or summarizing Spark driver outputs and event logs in Cloud Storage. Use when debugging, diagnosing, performing Root Cause Analysis (RCA), or inspecting Spark application/event-log metrics on failed or completed Spark jobs and PySpark batches."
 license: Apache-2.0
 metadata:
-  version: v4
+  version: v5
   publisher: google
 ---
 
@@ -29,13 +29,10 @@ guess or hallucinate error causes; you use tools to gather factual evidence.
 -   **NEVER create Jupyter notebooks or python scripts to analyze, read, or
     parse logs.**
 -   **NEVER submit Dataproc jobs or batches to process log files.**
--   **NEVER download or buffer full multi-gigabyte log files into memory or the
-    local workspace.**
--   **ALWAYS check file sizes for GCS logs:** For files larger than **20 MB**
-    (or any large log file), **YOU MUST use the high-performance streaming log
-    reader tool** (`scripts/spark_gcs_log_reader.py`).
--   When given a GCS URI (`gs://...` or `https://storage.googleapis.com/...`) or
-    asked to read/summarize a log, **YOU MUST IMMEDIATELY use
+-   **NEVER download or buffer log/event-log files into memory or the local
+    workspace** (no `mcp_cloud_storage_download_object` or `gcloud storage cat`
+    on logs or data files). For any GCS log or event-log URI (`gs://...` or
+    `https://storage.googleapis.com/...`), **IMMEDIATELY stream with
     `scripts/spark_gcs_log_reader.py`**.
 -   When asked to troubleshoot a **standard cluster job** (e.g. `troubleshoot
     cluster job <job_id>`), **YOU MUST check `driverOutputResourceUri`**, and
@@ -74,13 +71,13 @@ diagnoses or writes the RCA. Use only actions and flags that this file or
 `--help` lists; never invent one.
 
 -   **Required**: Python 3.8+ and an authenticated `gcloud` CLI.
-    -   `spark_applications.py` and `spark_stage_diagnostics.py` call
-        the Dataproc REST API with a token from `gcloud auth
-        print-access-token`. If that token is rejected (HTTP 401, for example
-        `ACCESS_TOKEN_TYPE_UNSUPPORTED` under context-aware access), they
-        retry automatically with `gcloud auth application-default
-        print-access-token`. If both fail, the fix is `gcloud auth
-        application-default login`.
+    -   `spark_applications.py`, `spark_stage_diagnostics.py`, and
+        `spark_gcs_log_reader.py` call Google Cloud REST APIs with a token from
+        `gcloud auth print-access-token`. If that token is rejected (HTTP 401,
+        for example `ACCESS_TOKEN_TYPE_UNSUPPORTED` under context-aware
+        access), they retry automatically with `gcloud auth
+        application-default print-access-token`. If both fail, the fix is
+        `gcloud auth application-default login`.
 -   **Optional enhancements** — each has an automatic fallback, so never block
     on them:
     -   A JDK on `PATH` gives full `javap` opcode disassembly in
@@ -165,17 +162,24 @@ For a Spark log, event log, or driver output (`gs://...` or
 `https://storage.googleapis.com/...`), use `scripts/spark_gcs_log_reader.py
 --uri=<URI>` (run it with `--help` for the full interface):
 
--   `--action=info` first; for files over 20 MB or `.zst`/`.gz`, stream.
--   **Event logs**: `--action=summarize_events` (single pass: failed stages and
-    tasks with root-cause exceptions, lost executors, spills, line indices).
--   **Driver output** (`driveroutput.000000000`): `--action=tail --lines=100`
-    for the final exception.
+-   `--action=info` first; for files over 20 MB or `.zst`/`.gz`, stream (see
+    `references/gcs_event_log_guide.md`).
+-   **Event logs**: `--action=summarize_events` (single pass: app duration,
+    executors/cores added, peak `JVMHeapMemory`/`JVMOffHeapMemory`/`PyRSS`,
+    deduplicated task-summed input/output/shuffle bytes and rows, per-stage task
+    duration and partition row skew with normalized `stage_skew_score` and
+    `job_skew_score`, SQL operator metrics/schemas, Spark Connect / SDP
+    `SparkListenerConnectOperation*` operations and `jobTag`s, failed
+    stages/tasks with exceptions, lost executors, spills, line indices; resolves
+    `application_<id>` prefixes and `eventlog_v2_application_<id>` shards).
+-   **Driver output** (`driveroutput.000000000`): `--action=tail --lines=100`.
 -   **Search**: `--action=search --regex=<re>` (or `--substring`) with
-    `--ignore_case`; `--context` and `--max_matches` bound the output. If a
-    search returns zero matches, retry with `--ignore_case` before concluding
-    the pattern is absent.
--   **Around line N**: `--action=read_range --start_line=<N-20>
-    --end_line=<N+20>` (at most 5000 lines per call).
+    `--ignore_case`; `--context` and `--max_matches` bound output. Retry with
+    `--ignore_case` if zero matches return before concluding a pattern is
+    absent.
+-   **Around line N**:
+    `--action=read_range --start_line=<N-20> --end_line=<N+20>` (at most 5000
+    lines per call).
 
 --------------------------------------------------------------------------------
 
@@ -184,30 +188,42 @@ For a Spark log, event log, or driver output (`gs://...` or
 Dataproc serves the Spark UI data of every Serverless batch and session (jobs,
 stages, tasks, executors, SQL, environment) through the `sparkApplications` REST
 API. **No Persistent History Server and no `spark.eventLog.dir` are needed**,
-and the data stays available after the workload ends. `gcloud` has no command
-for this API, so use `scripts/spark_applications.py` (run it with `--help` for
-the full interface):
+and data stays available after completion. Run `scripts/spark_applications.py`
+(`--help` for full interface; `--snake_case` and `--kebab-case` flags accepted):
 
 ```
 python3 scripts/spark_applications.py --batch_id=<ID> --region=<REGION> --action=summary
 ```
 
-Use `--session_id` for a session and `--project` if it differs from the active
-gcloud project. Go through the actions in this order and stop once you have the
-evidence:
+Use `--session_id` for a session and `--project` if it differs from active
+gcloud:
 
--   `summary`: counts, GC share, dead executors, and **every failed stage with
-    its condensed failure reason**. Start here.
--   `stages` (`--stage_status=FAILED`, `--sort=duration|run_time`): one row per
-    stage.
--   `stage --stage_id=<N>`: task quantiles for one attempt (skew, stragglers).
--   `tasks --stage_id=<N>` (`--task_status=FAILED`): tasks, with identical
-    errors collapsed.
--   `sql --execution_id=<N>`: joins in the initial vs. final query plan (sort
-    merge joins that AQE turned into broadcast joins) and the `data size` of
-    each exchange. Use it to recommend `spark.sql.autoBroadcastJoinThreshold`.
--   `executors` (`--executor_status=DEAD`), `jobs`, `sql`, `environment`
-    (`--grep=<text>` for Spark properties).
+-   `summary`: counts, cores/`maxTasks`, GC share, dead executors, and failed
+    stages with reasons (note: `storage memory used` reflects cached RDD blocks,
+    not JVM execution heap — inspect `executors` for peak heap/off-heap).
+-   `stages` (`--stage_status=FAILED`, `--sort=duration|run_time`,
+    `--quantiles`): per-stage and completed-stage summed input/output/shuffle
+    bytes and record counts; adding `--quantiles` renders per-stage task
+    duration & partition row skew (`stage_skew_score` and duration-weighted
+    `job_skew_score`).
+-   `stage --stage_id=<N>`: task quantiles (duration, executor CPU time,
+    shuffle fetch wait, bytes, record counts, peak execution memory) and
+    `stage_skew_score`.
+-   `tasks --stage_id=<N>` (`--task_status=FAILED`): tasks with collapsed errors.
+-   `sql --execution_id=<N>`: joins in initial vs. final plan, operator I/O
+    metrics (`number of output rows`, `number of BQ rows read`,
+    `number of BQ bytes read`, `size of files read`, `written output`,
+    `number of written files`, exchange `data size`), and
+    `Source & Sink Operator Schemas` (columns and table/GCS paths). Note:
+    Spark's `avg file size written` is a `size`-summed accumulator across tasks
+    and driver; compute true average file size as
+    `written output / number of written files`. Cross-check `bq show`,
+    `gcloud biglake iceberg tables describe`, or `gcloud storage ls -l -r` when
+    DataSourceV2 or `SaveIntoDataSourceCommand` bypasses Hadoop RDD stage output
+    counters.
+-   `executors` (`--executor_status=DEAD`): per-executor `Cores (maxTasks)` and
+    `Peak Heap / Off-Heap` (`JVMHeapMemory`, `JVMOffHeapMemory`, `PyRSS`),
+    plus `jobs`, `sql`, `environment` (`--grep=<text>` for Spark properties).
 
 "No Spark application found" means the driver never started; zero stages
 means the job failed before its first Spark action. In both cases the cause is
@@ -274,8 +290,14 @@ diagnostic plan or run any script before it passes.**
             <BATCH_ID> --region=<REGION> --format="json"`.
         -   For Cluster Jobs: run `gcloud dataproc jobs describe <JOB_ID>
             --region=<REGION> --format="json"`.
-    -   **Quick Win**: Check `stateMessage` or `status.details` immediately for
-        quick diagnosis of errors (e.g. `OutOfMemoryError`, `PATH_NOT_FOUND`).
+    -   **Quick Win & Control-Plane Metrics**: Check `stateMessage` /
+        `status.details` immediately for errors; extract active `RUNNING`
+        duration (`stateHistory`/`statusHistory`), Serverless usage
+        (`milliDcuSeconds / 3,600,000` DCU-hours; `shuffleStorageGbSeconds /
+        2,592,000` GB-months), or cluster `yarnApplications` (`vcoreSeconds`,
+        `memoryMbSeconds`). On failed runs, verify `0` committed sink rows/bytes
+        (`bq show`, `gcloud biglake iceberg tables describe`, or
+        `gcloud storage ls`) rather than reporting scan counts as output.
 
 2.  **Log Retrieval & Evidence Gathering**:
 
