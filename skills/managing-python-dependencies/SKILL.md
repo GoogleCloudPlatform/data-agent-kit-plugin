@@ -13,7 +13,7 @@ description: |
     6. Before executing Python scripts via the terminal to ensure the correct virtual environment is active.
 license: Apache-2.0
 metadata:
-  version: v3
+  version: v4
   publisher: google
 ---
 
@@ -34,15 +34,16 @@ metadata:
 > installed (for example, on `ModuleNotFoundError` / `ImportError` or an
 > explicit user request to install dependencies).
 >
-> - **In Notebooks**: When a notebook cell execution tool (`execute_cell` /
->   `notebook_execute_cell`) is available, check package availability (`import
->   <pkg>` or `%pip list`) and install missing packages (`%pip install`)
->   **inside notebook cells**, never via `python3 -c` or `pip` in the shell.
-> - **In the Shell (Only When Installing)**: When a shell check is required
->   before installing a missing package for a local script or project, you MUST
->   NOT run multiple sequential 1-line shell check commands. Combine all
->   environment and package availability probes into a single composite python
->   one-liner or shell check step:
+> -   **In Notebooks**: When a notebook cell execution tool (`execute_cell` /
+>     `notebook_execute_cell`) is available, check package availability
+>     (`import <pkg>` or `%pip list`) and install missing packages
+>     (`%pip install`) **inside notebook cells**, never via `python3 -c` or
+>     `pip` in the shell.
+> -   **In the Shell (Only When Installing)**: When a shell check is required
+>     before installing a missing package for a local script or project, you
+>     MUST NOT run multiple sequential 1-line shell check commands. Combine all
+>     environment and package availability probes into a single composite python
+>     one-liner or shell check step:
 >
 > ```bash
 > python3 -c "import sys, importlib.util; print(f'Python {sys.version.split()[0]}'); [(print(f'{pkg}: {__import__(pkg).__version__}') if importlib.util.find_spec(pkg) else print(f'{pkg}: not found')) for pkg in ['pyspark', 'google.cloud.bigquery']]"
@@ -50,8 +51,8 @@ metadata:
 >
 > This bundling also applies to dependency manager detection; when an install is
 > needed, use a single `ls` or `find` command to check for all potential
-> dependency manager configuration and lock files at once (e.g. `ls uv.lock
-> poetry.lock Pipfile.lock requirements.txt pyproject.toml`).
+> dependency manager configuration and lock files at once (e.g.
+> `ls uv.lock poetry.lock Pipfile.lock requirements.txt pyproject.toml`).
 
 ## Dependency Manager Detection (Only When Installing)
 

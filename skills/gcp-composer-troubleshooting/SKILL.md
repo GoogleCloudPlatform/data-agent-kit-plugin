@@ -8,7 +8,7 @@ description: 'Provides expert guidance for troubleshooting Cloud Composer (Apach
   '
 license: Apache-2.0
 metadata:
-  version: v1
+  version: v2
   publisher: google
 ---
 
@@ -132,8 +132,9 @@ When the RCA is complete and a fix is ready:
 4.  **RCA**: "The DAG failed because the `process_sales` task encountered a
     `KeyError: 'region'`. The code at line 45 assumes 'region' always exists,
     but yesterday's data likely had missing values."
-5.  **Fix**: "I recommend adding a default value: `record.get('region',
-    'unknown')`." Providing the existing code how to fix it and error messages.
+5.  **Fix**: "I recommend adding a default value:
+    `record.get('region', 'unknown')`." Providing the existing code how to fix
+    it and error messages.
 6.  **RCA Report**: Generate a Root Cause Analysis (RCA) report and save it to a
     file.
 

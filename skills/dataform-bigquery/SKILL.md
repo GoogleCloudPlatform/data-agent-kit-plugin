@@ -7,7 +7,7 @@ description: Expertise in generating clean, correct, and efficient Dataform pipe
   up a new Dataform project or configuring workflow_settings.yaml.
 license: Apache-2.0
 metadata:
-  version: v7
+  version: v8
   publisher: google
 ---
 
@@ -39,8 +39,8 @@ Follow these steps when fulfilling Dataform-related requests:
     running `node -v` and `npm -v` respectively.
 3.  If Node.js or npm are not installed already, ask the user to install them.
 4.  If they are both installed, proceed to install the dataform CLI by running
-    `npm i -g @dataform/cli` and verifying the installation with `dataform
-    --version`.
+    `npm i -g @dataform/cli` and verifying the installation with
+    `dataform --version`.
 5.  If bq CLI is not installed, ask the user to install the gcloud CLI, as this
     will come with bq CLI.
 6.  If no GCP project ID is provided in the user's request, determine the
@@ -53,8 +53,8 @@ Follow these steps when fulfilling Dataform-related requests:
     `workflow_settings.yaml` file.
     *   **If `workflow_settings.yaml` is NOT found**:
         *   Assume the repository is uninitialized.
-        *   Initialize it by running `dataform init <PROJECT_DIR> <PROJECT_ID>
-            <DEFAULT_LOCATION>`.
+        *   Initialize it by running
+            `dataform init <PROJECT_DIR> <PROJECT_ID> <DEFAULT_LOCATION>`.
         *   Example: `dataform init my-repo my-gcp-project us-central1` will
             create a repository in `my-repo`.
     *   **If `workflow_settings.yaml` IS found**:
@@ -90,10 +90,10 @@ Follow these steps when fulfilling Dataform-related requests:
         `<PROJECT_ID>.<DATASET_ID>.INFORMATION_SCHEMA.PROPERTY_GRAPHS` LIMIT
         100"``
     -   **Check Schema/Info**: `bq show --schema --format=prettyjson
-        <PROJECT_ID>:<DATASET_ID>.<TABLE_ID>` or `bq show --format=prettyjson
-        <PROJECT_ID>:<DATASET_ID>.<TABLE_ID>`
-    -   **Preview Data**: `bq head --format=prettyjson
-        <PROJECT_ID>:<DATASET_ID>.<TABLE_ID>`
+        <PROJECT_ID>:<DATASET_ID>.<TABLE_ID>` or
+        `bq show --format=prettyjson <PROJECT_ID>:<DATASET_ID>.<TABLE_ID>`
+    -   **Preview Data**:
+        `bq head --format=prettyjson <PROJECT_ID>:<DATASET_ID>.<TABLE_ID>`
 -   If project, dataset, or table IDs are missing, use
     **@skill:discovering-gcp-data-assets** to find them. **Ask the user** for
     confirmation if multiple candidates are found or if the correct asset is not
@@ -182,8 +182,8 @@ is successfully created (as instructed in the Understand the Current State
 step). MUST NOT execute a real `dataform run` without explicit user request.
 
 If `.df-credentials.json` could not be initialized via `dataform init-creds` or
-manual creation, fall back on other methods of validation, such as `dataform
-compile`, manual SQL inspection, and `bq query --dry_run`.
+manual creation, fall back on other methods of validation, such as
+`dataform compile`, manual SQL inspection, and `bq query --dry_run`.
 
 ## Incremental / Append Operations
 
@@ -193,21 +193,13 @@ compile`, manual SQL inspection, and `bq query --dry_run`.
 > targeting an **existing** BigQuery table. Never use `type: "operations"` for
 > these tasks.
 
-| Rule                      | Detail                                           |
-| ------------------------- | ------------------------------------------------ |
-| **Config**                | Set `type: "incremental"` and `name` to the      |
-:                           : **existing target table name**. `partitionBy` is :
-:                           : optional (typically a date/timestamp column).    :
-| **Body**                  | Must contain **only** a `SELECT` statement —     |
-:                           : **no** `INSERT`. Dataform auto-generates the     :
-:                           : `INSERT`.                                        :
-| **References**            | Use `${ref("source_table_name")}` to reference   |
-:                           : sources.                                         :
-| **Schema alignment**      | Column names and types in `SELECT` must match    |
-:                           : the target table schema. Fetch the schema if     :
-:                           : unknown.                                         :
-| **No target declaration** | Do **not** create a `declaration` file for the   |
-:                           : target table when using `type\: "incremental"`.  :
+Rule                      | Detail
+------------------------- | ------
+**Config**                | Set `type: "incremental"` and `name` to the **existing target table name**. `partitionBy` is optional (typically a date/timestamp column).
+**Body**                  | Must contain **only** a `SELECT` statement — **no** `INSERT`. Dataform auto-generates the `INSERT`.
+**References**            | Use `${ref("source_table_name")}` to reference sources.
+**Schema alignment**      | Column names and types in `SELECT` must match the target table schema. Fetch the schema if unknown.
+**No target declaration** | Do **not** create a `declaration` file for the target table when using `type: "incremental"`.
 
 ## SQL Optimization Rules
 
@@ -234,10 +226,10 @@ compile`, manual SQL inspection, and `bq query --dry_run`.
 
 ### Always Rewrite (Mandatory)
 
--   **`WHERE <col> IN (SELECT ...)`**: Replace With `WHERE EXISTS (SELECT 1 FROM
-    ...)`
--   **`WHERE (SELECT COUNT(*) ...) > 0`**: Replace With `WHERE EXISTS (SELECT 1
-    FROM ...)`
+-   **`WHERE <col> IN (SELECT ...)`**: Replace With
+    `WHERE EXISTS (SELECT 1 FROM ...)`
+-   **`WHERE (SELECT COUNT(*) ...) > 0`**: Replace With
+    `WHERE EXISTS (SELECT 1 FROM ...)`
 
 ### Propose with Confirmation (Conditional)
 

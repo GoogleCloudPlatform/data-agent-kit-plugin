@@ -27,7 +27,7 @@ description: >
 
 license: Apache-2.0
 metadata:
-  version: v5
+  version: v6
   publisher: google
 ---
 
@@ -253,6 +253,7 @@ Dataflow.
 -   When launching Python Pipelines without a Flex Template with
     `DataflowRunner`, you MUST scan the pipeline project directory for the
     following files:
+
     -   **`requirements.txt`**:
         -   If found, you MUST include `--requirements_file` pipeline option.
     -   **`setup.py`**:
@@ -280,9 +281,9 @@ pipeline).
 ### Universal Execution Workflow
 
 1.  **Construct Launch Command**: Draft the full launch command based on the
-    pipeline type (e.g., `gcloud dataflow flex-template run` or `python main.py
-    --runner=DataflowRunner`). Ensure workers default to private IP
-    configuration unless specified otherwise, and verify target project
+    pipeline type (e.g., `gcloud dataflow flex-template run` or
+    `python main.py --runner=DataflowRunner`). Ensure workers default to private
+    IP configuration unless specified otherwise, and verify target project
     permissions.
 2.  **Mandatory Pre-Launch Confirmation**: Present the *entire* drafted command
     to the user at once. Explain the purpose of all parameters (including
@@ -341,8 +342,8 @@ Use this section to monitor the progress of a running Dataflow job.
 
     *   Use Dataflow REST API to get High level Job Messages/Events that
         happened in the job.
-    *   Refer to [dataflow_diagnostics_reference.md][diag-ref] for
-        key metrics and logging query patterns based on Job Type.
+    *   Refer to [dataflow_diagnostics_reference.md][diag-ref] for key metrics
+        and logging query patterns based on Job Type.
     *   Use Monitoring REST API to fetch metrics.
     *   Use GCloud Logging command to fetch logs.
     *   Use Dataflow REST API to fetch current snapshot metrics when historical
@@ -352,8 +353,8 @@ Use this section to monitor the progress of a running Dataflow job.
 
     *   For Streaming Jobs
         *   Overall Job Health: YOU MUST refer to
-            [streaming_job_health](references/streaming_job_health.md) to analyze
-            overall streaming job health.
+            [streaming_job_health](references/streaming_job_health.md) to
+            analyze overall streaming job health.
         *   Analyze Bottlenecks and Parallelism. YOU MUST refer to
             [bottlenecks_and_parallelism_context][bottlenecks-context] and
             interpret the bottlenecks and parallelism metrics in that context.

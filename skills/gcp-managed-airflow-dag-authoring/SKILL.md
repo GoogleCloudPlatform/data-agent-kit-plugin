@@ -3,7 +3,7 @@ name: gcp-managed-airflow-dag-authoring
 description: Guides the authoring and validation of Apache Airflow DAGs for Managed Service for Apache Airflow (MSAA; formerly Cloud Composer). Covers environment context discovery, Airflow 2 vs 3 compatibility, authoring best practices, and local/remote validation processes. Use when creating or extending an Airflow DAG. Don't use when authoring Python code unrelated to Airflow DAGs.
 license: Apache-2.0
 metadata:
-  version: v1
+  version: v2
   publisher: google
 ---
 
@@ -16,10 +16,9 @@ Managed Service for Apache Airflow (MSAA; formerly Cloud Composer) environments.
 
 ## Phase 1: Context Discovery
 
-> [!IMPORTANT]
-> Before writing any DAG code, you MUST understand the constraints (e.g. version
-> of Airflow) and capabilities of your target environment if user is willing to
-> provide them.
+> [!IMPORTANT] Before writing any DAG code, you MUST understand the constraints
+> (e.g. version of Airflow) and capabilities of your target environment if user
+> is willing to provide them.
 
 ### 1.1 Identify Target Environment & Access
 
@@ -89,15 +88,14 @@ Run the following commands to discover version constraints:
 
 ### 2.2 Airflow 2 vs Airflow 3 Compatibility
 
-Reference @skill:gcp-managed-airflow-migrations to navigate adjusting the code to
-specific target Airflow version.
+Reference @skill:gcp-managed-airflow-migrations to navigate adjusting the code
+to specific target Airflow version.
 
 --------------------------------------------------------------------------------
 
 ## Phase 3: Validation Process
 
-> [!IMPORTANT]
-> You MUST validate DAGs before concluding your task.
+> [!IMPORTANT] You MUST validate DAGs before concluding your task.
 
 ### 3.1 Local Validation (Offline/Pre-deployment)
 
