@@ -8,7 +8,7 @@ description: This skill helps the agent generate or update orchestration pipelin
   deploy and trigger orchestration pipelines.
 license: Apache-2.0
 metadata:
-  version: v4
+  version: v5
   publisher: google
 ---
 
@@ -289,6 +289,12 @@ following fields:
     `notifications.onPipelineSuccess.email` and
     `notifications.onPipelineFailure.email` (each a list of email strings).
 
+-   **Retry Policies (`retryPolicy`)**: Optional, under `defaults.retryPolicy`
+    and/or `<action>.retryPolicy`; `maxRetries` is required, the strategy is
+    optional. You **MUST NOT** use deprecated `defaults.executionConfig`. See
+    Reminder 9 in `references/orchestration-pipelines-schema.md` for the fields
+    and duration format.
+
 -   Before creating or updating the `deployment.yaml` file, you **must** first
     run the following command to get the list of available Composer environments
     for the user's project.
@@ -321,10 +327,12 @@ following fields:
     `composer-2.16.11-airflow-2.9.3`, or select an environment
     where `orchestration-pipelines` package is listed in the PyPI
     packages. This ensures the selected environment is compatible with
-    orchestration pipelines. Pipelines with an
-    `agentPlatform.createAndRunCustomJob` action MUST use an Airflow 2.11+ or
-    3.x image (e.g. `composer-3-airflow-3.1.7-build.x`,
-    `composer-3-airflow-2.11.1-build.x`).
+    orchestration pipelines. Pipelines using v1.2.0 features
+    (`agentPlatform.createAndRunCustomJob`, `notifications.onPipelineSuccess`,
+    `retryPolicy`) MUST target an environment whose `orchestration-pipelines`
+    package is `>= 1.2.0` (an Airflow 2.11+/3.x image, or the package pinned in
+    `pypiPackages`); on older environments `validate` and `deploy` succeed but
+    DAG parsing fails at runtime (e.g. `no field named "retryPolicy"`).
 
 -   Third, before generating the `deployment.yaml` file, you **must ask the
     user** to provide the `artifact_storage` bucket name. Note that the
@@ -379,7 +387,9 @@ gcloud beta orchestration-pipelines validate --environment=<ENV_NAME>
         `references/orchestration-pipelines-schema.md`, you MUST verify the
         Google Cloud CLI version (check the CLI's internal `model_version` with
         `gcloud beta orchestration-pipelines info`;
-        `createAndRunCustomJob` and `onPipelineSuccess` require `model_version` `1.2.X` or higher).
+        `createAndRunCustomJob`, `onPipelineSuccess`, and `retryPolicy` require
+        CLI `model_version` `1.2.X` or higher; do NOT change the pipeline
+        YAML's `modelVersion: "1.0"`).
         Ask the user to run `gcloud components update` and re-validate. Do NOT
         rewrite the action into a different type.
 
