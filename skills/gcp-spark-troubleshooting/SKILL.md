@@ -3,7 +3,7 @@ name: gcp-spark-troubleshooting
 description: "Provides expert guidance for troubleshooting Google Cloud Spark and Dataproc workloads (Dataproc Serverless batches and standard Dataproc clusters), and inspecting, streaming, searching, tailing, or summarizing Spark driver outputs and event logs in Cloud Storage. Use when the user asks to debug, troubleshoot, diagnose, or perform Root Cause Analysis (RCA) on failed Spark jobs, PySpark batches, or Spark event logs."
 license: Apache-2.0
 metadata:
-  version: v4
+  version: v5
   publisher: google
 ---
 
@@ -37,20 +37,20 @@ guess or hallucinate error causes; you use tools to gather factual evidence.
 -   When given a GCS URI (`gs://...` or `https://storage.googleapis.com/...`) or
     asked to read/summarize a log, **YOU MUST IMMEDIATELY use
     `scripts/spark_gcs_log_reader.py`**.
--   When asked to troubleshoot a **standard cluster job** (e.g. `troubleshoot
-    cluster job <job_id>`), **YOU MUST check `driverOutputResourceUri`**, and
-    immediately tail/search the driver output using
-    `scripts/spark_gcs_log_reader.py` with `--action=tail --lines=100`.
+-   When asked to troubleshoot a **standard cluster job** (e.g.
+    `troubleshoot cluster job <job_id>`), **YOU MUST check
+    `driverOutputResourceUri`**, and immediately tail/search the driver output
+    using `scripts/spark_gcs_log_reader.py` with `--action=tail --lines=100`.
 -   When asked to troubleshoot a **Dataproc Serverless batch or session** (e.g.
     `troubleshoot batch <batch_id>`), follow the **Evidence Flow by Workload
-    Type** below: inspect `stateMessage`, then gather all three evidence
-    sources for Serverless (**logs**, **Spark application data**, **code**)
-    before concluding. **Serverless stage data comes from the
-    `sparkApplications` API through `scripts/spark_applications.py`; it does
-    not depend on a Persistent History Server, `spark.eventLog.dir`, or Cloud
-    Logging.** An empty `sparkHistoryServerConfig`, no event log in GCS, or
-    empty Cloud Logging results never show that stage data is unavailable;
-    only `scripts/spark_applications.py` itself can show that.
+    Type** below: inspect `stateMessage`, then gather all three evidence sources
+    for Serverless (**logs**, **Spark application data**, **code**) before
+    concluding. **Serverless stage data comes from the `sparkApplications` API
+    through `scripts/spark_applications.py`; it does not depend on a Persistent
+    History Server, `spark.eventLog.dir`, or Cloud Logging.** An empty
+    `sparkHistoryServerConfig`, no event log in GCS, or empty Cloud Logging
+    results never show that stage data is unavailable; only
+    `scripts/spark_applications.py` itself can show that.
 -   **NEVER `cat`, `gcloud storage cat`, or text-decode a `.jar`, `.zip`, or
     `.class` file** — they are binary and will render as unreadable output. To
     inspect Java/Scala Spark jobs, **YOU MUST use
@@ -74,13 +74,12 @@ diagnoses or writes the RCA. Use only actions and flags that this file or
 `--help` lists; never invent one.
 
 -   **Required**: Python 3.8+ and an authenticated `gcloud` CLI.
-    -   `spark_applications.py` and `spark_stage_diagnostics.py` call
-        the Dataproc REST API with a token from `gcloud auth
-        print-access-token`. If that token is rejected (HTTP 401, for example
-        `ACCESS_TOKEN_TYPE_UNSUPPORTED` under context-aware access), they
-        retry automatically with `gcloud auth application-default
-        print-access-token`. If both fail, the fix is `gcloud auth
-        application-default login`.
+    -   `spark_applications.py` and `spark_stage_diagnostics.py` call the
+        Dataproc REST API with a token from `gcloud auth print-access-token`. If
+        that token is rejected (HTTP 401, for example
+        `ACCESS_TOKEN_TYPE_UNSUPPORTED` under context-aware access), they retry
+        automatically with `gcloud auth application-default print-access-token`.
+        If both fail, the fix is `gcloud auth application-default login`.
 -   **Optional enhancements** — each has an automatic fallback, so never block
     on them:
     -   A JDK on `PATH` gives full `javap` opcode disassembly in
@@ -96,11 +95,11 @@ diagnoses or writes the RCA. Use only actions and flags that this file or
 
 ## Evidence Flow by Workload Type
 
-Every diagnosis draws on three evidence sources: **logs** (what failed),
-**Spark application data** (how the jobs, stages, tasks and executors behaved),
-and **code** (why). Where each one lives depends on the workload type, so
-classify the workload first (`gcloud dataproc batches describe` / `jobs
-describe`), then collect the sources for that type.
+Every diagnosis draws on three evidence sources: **logs** (what failed), **Spark
+application data** (how the jobs, stages, tasks and executors behaved), and
+**code** (why). Where each one lives depends on the workload type, so classify
+the workload first (`gcloud dataproc batches describe` / `jobs describe`), then
+collect the sources for that type.
 
 Spark application data is **not** the same as the
 [Serverless metrics in Cloud Monitoring](https://docs.cloud.google.com/managed-spark/docs/concepts/metrics-serverless).
@@ -115,11 +114,11 @@ optional extra input; they have no per-stage records and cannot replace
     nothing (for example, beyond its retention), the driver output in GCS at
     `<runtimeInfo.outputUri>.000000000`, read with
     `scripts/spark_gcs_log_reader.py`.
--   **Spark application data**: **`scripts/spark_applications.py
-    --action=summary`, then `--action=stages`; rules with
-    `scripts/spark_stage_diagnostics.py`.** Served by the `sparkApplications`
-    API: no History Server or event log needed, and available after the
-    workload ends.
+-   **Spark application data**:
+    **`scripts/spark_applications.py --action=summary`, then `--action=stages`;
+    rules with `scripts/spark_stage_diagnostics.py`.** Served by the
+    `sparkApplications` API: no History Server or event log needed, and
+    available after the workload ends.
 -   **Code**: `pysparkBatch.mainPythonFileUri` or `sparkBatch.mainJarFileUri`,
     with `scripts/spark_code_inspector.py`.
 
@@ -127,9 +126,8 @@ optional extra input; they have no per-stage records and cannot replace
 
 -   **Logs**: `driverOutputResourceUri` with `scripts/spark_gcs_log_reader.py`;
     Cloud Logging (`cloud_dataproc_job`) as a fallback.
--   **Spark application data**: the Spark event log under
-    `spark.eventLog.dir`, with `scripts/spark_gcs_log_reader.py
-    --action=summarize_events`.
+-   **Spark application data**: the Spark event log under `spark.eventLog.dir`,
+    with `scripts/spark_gcs_log_reader.py --action=summarize_events`.
 -   **Code**: `pysparkJob.mainPythonFileUri` or the job's JAR, with
     `scripts/spark_code_inspector.py`.
 
@@ -150,9 +148,9 @@ optional extra input; they have no per-stage records and cannot replace
 -   **An application with zero stages**: the job failed before its first Spark
     action (analysis, parse, or driver-side errors). The cause is in the logs
     and code; the Spark application data only confirms that no stage ran.
--   **A fetch error** (permission, not found): report it with the exact
-    command. Do not substitute event-log or History Server checks; they are
-    not where Serverless stage data comes from.
+-   **A fetch error** (permission, not found): report it with the exact command.
+    Do not substitute event-log or History Server checks; they are not where
+    Serverless stage data comes from.
 
 Before reporting that stage data is unavailable or that a job "ran no stages",
 quote the `scripts/spark_applications.py` output that shows it.
@@ -162,8 +160,9 @@ quote the `scripts/spark_applications.py` output that shows it.
 ## Direct Log Reading & Analysis Workflow (GCS / HTTPS URLs)
 
 For a Spark log, event log, or driver output (`gs://...` or
-`https://storage.googleapis.com/...`), use `scripts/spark_gcs_log_reader.py
---uri=<URI>` (run it with `--help` for the full interface):
+`https://storage.googleapis.com/...`), use
+`scripts/spark_gcs_log_reader.py --uri=<URI>` (run it with `--help` for the full
+interface):
 
 -   `--action=info` first; for files over 20 MB or `.zst`/`.gz`, stream.
 -   **Event logs**: `--action=summarize_events` (single pass: failed stages and
@@ -174,8 +173,9 @@ For a Spark log, event log, or driver output (`gs://...` or
     `--ignore_case`; `--context` and `--max_matches` bound the output. If a
     search returns zero matches, retry with `--ignore_case` before concluding
     the pattern is absent.
--   **Around line N**: `--action=read_range --start_line=<N-20>
-    --end_line=<N+20>` (at most 5000 lines per call).
+-   **Around line N**:
+    `--action=read_range --start_line=<N-20> --end_line=<N+20>` (at most 5000
+    lines per call).
 
 --------------------------------------------------------------------------------
 
@@ -209,9 +209,9 @@ evidence:
 -   `executors` (`--executor_status=DEAD`), `jobs`, `sql`, `environment`
     (`--grep=<text>` for Spark properties).
 
-"No Spark application found" means the driver never started; zero stages
-means the job failed before its first Spark action. In both cases the cause is
-in the logs. Failed tasks show never-collected metrics as `n/a`.
+"No Spark application found" means the driver never started; zero stages means
+the job failed before its first Spark action. In both cases the cause is in the
+logs. Failed tasks show never-collected metrics as `n/a`.
 
 --------------------------------------------------------------------------------
 
@@ -240,28 +240,29 @@ diagnostic plan or run any script before it passes.**
 
 0.  **Tooling & Environment Verification**:
 
-    -   **Verify the `gcloud` CLI is present and authenticated** via `gcloud
-        auth list`. Pass condition: an active account is returned. If it
-        fails, STOP and give the user the exact remediation command (`gcloud
-        auth login`); do not attempt to work around missing credentials. If an
-        account is active but a call returns `403`, diagnose missing IAM roles
-        instead of asking the user to log in again.
-    -   **Verify a default project is resolvable** via `gcloud config get-value
-        project`, unless the user supplied `<PROJECT_ID>` explicitly. Pass
-        condition: a non-empty value that is not `(unset)`.
+    -   **Verify the `gcloud` CLI is present and authenticated** via
+        `gcloud auth list`. Pass condition: an active account is returned. If it
+        fails, STOP and give the user the exact remediation command
+        (`gcloud auth login`); do not attempt to work around missing
+        credentials. If an account is active but a call returns `403`, diagnose
+        missing IAM roles instead of asking the user to log in again.
+    -   **Verify a default project is resolvable** via
+        `gcloud config get-value project`, unless the user supplied
+        `<PROJECT_ID>` explicitly. Pass condition: a non-empty value that is not
+        `(unset)`.
     -   **Verify Python 3.8+** is available as `python3`. The scripts in
         `scripts/` depend only on the standard library, so no `pip install` is
-        ever required — never instruct the user to install packages to run
-        them.
+        ever required — never instruct the user to install packages to run them.
     -   **Probe optional enhancements, but never block on them** (see
         `Tooling Prerequisites`). A missing JDK or `.zst` decoder degrades
         output quality; it does not prevent diagnosis. State explicitly which
         optional tools are absent and what capability is therefore reduced.
-    -   **Confirm the target is reachable** before planning around it. For a
-        GCS URI, run `python3 scripts/spark_gcs_log_reader.py --uri="<uri>"
-        --action=info`. Pass condition: the command reports a size. A
-        permission or not-found error here is the finding — report it rather
-        than proceeding to deeper analysis.
+    -   **Confirm the target is reachable** before planning around it. For a GCS
+        URI, run
+        `python3 scripts/spark_gcs_log_reader.py --uri="<uri>" --action=info`.
+        Pass condition: the command reports a size. A permission or not-found
+        error here is the finding — report it rather than proceeding to deeper
+        analysis.
 
 1.  **Context Gathering & Workload Classification**:
 
@@ -284,23 +285,22 @@ diagnostic plan or run any script before it passes.**
         -   **Logs**: use `gcloud logging read` with filter
             `resource.type="cloud_dataproc_batch" AND
             resource.labels.batch_id="<BATCH_ID>"`. Start with
-            `severity>=ERROR`. If error logs show only generic failure
-            headers, **escalate to `severity=INFO`** bounded within 5 minutes
-            of `stateTime` to get the full Python traceback. Inspect **both
+            `severity>=ERROR`. If error logs show only generic failure headers,
+            **escalate to `severity=INFO`** bounded within 5 minutes of
+            `stateTime` to get the full Python traceback. Inspect **both
             `jsonPayload.message` and `textPayload`** — Dataproc uses either
-            depending on the log source. If Cloud Logging returns nothing,
-            read the driver output at `<runtimeInfo.outputUri>.000000000` with
-            `scripts/spark_gcs_log_reader.py` (`--action=search
-            --regex='Exception|Error|Traceback' --ignore_case`, then
-            `--action=tail`).
+            depending on the log source. If Cloud Logging returns nothing, read
+            the driver output at `<runtimeInfo.outputUri>.000000000` with
+            `scripts/spark_gcs_log_reader.py`
+            (`--action=search --regex='Exception|Error|Traceback' --ignore_case`,
+            then `--action=tail`).
         -   **Spark application data**: run `python3
             scripts/spark_applications.py --batch_id=<BATCH_ID>
-            --region=<REGION> --action=summary` (or `--session_id`). It
-            lists every failed stage with its condensed task exception and the
-            dead executors, and tells you whether a Spark driver started at
-            all. Its result decides whether Step 3
-            applies (see `Dataproc Serverless: how to read the Spark
-            application data`).
+            --region=<REGION> --action=summary` (or `--session_id`). It lists
+            every failed stage with its condensed task exception and the dead
+            executors, and tells you whether a Spark driver started at all. Its
+            result decides whether Step 3 applies (see
+            `Dataproc Serverless: how to read the Spark application data`).
     -   **Path B: Cluster Jobs**: Read `driverOutputResourceUri` using
         `scripts/spark_gcs_log_reader.py --action=tail --lines=100`.
         -   **If `driverOutputResourceUri` is missing or empty**, fall back to
@@ -318,8 +318,8 @@ diagnostic plan or run any script before it passes.**
 3.  **Stage Metrics & Rule-Based Diagnostics**:
 
     -   Applies to **Dataproc Serverless batches and sessions** whose
-        `scripts/spark_applications.py` summary returned stages. For a
-        cluster job, summarize its Spark event log instead
+        `scripts/spark_applications.py` summary returned stages. For a cluster
+        job, summarize its Spark event log instead
         (`scripts/spark_gcs_log_reader.py --action=summarize_events`).
     -   Run `scripts/spark_stage_diagnostics.py` with `--batch_id` or
         `--session_id` (it fetches every stage, with task quantiles, plus the
@@ -327,29 +327,28 @@ diagnostic plan or run any script before it passes.**
         Dataproc Data Worker Agent does), or with `--telemetry_file` for
         exported stage JSON.
     -   **This script ships no rules or thresholds.** You author the rules and
-        pass them with `--rules_file <path>` or `--custom_rule '<json>'`.
-        With no rules the script exits with an error rather than reporting a
+        pass them with `--rules_file <path>` or `--custom_rule '<json>'`. With
+        no rules the script exits with an error rather than reporting a
         misleading "no anomalies detected".
     -   Rules are **Python expressions** over `s` (one stage), `stages` (every
-        stage) and `total_executor_summary`. Each record is a flat `dict`
-        keyed by the snake_case proto field path, for example
+        stage) and `total_executor_summary`. Each record is a flat `dict` keyed
+        by the snake_case proto field path, for example
         `s["stage_metrics.jvm_gc_time_millis"]` or
         `s["task_quantile_metrics.duration_millis.percentile_50"]`:
         -   a rule that reads `s` is evaluated per stage and flags every stage
             it is truthy for;
-        -   any other rule flags the stages in the list it returns, or the
-            whole application when it returns `True`;
+        -   any other rule flags the stages in the list it returns, or the whole
+            application when it returns `True`;
         -   a rule that fails to compile or evaluate is skipped with a warning.
-        `references/diagnostic_rules_catalog.md` has the field reference, the
-        language rules, example rules for common Spark issues, and patterns
-        for correlating signals.
+            `references/diagnostic_rules_catalog.md` has the field reference,
+            the language rules, example rules for common Spark issues, and
+            patterns for correlating signals.
     -   Choose thresholds that fit the workload in front of you. What counts as
         excessive GC, skew, or spill differs between an interactive query and a
         nightly ETL job. Start with the cheap composite triage rule from the
         catalog, then write targeted rules for the symptom you observed rather
-        than dumping raw stage data into the conversation. Write the rules to
-        a temporary JSON file (this avoids shell quoting problems), for
-        example:
+        than dumping raw stage data into the conversation. Write the rules to a
+        temporary JSON file (this avoids shell quoting problems), for example:
 
         ```json
         [{"ruleId": "GC_PRESSURE",
@@ -365,31 +364,30 @@ diagnostic plan or run any script before it passes.**
         ```
 
         Absent fields read as `0`, `''`, `[]`, `{}` or `None` (timestamps), so
-        no `None` checks are needed on numbers. Use `ratio(a, b)` for ratios:
-        it yields `0.0` for a zero denominator, whereas `/` raises and skips
-        the rule. `s["status"]` is a string such as `'STAGE_STATUS_FAILED'`,
-        and `*_time` fields are `datetime`s. A key that no stage has and that
-        is not a Dataproc field name produces a warning naming the closest
-        real keys: fix the rule and re-run. Set `detail` (an f-string works
-        well) so that each finding quotes the measured value. Give ratio rules
-        a magnitude floor (for example `executor_run_time_millis > 60000`) so
-        that millisecond-long stages do not fire. If a rule is skipped, read
-        its warning, fix the rule and re-run.
+        no `None` checks are needed on numbers. Use `ratio(a, b)` for ratios: it
+        yields `0.0` for a zero denominator, whereas `/` raises and skips the
+        rule. `s["status"]` is a string such as `'STAGE_STATUS_FAILED'`, and
+        `*_time` fields are `datetime`s. A key that no stage has and that is not
+        a Dataproc field name produces a warning naming the closest real keys:
+        fix the rule and re-run. Set `detail` (an f-string works well) so that
+        each finding quotes the measured value. Give ratio rules a magnitude
+        floor (for example `executor_run_time_millis > 60000`) so that
+        millisecond-long stages do not fire. If a rule is skipped, read its
+        warning, fix the rule and re-run.
     -   Add `--format=json` to get the Data Worker Agent's output shape
-        (`status` PASS/FAIL/ERROR, `errorMessage`, `violations`,
-        `stageMetrics`, `summary`), plus `warnings` for skipped rules and
-        other caveats.
+        (`status` PASS/FAIL/ERROR, `errorMessage`, `violations`, `stageMetrics`,
+        `summary`), plus `warnings` for skipped rules and other caveats.
     -   **A fetch error is reported as ERROR, never as a pass.** Re-check the
         batch ID, region and project. **A "No stage telemetry" warning** means
         the application ran no Spark stage: it failed before its first action,
         so read the driver log. The status is PASS in that case, as in the Data
         Worker Agent, but it is not a clean bill of health. Likewise, "none of
-        the supplied rules matched" only means that your rules did not fire,
-        not that the job is healthy.
-    -   To drill into what a rule flagged, use
-        `scripts/spark_applications.py` (`--action=stage
-        --stage_id=<N>` for task quantiles, `--action=tasks --stage_id=<N>` for
-        the tasks themselves). See `Spark Applications Workflow` above.
+        the supplied rules matched" only means that your rules did not fire, not
+        that the job is healthy.
+    -   To drill into what a rule flagged, use `scripts/spark_applications.py`
+        (`--action=stage --stage_id=<N>` for task quantiles,
+        `--action=tasks --stage_id=<N>` for the tasks themselves). See
+        `Spark Applications Workflow` above.
 
 4.  **Remote Code Verification (Source of Truth)**:
 
@@ -437,8 +435,8 @@ diagnostic plan or run any script before it passes.**
         -   **Cluster Jobs**: spot/preemptible VM eviction, YARN container
             memory bounds, local scratch-disk exhaustion, and master/worker
             machine sizing.
-    -   For code-level refactoring, driver/executor OOM prevention, memory
-        spill mitigation, or partition layout optimizations, apply the Spark
+    -   For code-level refactoring, driver/executor OOM prevention, memory spill
+        mitigation, or partition layout optimizations, apply the Spark
         optimization protocols: no terminal actions inside loops, no iterative
         lineage chaining, no unbounded `.collect()`/`.toPandas()` on the driver,
         native or vectorized (`@pandas_udf`) functions over row-wise Python
