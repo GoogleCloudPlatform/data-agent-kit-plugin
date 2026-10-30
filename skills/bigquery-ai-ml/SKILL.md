@@ -2,7 +2,7 @@
 name: bigquery-ai-ml
 license: Apache-2.0
 metadata:
-  version: v3
+  version: v4
   publisher: google
 description: >-
   Leverages BigQuery's built-in machine learning and GenAI capabilities
