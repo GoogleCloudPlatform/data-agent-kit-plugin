@@ -3,7 +3,7 @@ Defines the orchestration pipelines schema using Protocol Buffers.
 Source of truth for schema: https://github.com/GoogleCloudPlatform/orchestration-pipelines/blob/main/orchestration_pipelines_models/pipeline_v1_model/protos/orchestration_pipeline.proto
 
 Field names in YAML should generally be camelCase (e.g., use `pipelineId` for the proto field `pipeline_id`).
-However, fields of type `Struct` which represent configuration objects for other systems (e.g., `cluster_config`, `environment_config`, `job`, `workflow_invocation`) must use snake_case in YAML.
+However, keys inside `Struct` fields that are passed through to another system (e.g., `config`/`cluster_config`, `environment_config`, `runtime_config`, `workflow_invocation`) should use that system's native snake_case field names, and keys that become Python keyword arguments (`op_kwargs` on `python` actions and `params` on `airflowTask` actions) MUST be valid snake_case Python identifiers. `createAndRunCustomJob.customJob` is the exception: it is the Vertex AI REST body and uses camelCase (see the `run_vertex_custom_job` example and Reminder 7).
 ## Syntax
 /////////////////////////
 // Pipeline Models (YAML fields)
@@ -244,9 +244,10 @@ message Action {
   // actions:
   //   - pyspark: { ... }
   //   - pipeline: { ... }
-  //   - data_ingestion: { ... }
-  //   - orchestration_pipeline: { ... }
+  //   - dataIngestion: { ... }
+  //   - orchestrationPipeline: { ... }
   //   - ai: { ... }
+  //   - airflowTask: { ... }
   // Do NOT use a "type" field.
   oneof action {
     PythonAction python = 1;
@@ -257,6 +258,7 @@ message Action {
     DataIngestionAction data_ingestion = 6;
     OrchestrationPipelineAction orchestration_pipeline = 7;
     AIAction ai = 8;
+    AirflowTaskAction airflow_task = 9;
   }
 }
 
@@ -649,6 +651,28 @@ message AgentPlatformCreateAndRunCustomJob {
   repeated string impersonation_chain = 3;
 }
 
+/////////////////////////
+// Airflow Task Action
+////////////////////////
+message AirflowTaskAction {
+  string name = 1 [
+    (pipeline_models.validation.is_required) = true,
+    (pipeline_models.validation.regex) = "^[a-zA-Z0-9_.-]+$",
+    (pipeline_models.validation.min_len) = 1,
+    (pipeline_models.validation.max_len) = 64
+  ];
+  repeated string depends_on = 2;
+  // Validated by time_utils.check_duration(): must be `<number><unit>` (e.g. "5m", "30s", "2h"; do NOT use ISO-8601 "PT5M").
+  string execution_timeout = 3;
+  // Default: all_success. Valid values: all_success, all_failed, all_done, one_failed, one_success, always.
+  TriggerRule trigger_rule = 4;
+  string operator_class = 5 [(pipeline_models.validation.is_required) = true];
+  // Keyword arguments passed to the Airflow operator's constructor. The validator only enforces the
+  // regex below; keys must additionally be valid snake_case Python identifiers (no hyphens, no leading digit).
+  google.protobuf.Struct params = 6 [(pipeline_models.validation.map_key_regex) = "^[a-zA-Z0-9_-]+$"];
+  RetryPolicy retry_policy = 7;
+}
+
 ## Orchestration Pipeline YAML File example
 ```yaml
 modelVersion: "1.0"  # DSL schema version (always "1.0", even for v1.2.X CLI features). MUST be quoted to avoid float parsing errors.
@@ -732,11 +756,23 @@ actions:
                   containerSpec:
                     imageUri: "us-docker.pkg.dev/vertex-ai/training/tf-cpu.2-12.py310:latest"
                     command: ["python", "train.py"]
+  - airflowTask:
+      name: "air_simple_http"
+      dependsOn:
+        - my_dbt_pipeline
+      executionTimeout: "5m"
+      triggerRule: "all_success"
+      operatorClass: "airflow.providers.http.operators.http.HttpOperator"
+      params:
+        http_conn_id: "my_test_http"
+        endpoint: "post"
+        method: "POST"
+        log_response: true
 
 ```
 
 ## Key Schema Reminders:
-1. **Action Key**: Use `- pyspark:`, `- notebook:`, `- sql:`, `- pipeline:`, `- data_ingestion:`, `- orchestration_pipeline:`, or `- ai:` directly as the key. Do NOT use `- type: pyspark`.
+1. **Action Key**: Use `- pyspark:`, `- notebook:`, `- sql:`, `- pipeline:`, `- python:`, `- dataIngestion:`, `- orchestrationPipeline:`, `- ai:`, or `- airflowTask:` directly as the key (camelCase, like all other YAML fields). Do NOT use `- type: pyspark`.
 2. **Dataproc Engine**: Under `dataprocOnGce`, you **MUST** specify either `existingCluster` (with `clusterName`) or `ephemeralCluster` (with `clusterName` and `resourceProfile`). For Serverless Dataproc, use `dataprocServerless: {}`.
 3. **Environment Requirements**:
    - The `environment` field is **optional** on `python` actions. Omit `environment` to run using standard `PythonOperator` when extra dependencies are not required.
@@ -744,8 +780,7 @@ actions:
      - For file dependencies: `environment.requirements.path: "requirements.txt"`
      - For inline dependencies: **MUST** use nested `list` under `inline` (`environment.requirements.inline.list: ["pkg1", "pkg2"]`). Do NOT pass an array directly to `inline`.
 4. **Action Params (`params`)**:
-   - Keys must match regex `^[a-zA-Z0-9_-]+$` (only alphanumeric, underscores, and hyphens).
-   - Values must match regex `^[^';|`&]+$` (cannot contain `'`, `;`, `|`, `` ` ``, `&`).
+   - For standard `map<string, string>` action `params` (`pyspark`, `notebook`, `sql`, `pipeline`; `python` actions use `op_kwargs` instead), keys must match regex `^[a-zA-Z0-9_-]+$` (only alphanumeric, underscores, and hyphens) and values must match regex `^[^';|`&]+$` (cannot contain `'`, `;`, `|`, `` ` ``, `&`). (For `airflowTask.params`, which is a `Struct` of Python keyword arguments, see Reminder 10.)
 5. **SQL Action Location & Query Guidelines**:
    - **BigQuery (`engine.bigquery`)**: Always set `location` to match the dataset's region/multi-region. Specify the target table via `destinationTable` and use pure `SELECT` queries without DDL statements (do NOT use `CREATE TABLE` or `CREATE OR REPLACE TABLE`).
    - **Dataproc (`engine.dataprocServerless` / `engine.dataprocOnGce`)**: Dataproc engines do not have a `destinationTable` field; include DDL/DML statements (`CREATE TABLE ... AS SELECT ...` or `INSERT OVERWRITE ...`) directly within the SQL query text to persist tables.
@@ -759,6 +794,11 @@ actions:
    - **Model Export**: When training custom TensorFlow/Keras models for Vertex AI batch prediction (`agentPlatform.batchInference`) with BigQuery sources, the model MUST be saved with an explicit serving signature accepting `instances` (e.g. `tf.TensorSpec(..., name="instances")`) and returning a dictionary (e.g. `{"prediction": ...}`) to match Vertex AI's batch payload format.
    - **Downstream Querying (dbt / SQL)**: For regression/scalar predictions, Vertex AI writes the output column as a scalar (not an array). Access it directly using `SAFE_CAST(prediction AS FLOAT64)` rather than array indexing `prediction[OFFSET(0)]`.
 9. **Retry Policies (`retryPolicy`)**:
-    - Configure optional pipeline-wide default retry behavior under `defaults.retryPolicy` and/or per-action overrides under `<action>.retryPolicy`. You **MUST NOT** use the deprecated `defaults.executionConfig`.
-    - When specified, `retryPolicy` **MUST** include `maxRetries` (integer $\ge 0$; `0` disables retries and needs no strategy). Optionally add exactly one strategy: `fixedDelay` (with required `retryDelay`) or `exponentialBackoff` (with required `initialDelay`, and optional `maxDelay`, `multiplier`, `randomizeJitter`).
-    - Duration strings (`retryDelay`, `initialDelay`, `maxDelay`) **MUST** use `<number><unit>` format (`s`, `m`, `h`, `d`, `w`, e.g. `"10s"`, `"30s"`, `"5m"`, NOT ISO-8601 `"PT30S"`).
+   - Configure optional pipeline-wide default retry behavior under `defaults.retryPolicy` and/or per-action overrides under `<action>.retryPolicy`. You **MUST NOT** use the deprecated `defaults.executionConfig`.
+   - When specified, `retryPolicy` **MUST** include `maxRetries` (integer >= 0; `0` disables retries and needs no strategy). Optionally add exactly one strategy: `fixedDelay` (with required `retryDelay`) or `exponentialBackoff` (with required `initialDelay`, and optional `maxDelay`, `multiplier`, `randomizeJitter`).
+   - Duration strings (`retryDelay`, `initialDelay`, `maxDelay`) **MUST** use `<number><unit>` format (`s`, `m`, `h`, `d`, `w`, e.g. `"10s"`, `"30s"`, `"5m"`, NOT ISO-8601 `"PT30S"`).
+10. **Airflow Task Action (`airflowTask`)**:
+    - Prefer the built-in actions (`sql`, `python`, `pyspark`, `notebook`, `pipeline`, `dataIngestion`, `ai`, `orchestrationPipeline`). Use `- airflowTask:` only when no native action covers the operator; it runs an arbitrary Apache Airflow operator given its fully qualified Python class path in `operatorClass` (e.g., `"airflow.providers.http.operators.http.HttpOperator"`).
+    - `validate` cannot check the operator's runtime prerequisites: the provider package **MUST** be installed in the Composer environment and any Airflow connection it uses (e.g. `http_conn_id`) **MUST** already exist. Ask the user to confirm these values; do NOT invent connection IDs.
+    - `params` is a `Struct` representing Python keyword arguments (supports booleans, numbers, strings, lists, and dicts) passed directly to the operator's constructor—keys inside `params` **MUST** be valid `snake_case` Python identifiers (e.g., `http_conn_id`, `log_response`, `bash_command`).
+    - When specified, `executionTimeout` on `airflowTask` **MUST** use `<number><unit>` format (e.g., `"5m"`, `"30s"`).

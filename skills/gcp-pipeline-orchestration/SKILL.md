@@ -4,11 +4,11 @@ description: This skill helps the agent generate or update orchestration pipelin
   definitions for Google Cloud Composer to initialize orchestration pipeline or update
   the orchestration definition for orchestration of various data pipelines, like dbt
   pipelines, notebooks, Spark jobs, Dataform, Python scripts, Vertex AI custom jobs,
-  Machine Learning training, or inline BigQuery SQL queries. This skill also helps
-  deploy and trigger orchestration pipelines.
+  Machine Learning training, Apache Airflow operators, or inline BigQuery SQL queries.
+  This skill also helps deploy and trigger orchestration pipelines.
 license: Apache-2.0
 metadata:
-  version: v5
+  version: v6
   publisher: google
 ---
 
@@ -301,6 +301,17 @@ following fields:
     Reminder 9 in `references/orchestration-pipelines-schema.md` for the fields
     and duration format.
 
+-   **Airflow Task Actions (`airflowTask`)**: Prefer the built-in actions
+    (`sql`, `python`, `pyspark`, `notebook`, `pipeline`, `dataIngestion`, `ai`).
+    Use `- airflowTask:` only when no native action covers the operator: set
+    `operatorClass` to the fully qualified class name (e.g.,
+    `"airflow.providers.http.operators.http.HttpOperator"`) and pass constructor
+    keyword arguments under `params` using **`snake_case` keys** (e.g.,
+    `http_conn_id`, `log_response`). Ask the user to confirm (do NOT invent)
+    connection IDs and that the provider package is installed in the Composer
+    environment; `validate` cannot check either. Follow the `air_simple_http`
+    example and Reminder 10 in `references/orchestration-pipelines-schema.md`.
+
 -   Before creating or updating the `deployment.yaml` file, you **must** first
     run the following command to get the list of available Composer environments
     for the user's project.
@@ -334,11 +345,11 @@ following fields:
     `orchestration-pipelines` package is listed in the PyPI packages. This
     ensures the selected environment is compatible with orchestration pipelines.
     Pipelines using v1.2.0 features (`agentPlatform.createAndRunCustomJob`,
-    `notifications.onPipelineSuccess`, `retryPolicy`) MUST target an environment
-    whose `orchestration-pipelines` package is `>= 1.2.0` (an Airflow 2.11+/3.x
-    image, or the package pinned in `pypiPackages`); on older environments
-    `validate` and `deploy` succeed but DAG parsing fails at runtime (e.g.
-    `no field named "retryPolicy"`).
+    `notifications.onPipelineSuccess`, `retryPolicy`, `airflowTask`) MUST target
+    an environment whose `orchestration-pipelines` package is `>= 1.2.0` (an
+    Airflow 2.11+/3.x image, or the package pinned in `pypiPackages`); on older
+    environments `validate` and `deploy` succeed but DAG parsing fails at
+    runtime (e.g. `no field named "retryPolicy"`).
 
 -   Third, before generating the `deployment.yaml` file, you **must ask the
     user** to provide the `artifact_storage` bucket name. Note that the
@@ -393,10 +404,11 @@ gcloud beta orchestration-pipelines validate --environment=<ENV_NAME>
         `references/orchestration-pipelines-schema.md`, you MUST verify the
         Google Cloud CLI version (check the CLI's internal `model_version` with
         `gcloud beta orchestration-pipelines info`; `createAndRunCustomJob`,
-        `onPipelineSuccess`, and `retryPolicy` require CLI `model_version`
-        `1.2.X` or higher; do NOT change the pipeline YAML's
-        `modelVersion: "1.0"`). Ask the user to run `gcloud components update`
-        and re-validate. Do NOT rewrite the action into a different type.
+        `onPipelineSuccess` (in v1.2.0+; `onPipelineFailure` is v1.0+),
+        `retryPolicy`, and `airflowTask` require CLI `model_version` `1.2.X` or
+        higher; do NOT change the pipeline YAML's `modelVersion: "1.0"`). Ask
+        the user to run `gcloud components update` and re-validate. Do NOT
+        rewrite the action into a different type.
 
 3.  Re-run the validation command to confirm the fix. Do not mark the task as
     complete until the validation passes (exit code 0), and do not fall back to
