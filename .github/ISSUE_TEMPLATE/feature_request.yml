@@ -30,7 +30,7 @@ body:
       description: |
         Please run through the following list and make sure you've tried the usual "quick fixes":
       options:
-        - label: "Search the [current open issues](https://github.com/gemini-cli-extensions/data-cloud-ai-dev-kit/issues)"
+        - label: "Search the [current open issues](https://github.com/GoogleCloudPlatform/data-agent-kit-plugin/issues)"
           required: true
 
   - type: textarea
