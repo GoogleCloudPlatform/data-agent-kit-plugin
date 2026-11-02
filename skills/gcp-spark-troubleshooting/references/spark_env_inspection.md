@@ -87,7 +87,9 @@ OAuth scope errors, CMEK failures, or Secret Manager errors.
 ### VPC, Subnet, NAT, Peering, Firewall & DNS (`--action=network`)
 
 Run this plane when logs show `ConnectTimeoutException`, `UnknownHostException`,
-`No route to host`, or subnet IP exhaustion in `stateMessage`.
+`No route to host`, or subnet IP exhaustion in `stateMessage`. For a failed
+connection, pass `--target_port=<PORT>` (and `--target_ip=<IP>` when the logs
+show the remote address) to get a first-match firewall verdict.
 
 -   `effective_host_project` and `effective_network`: Resolves the VPC network
     and Shared VPC host project from `subnetworkUri` or `networkUri`.
@@ -122,6 +124,23 @@ Run this plane when logs show `ConnectTimeoutException`, `UnknownHostException`,
     regional system firewall policy rules for the network and region. Long IP
     range lists are truncated, and rules that target secure tags report
     `applies_to_workload=None`.
+-   `firewall_verdict` (with `--target_port`; optional `--target_protocol`,
+    `--target_ip`, and `--target_direction`): Evaluates one connection (by
+    default, TCP egress from the workload) in the order below. It reports the
+    first matching rule of each policy, including `goto_next` rules, the
+    deciding rule, and a `verdict` of `ALLOWED`, `DENIED`, or `INDETERMINATE`.
+    -   A rule is indeterminate when its match depends on something the script
+        does not resolve: secure tags, address groups, FQDNs, geolocations,
+        threat intelligence lists, network context, source tags or service
+        accounts, an unknown workload service account, or a range that covers
+        only some remote addresses when `--target_ip` is not given.
+    -   The verdict stays `ALLOWED` or `DENIED` when every possible outcome
+        agrees. Otherwise it is `INDETERMINATE`, and `unevaluated_rules` lists
+        the rules to check by hand. L7 inspection rules
+        (`apply_security_profile_group`) and unreadable firewall data also give
+        `INDETERMINATE`.
+    -   Without `--target_ip`, the connection uses the subnet's IP version
+        (IPv4 on single-stack subnets).
 -   `private_dns_zones`: Lists private Cloud DNS zones in the host project and
     sets `bound_to_workload_network`. If `False`, the workload VPC cannot
     resolve records in that zone. Zones in other projects (cross-project
@@ -141,7 +160,9 @@ order:
 
 `allow` and `deny` stop evaluation, while `goto_next` continues to the next
 level. A rule with `applies_to_workload=False` cannot allow or block the
-workload's traffic, even if it matches the port.
+workload's traffic, even if it matches the port. The API does not report the
+order of several hierarchical (or system) policies, so `firewall_verdict`
+evaluates every order and is `INDETERMINATE` if the results differ.
 
 Serverless runtime `3.0+` workloads (except on Shared VPC) get an auto-created
 regional system firewall policy (`dataproc-firewall-policy-*` or

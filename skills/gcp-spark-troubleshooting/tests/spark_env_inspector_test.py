@@ -3102,5 +3102,898 @@ class SparkEnvInspectorFixesTest(unittest.TestCase):
     self.assertIn("not installed", stderr)
 
 
+_VERDICT_NETWORK_URI = "projects/p/global/networks/vpc-v"
+
+
+def _policy(name, policy_type, rules):
+  return {"name": name, "type": policy_type, "rules": rules}
+
+
+def _policy_rule(
+    priority,
+    action,
+    *,
+    direction="EGRESS",
+    l4=None,
+    dest=None,
+    src=None,
+    match_extra=None,
+    **extra,
+):
+  match = {"layer4Configs": l4 or [{"ipProtocol": "all"}]}
+  if dest is not None:
+    match["destIpRanges"] = dest
+  if src is not None:
+    match["srcIpRanges"] = src
+  match.update(match_extra or {})
+  rule = {
+      "priority": priority,
+      "direction": direction,
+      "action": action,
+      "match": match,
+  }
+  rule.update(extra)
+  return rule
+
+
+def _vpc_rule(name, priority, *, direction="EGRESS", denied=None, **extra):
+  rule = {
+      "name": name,
+      "network": _VERDICT_NETWORK_URI,
+      "direction": direction,
+      "priority": priority,
+  }
+  if denied is not None:
+    rule["denied"] = denied
+  else:
+    rule["allowed"] = extra.pop("allowed", [{"IPProtocol": "all"}])
+  rule.update(extra)
+  return rule
+
+
+def _verdict_runner(
+    *,
+    vpc_rules=(),
+    policies=(),
+    network=None,
+    network_code=0,
+    firewalls_code=0,
+    policies_code=0,
+    stack_type="IPV4_ONLY",
+    service_account="etl@p.iam.gserviceaccount.com",
+    runtime_version="2.2",
+):
+  batch_payload = {
+      "runtimeConfig": {"version": runtime_version},
+      "environmentConfig": {
+          "executionConfig": {
+              "subnetworkUri": "regions/us-central1/subnetworks/sub-v",
+              "serviceAccount": service_account,
+              "networkTags": ["spark"],
+          }
+      },
+  }
+  subnet_payload = {
+      "name": "sub-v",
+      "network": _VERDICT_NETWORK_URI,
+      "ipCidrRange": "10.8.0.0/24",
+      "stackType": stack_type,
+  }
+
+  def _response(code, payload):
+    return (
+        code,
+        payload if code == 0 else "",
+        "ERROR: (gcloud) 403" if code else "",
+    )
+
+  return _FakeGcloud({
+      "dataproc batches describe b-fw": (0, batch_payload, ""),
+      "compute networks subnets describe sub-v": (0, subnet_payload, ""),
+      "compute routers list": (0, [], ""),
+      "compute networks describe vpc-v": _response(
+          network_code, {"name": "vpc-v"} if network is None else network
+      ),
+      "compute firewall-rules list": _response(firewalls_code, list(vpc_rules)),
+      "compute network-firewall-policies get-effective-firewalls": _response(
+          policies_code, {"firewallPolicys": list(policies), "firewalls": []}
+      ),
+      "dns managed-zones list": (0, [], ""),
+  })
+
+
+def _verdict(runner, target_port=443, **kwargs):
+  rep = spark_env_inspector.inspect_network(
+      "p", "us-central1", "batch", "b-fw", runner, target_port, **kwargs
+  )
+  return rep["firewall_verdict"]
+
+
+class SparkEnvInspectorFirewallVerdictTest(unittest.TestCase):
+
+  def test_goto_next_hands_off_and_lower_priority_deny_is_skipped(self):
+    hierarchy = _policy(
+        "folder-policy",
+        "HIERARCHY",
+        [
+            _policy_rule(1, "deny", dest=["0.0.0.0/0"], disabled=True),
+            _policy_rule(38, "deny", dest=["0.0.0.0/0"]),
+            _policy_rule(
+                31,
+                "goto_next",
+                dest=["0.0.0.0/0"],
+                l4=[{"ipProtocol": "tcp"}, {"ipProtocol": "icmp"}],
+                match_extra={"destFqdns": []},
+            ),
+            _policy_rule(10, "deny", direction="INGRESS", src=["0.0.0.0/0"]),
+        ],
+    )
+    runner = _verdict_runner(policies=[hierarchy])
+    verdict = _verdict(runner)
+    self.assertEqual(verdict["verdict"], "ALLOWED")
+    self.assertEqual(
+        verdict["decided_by"],
+        {
+            "stage": "implied rules",
+            "priority": 65535,
+            "rule": "implied allow egress",
+            "action": "allow",
+        },
+    )
+    self.assertEqual(
+        verdict["evaluation_order"],
+        [
+            "hierarchical policy `folder-policy`",
+            "VPC firewall rules",
+            "implied rules",
+        ],
+    )
+    first = verdict["stages"][0]["first_match"]
+    self.assertEqual(
+        (first["priority"], first["action"], first["match"]),
+        (31, "goto_next", "match"),
+    )
+    self.assertIsNone(verdict["stages"][1]["first_match"])
+    self.assertEqual(verdict["unevaluated_rules"], [])
+    self.assertEqual(verdict["notes"], [])
+    self.assertEqual(verdict["ip_version"], 4)
+
+    # UDP is not covered by the goto_next rule, so the deny-all decides.
+    udp = _verdict(runner, target_protocol="udp")
+    self.assertEqual(udp["verdict"], "DENIED")
+    self.assertEqual(
+        (udp["decided_by"]["stage"], udp["decided_by"]["priority"]),
+        ("hierarchical policy `folder-policy`", 38),
+    )
+
+  def test_vpc_rules_tie_breaks_and_target_scoping(self):
+    vpc_rules = [
+        _vpc_rule(
+            "deny-ingress-all",
+            10,
+            direction="INGRESS",
+            denied=[{"IPProtocol": "all"}],
+        ),
+        _vpc_rule(
+            "allow-db",
+            900,
+            destinationRanges=["10.50.0.0/16"],
+            allowed=[{"IPProtocol": "tcp", "ports": ["5432"]}],
+            targetTags=["spark"],
+        ),
+        _vpc_rule(
+            "deny-db",
+            900,
+            destinationRanges=["10.50.0.0/16"],
+            denied=[{"IPProtocol": "tcp", "ports": ["5400-5500"]}],
+        ),
+        _vpc_rule(
+            "deny-other-tag",
+            100,
+            denied=[{"IPProtocol": "all"}],
+            targetTags=["unrelated"],
+        ),
+        _vpc_rule(
+            "deny-other-sa",
+            100,
+            denied=[{"IPProtocol": "all"}],
+            targetServiceAccounts=["other@p.iam.gserviceaccount.com"],
+        ),
+        _vpc_rule(
+            "deny-disabled", 50, denied=[{"IPProtocol": "all"}], disabled=True
+        ),
+    ]
+    runner = _verdict_runner(vpc_rules=vpc_rules)
+    verdict = _verdict(runner, target_port=5432, target_ip="10.50.1.2")
+    self.assertEqual(verdict["verdict"], "DENIED")
+    self.assertEqual(verdict["decided_by"]["rule"], "deny-db")
+    self.assertEqual(verdict["stages"][0]["first_match"]["rule"], "deny-db")
+    other = _verdict(runner, target_port=5432, target_ip="192.168.7.7")
+    self.assertEqual(other["verdict"], "ALLOWED")
+    self.assertEqual(other["decided_by"]["stage"], "implied rules")
+    unknown_sa = _verdict(
+        _verdict_runner(
+            vpc_rules=vpc_rules, service_account="", runtime_version="3.0"
+        ),
+        target_port=5432,
+        target_ip="192.168.7.7",
+    )
+    self.assertEqual(unknown_sa["verdict"], "INDETERMINATE")
+    self.assertIn(
+        "workload service account is unknown",
+        unknown_sa["unevaluated_rules"][0]["reasons"][0],
+    )
+
+  def test_destination_specific_rule_needs_target_ip(self):
+    runner = _verdict_runner(
+        vpc_rules=[
+            _vpc_rule(
+                "deny-db",
+                900,
+                destinationRanges=["10.50.0.0/16"],
+                denied=[{"IPProtocol": "tcp", "ports": ["5432"]}],
+            )
+        ]
+    )
+    verdict = _verdict(runner, target_port=5432)
+    self.assertEqual(verdict["verdict"], "INDETERMINATE")
+    self.assertEqual(verdict["possible_outcomes"], ["ALLOWED", "DENIED"])
+    self.assertIsNone(verdict["decided_by"])
+    self.assertEqual(verdict["notes"], [])
+    (unevaluated,) = verdict["unevaluated_rules"]
+    self.assertEqual(unevaluated["rule"], "deny-db")
+    self.assertEqual(unevaluated["match"], "indeterminate")
+    self.assertIn("pass --target_ip", unevaluated["reasons"][0])
+    self.assertEqual(verdict["unevaluated_rules_omitted"], 0)
+    self.assertNotIn(
+        "more)",
+        "\n".join(spark_env_inspector._format_firewall_verdict(verdict)),
+    )
+    self.assertIn(
+        "(+2 more)",
+        "\n".join(
+            spark_env_inspector._format_firewall_verdict(
+                {**verdict, "unevaluated_rules_omitted": 2}
+            )
+        ),
+    )
+    with mock.patch.object(
+        spark_env_inspector, "_MAX_UNEVALUATED_RULES_SHOWN", 1
+    ):
+      self.assertEqual(
+          _verdict(runner, target_port=5432)["unevaluated_rules_omitted"], 0
+      )
+    with mock.patch.object(
+        spark_env_inspector, "_MAX_UNEVALUATED_RULES_SHOWN", 0
+    ):
+      omitted = _verdict(runner, target_port=5432)
+    self.assertEqual(omitted["unevaluated_rules_omitted"], 1)
+    self.assertEqual(
+        _verdict(runner, target_port=5432, target_ip="10.50.9.9")["verdict"],
+        "DENIED",
+    )
+    self.assertEqual(_verdict(runner, target_port=5433)["verdict"], "ALLOWED")
+
+  def test_verdict_is_definite_when_every_outcome_agrees(self):
+    system = _policy(
+        "dataproc-fw-1",
+        "SYSTEM_REGIONAL",
+        [
+            _policy_rule(
+                4,
+                "allow",
+                dest=["0.0.0.0/0"],
+                targetSecureTags=[{"name": "tagValues/1"}],
+            )
+        ],
+    )
+    verdict = _verdict(_verdict_runner(policies=[system]))
+    self.assertEqual(verdict["verdict"], "ALLOWED")
+    # The deciding rule depends on the secure tag, so none is reported.
+    self.assertIsNone(verdict["decided_by"])
+    (unevaluated,) = verdict["unevaluated_rules"]
+    self.assertIn("targets secure tags", unevaluated["reasons"][0])
+
+    denying = _verdict(
+        _verdict_runner(
+            policies=[system],
+            vpc_rules=[
+                _vpc_rule("deny-all", 1000, denied=[{"IPProtocol": "all"}])
+            ],
+        )
+    )
+    self.assertEqual(denying["verdict"], "INDETERMINATE")
+
+  def test_unresolved_selectors_and_l7_inspection_are_indeterminate(self):
+    fqdn = _policy(
+        "net-pol",
+        "NETWORK",
+        [
+            _policy_rule(
+                100,
+                "deny",
+                match_extra={"destFqdns": ["s3.amazonaws.com"]},
+            )
+        ],
+    )
+    verdict = _verdict(_verdict_runner(policies=[fqdn]), target_ip="52.1.2.3")
+    self.assertEqual(verdict["verdict"], "INDETERMINATE")
+    self.assertIn("destFqdns", verdict["unevaluated_rules"][0]["reasons"][0])
+
+    l7 = _policy(
+        "net-pol",
+        "NETWORK",
+        [
+            _policy_rule(
+                100,
+                "apply_security_profile_group",
+                dest=["0.0.0.0/0"],
+                securityProfileGroup="spg-1",
+            )
+        ],
+    )
+    inspected = _verdict(_verdict_runner(policies=[l7]))
+    self.assertEqual(inspected["verdict"], "INDETERMINATE")
+    self.assertEqual(inspected["possible_outcomes"], ["UNEVALUATED"])
+    self.assertIsNone(inspected["decided_by"])
+
+  def test_network_policy_enforcement_order(self):
+    vpc_rules = [
+        _vpc_rule(
+            "allow-https",
+            1000,
+            allowed=[{"IPProtocol": "tcp", "ports": ["443"]}],
+        )
+    ]
+    policies = [
+        _policy(
+            "global-pol",
+            "NETWORK",
+            [_policy_rule(100, "deny", dest=["0.0.0.0/0"])],
+        )
+    ]
+    after = _verdict(
+        _verdict_runner(
+            vpc_rules=vpc_rules,
+            policies=policies,
+            network={
+                "name": "vpc-v",
+                "networkFirewallPolicyEnforcementOrder": (
+                    "AFTER_CLASSIC_FIREWALL"
+                ),
+            },
+        )
+    )
+    self.assertEqual(
+        (after["verdict"], after["decided_by"]["rule"]),
+        ("ALLOWED", "allow-https"),
+    )
+    self.assertEqual(after["notes"], [])
+    before = _verdict(
+        _verdict_runner(
+            vpc_rules=vpc_rules,
+            policies=policies,
+            network={
+                "name": "vpc-v",
+                "networkFirewallPolicyEnforcementOrder": (
+                    "BEFORE_CLASSIC_FIREWALL"
+                ),
+            },
+        )
+    )
+    self.assertEqual(before["verdict"], "DENIED")
+    self.assertEqual(before["notes"], [])
+    self.assertEqual(
+        before["evaluation_order"],
+        [
+            "global network policy `global-pol`",
+            "VPC firewall rules",
+            "implied rules",
+        ],
+    )
+    unknown = _verdict(
+        _verdict_runner(vpc_rules=vpc_rules, policies=policies, network_code=1)
+    )
+    self.assertEqual(unknown["verdict"], "INDETERMINATE")
+    self.assertIn("both network firewall policy", " ".join(unknown["notes"]))
+    self.assertEqual(_verdict(_verdict_runner(network_code=1))["notes"], [])
+    for bad_network in ({}, ["unexpected"]):
+      unreadable = _verdict(
+          _verdict_runner(
+              vpc_rules=vpc_rules, policies=policies, network=bad_network
+          )
+      )
+      self.assertEqual(unreadable["verdict"], "INDETERMINATE")
+
+    regional_policies = [
+        _policy(
+            "global-pol",
+            "NETWORK",
+            [_policy_rule(100, "goto_next", dest=["0.0.0.0/0"])],
+        ),
+        _policy(
+            "reg-pol",
+            "NETWORK_REGIONAL",
+            [_policy_rule(100, "deny", dest=["0.0.0.0/0"])],
+        ),
+    ]
+    regional = _verdict(
+        _verdict_runner(
+            vpc_rules=vpc_rules,
+            policies=regional_policies,
+            network={
+                "name": "vpc-v",
+                "networkFirewallPolicyEnforcementOrder": (
+                    "BEFORE_CLASSIC_FIREWALL"
+                ),
+            },
+        )
+    )
+    self.assertEqual(regional["verdict"], "DENIED")
+    self.assertEqual(
+        regional["decided_by"]["stage"], "regional network policy `reg-pol`"
+    )
+    self.assertEqual(
+        regional["evaluation_order"],
+        [
+            "global network policy `global-pol`",
+            "regional network policy `reg-pol`",
+            "VPC firewall rules",
+            "implied rules",
+        ],
+    )
+
+  def test_order_of_several_hierarchical_policies_is_not_assumed(self):
+    allow = _policy(
+        "org-pol", "HIERARCHY", [_policy_rule(10, "allow", dest=["0.0.0.0/0"])]
+    )
+    deny = _policy(
+        "folder-pol",
+        "HIERARCHY",
+        [_policy_rule(10, "deny", dest=["0.0.0.0/0"])],
+    )
+    conflicting = _verdict(_verdict_runner(policies=[allow, deny]))
+    self.assertEqual(conflicting["verdict"], "INDETERMINATE")
+    notes = " ".join(conflicting["notes"])
+    self.assertIn("order of the 2 hierarchical policies", notes)
+    self.assertIn("results differ", notes)
+
+    hand_off = _policy(
+        "org-pol",
+        "HIERARCHY",
+        [_policy_rule(10, "goto_next", dest=["0.0.0.0/0"])],
+    )
+    agreeing = _verdict(_verdict_runner(policies=[hand_off, deny]))
+    self.assertEqual(agreeing["verdict"], "DENIED")
+    self.assertEqual(
+        agreeing["decided_by"]["stage"], "hierarchical policy `folder-pol`"
+    )
+
+    many_policies = [
+        hand_off,
+        _policy(
+            "sub-folder-pol",
+            "HIERARCHY",
+            [_policy_rule(10, "goto_next", dest=["0.0.0.0/0"])],
+        ),
+        deny,
+        _policy(
+            "sys-1",
+            "SYSTEM",
+            [_policy_rule(10, "goto_next", dest=["0.0.0.0/0"])],
+        ),
+        _policy(
+            "sys-2",
+            "SYSTEM",
+            [_policy_rule(10, "goto_next", dest=["0.0.0.0/0"])],
+        ),
+        _policy(
+            "net-1",
+            "NETWORK",
+            [_policy_rule(10, "goto_next", dest=["0.0.0.0/0"])],
+        ),
+    ]
+    many_runner = _verdict_runner(policies=many_policies, network_code=1)
+    # 3! * 2! * 2 = 24 candidate policy orderings.
+    with mock.patch.object(spark_env_inspector, "_MAX_FIREWALL_ORDERINGS", 24):
+      many_verdict = _verdict(many_runner)
+      self.assertEqual(many_verdict["verdict"], "DENIED")
+      self.assertIn(
+          "order of the 2 system policies", " ".join(many_verdict["notes"])
+      )
+    with mock.patch.object(spark_env_inspector, "_MAX_FIREWALL_ORDERINGS", 23):
+      capped = _verdict(many_runner)
+    self.assertEqual(capped["verdict"], "INDETERMINATE")
+    self.assertIn("Too many unordered policies", " ".join(capped["notes"]))
+    # Without network policies, unknown enforcement order adds only 1 tail
+    # (3! * 2! * 1 = 12 candidate orderings).
+    no_net_runner = _verdict_runner(policies=many_policies[:-1], network_code=1)
+    with mock.patch.object(spark_env_inspector, "_MAX_FIREWALL_ORDERINGS", 12):
+      self.assertEqual(_verdict(no_net_runner)["verdict"], "DENIED")
+
+  def test_unreadable_inputs(self):
+    no_policies = _verdict(_verdict_runner(policies_code=1))
+    self.assertEqual(no_policies["verdict"], "INDETERMINATE")
+    self.assertEqual(
+        no_policies["stages"][0],
+        {"stage": "firewall policies", "readable": False, "first_match": None},
+    )
+    # A hierarchical deny decides before the unreadable VPC rules.
+    deny = _policy(
+        "org-pol", "HIERARCHY", [_policy_rule(10, "deny", dest=["0.0.0.0/0"])]
+    )
+    decided = _verdict(_verdict_runner(policies=[deny], firewalls_code=1))
+    self.assertEqual(decided["verdict"], "DENIED")
+    self.assertFalse(decided["stages"][1]["readable"])
+    unknown_type = _verdict(
+        _verdict_runner(
+            policies=[
+                _policy(
+                    "odd", "", [_policy_rule(5, "deny", dest=["0.0.0.0/0"])]
+                )
+            ]
+        )
+    )
+    self.assertEqual(unknown_type["verdict"], "INDETERMINATE")
+    self.assertIn("unrecognized type", " ".join(unknown_type["notes"]))
+    self.assertEqual(
+        _verdict(_verdict_runner(policies=[deny], stack_type=""))["verdict"],
+        "DENIED",
+    )
+    no_subnet = _verdict(
+        _FakeGcloud({
+            "dataproc batches describe b-fw": (
+                0,
+                {
+                    "runtimeConfig": {"version": "2.2"},
+                    "environmentConfig": {
+                        "executionConfig": {
+                            "networkUri": _VERDICT_NETWORK_URI,
+                            "serviceAccount": "etl@p.iam.gserviceaccount.com",
+                        }
+                    },
+                },
+                "",
+            ),
+            "compute networks subnets describe vpc-v": (
+                1,
+                "",
+                "ERROR: (gcloud) 403",
+            ),
+            "compute routers list": (0, [], ""),
+            "compute networks describe vpc-v": (0, {"name": "vpc-v"}, ""),
+            "compute firewall-rules list": (0, [], ""),
+            "compute network-firewall-policies get-effective-firewalls": (
+                0,
+                {"firewallPolicys": [deny], "firewalls": []},
+                "",
+            ),
+            "dns managed-zones list": (0, [], ""),
+        })
+    )
+    self.assertEqual(no_subnet["verdict"], "INDETERMINATE")
+    self.assertIsNone(no_subnet["ip_version"])
+    self.assertIn("unreadable subnet", " ".join(no_subnet["notes"]))
+
+  def test_ingress_ipv6_and_workload_side_ranges(self):
+    intra_subnet = _vpc_rule(
+        "allow-intra",
+        65534,
+        direction="INGRESS",
+        sourceRanges=["10.8.0.0/24"],
+        allowed=[{"IPProtocol": "tcp"}],
+    )
+    runner = _verdict_runner(vpc_rules=[intra_subnet])
+    self.assertEqual(
+        _verdict(
+            runner,
+            target_port=7337,
+            target_ip="10.8.0.5",
+            target_direction="ingress",
+        )["decided_by"]["rule"],
+        "allow-intra",
+    )
+    outside = _verdict(
+        runner,
+        target_port=7337,
+        target_ip="10.9.0.5",
+        target_direction="ingress",
+    )
+    self.assertEqual(outside["verdict"], "DENIED")
+    self.assertEqual(outside["decided_by"]["rule"], "implied deny ingress")
+    tagged = _verdict(
+        _verdict_runner(
+            vpc_rules=[
+                _vpc_rule(
+                    "allow-tagged",
+                    1000,
+                    direction="INGRESS",
+                    sourceTags=["bastion"],
+                )
+            ]
+        ),
+        target_port=22,
+        target_ip="10.9.0.5",
+        target_direction="ingress",
+    )
+    self.assertEqual(tagged["verdict"], "INDETERMINATE")
+    self.assertIn("source tags", tagged["unevaluated_rules"][0]["reasons"][0])
+    self.assertEqual(
+        _verdict(
+            _verdict_runner(
+                vpc_rules=[
+                    _vpc_rule(
+                        "allow-range-or-tag",
+                        1000,
+                        direction="INGRESS",
+                        sourceRanges=["10.8.0.0/24"],
+                        sourceTags=["bastion"],
+                    )
+                ]
+            ),
+            target_port=22,
+            target_ip="10.8.0.5",
+            target_direction="ingress",
+        )["verdict"],
+        "ALLOWED",
+    )
+
+    ipv6_deny = _policy(
+        "net-pol", "NETWORK", [_policy_rule(10, "deny", dest=["::/0"])]
+    )
+    self.assertEqual(
+        _verdict(_verdict_runner(policies=[ipv6_deny]))["verdict"], "ALLOWED"
+    )
+    self.assertEqual(
+        _verdict(_verdict_runner(policies=[ipv6_deny], stack_type="IPV6_ONLY"))[
+            "verdict"
+        ],
+        "DENIED",
+    )
+    dual_stack = _verdict(
+        _verdict_runner(policies=[ipv6_deny], stack_type="IPV4_IPV6")
+    )
+    self.assertEqual(dual_stack["verdict"], "INDETERMINATE")
+    self.assertIsNone(dual_stack["ip_version"])
+    self.assertIn("IP version is unknown", " ".join(dual_stack["notes"]))
+    self.assertEqual(
+        _verdict(
+            _verdict_runner(policies=[ipv6_deny], stack_type="IPV4_IPV6"),
+            target_ip="2001:db8::1",
+        )["notes"],
+        [],
+    )
+    mismatch = _verdict(
+        _verdict_runner(policies=[ipv6_deny]), target_ip="2001:db8::1"
+    )
+    self.assertEqual(mismatch["verdict"], "DENIED")
+    self.assertIn("IPv4-only", " ".join(mismatch["notes"]))
+    ipv6_only_mismatch = _verdict(
+        _verdict_runner(policies=[ipv6_deny], stack_type="IPV6_ONLY"),
+        target_ip="10.0.0.1",
+    )
+    self.assertIn("IPv6-only", " ".join(ipv6_only_mismatch["notes"]))
+
+    whole_subnet = _policy(
+        "net-pol",
+        "NETWORK",
+        [_policy_rule(10, "deny", dest=["0.0.0.0/0"], src=["10.8.0.0/16"])],
+    )
+    self.assertEqual(
+        _verdict(_verdict_runner(policies=[whole_subnet]))["verdict"], "DENIED"
+    )
+    self.assertEqual(
+        _verdict(
+            _verdict_runner(policies=[whole_subnet], stack_type="IPV4_IPV6")
+        )["verdict"],
+        "INDETERMINATE",
+    )
+    part_subnet = _policy(
+        "net-pol",
+        "NETWORK",
+        [_policy_rule(10, "deny", dest=["0.0.0.0/0"], src=["10.8.0.0/25"])],
+    )
+    part = _verdict(_verdict_runner(policies=[part_subnet]))
+    self.assertEqual(part["verdict"], "INDETERMINATE")
+    self.assertIn("partly cover", part["unevaluated_rules"][0]["reasons"][0])
+    vpc_part = _verdict(
+        _verdict_runner(
+            vpc_rules=[
+                _vpc_rule(
+                    "deny-part-src",
+                    100,
+                    sourceRanges=["10.8.0.0/25"],
+                    denied=[{"IPProtocol": "tcp"}],
+                )
+            ]
+        )
+    )
+    self.assertEqual(vpc_part["verdict"], "INDETERMINATE")
+    self.assertIn("partly cover", vpc_part["unevaluated_rules"][0]["reasons"][0])
+    other_subnet = _policy(
+        "net-pol",
+        "NETWORK",
+        [_policy_rule(10, "deny", dest=["0.0.0.0/0"], src=["10.9.0.0/24"])],
+    )
+    self.assertEqual(
+        _verdict(_verdict_runner(policies=[other_subnet]))["verdict"],
+        "ALLOWED",
+    )
+    scoped = _policy(
+        "org-pol",
+        "HIERARCHY",
+        [
+            _policy_rule(
+                10,
+                "deny",
+                dest=["0.0.0.0/0"],
+                targetResources=["projects/p/global/networks/other-vpc"],
+            ),
+            _policy_rule(
+                15,
+                "deny",
+                dest=["0.0.0.0/0"],
+                targetServiceAccounts=["other@p.iam.gserviceaccount.com"],
+            ),
+            _policy_rule(
+                20,
+                "deny",
+                dest=["0.0.0.0/0"],
+                targetServiceAccounts=["etl@p.iam.gserviceaccount.com"],
+            ),
+        ],
+    )
+    scoped_verdict = _verdict(_verdict_runner(policies=[scoped]))
+    self.assertEqual(scoped_verdict["verdict"], "DENIED")
+    self.assertEqual(scoped_verdict["decided_by"]["priority"], 20)
+    unknown_sa = _verdict(
+        _verdict_runner(
+            policies=[scoped], service_account="", runtime_version="3.0"
+        )
+    )
+    self.assertEqual(unknown_sa["verdict"], "INDETERMINATE")
+    self.assertIn(
+        "workload service account is unknown",
+        unknown_sa["unevaluated_rules"][0]["reasons"][0],
+    )
+
+  def test_range_state_helpers(self):
+    remote = spark_env_inspector._remote_ranges_state
+    local = spark_env_inspector._local_ranges_state
+    ip = spark_env_inspector.ipaddress.ip_address
+    net = spark_env_inspector.ipaddress.ip_network
+    self.assertEqual(remote(["10.0.0.0/8"], ip("10.1.2.3"), 4), "match")
+    self.assertEqual(remote(["10.0.0.0/8"], ip("11.1.2.3"), 4), "no_match")
+    self.assertEqual(remote(["bogus"], ip("11.1.2.3"), 4), "unknown")
+    self.assertEqual(remote(["0.0.0.0/0"], None, 4), "match")
+    self.assertEqual(remote(["10.0.0.0/8"], None, 4), "unknown")
+    self.assertEqual(remote(["bogus"], None, 4), "unknown")
+    self.assertEqual(remote(["0.0.0.0/0"], None, None), "unknown")
+    self.assertEqual(remote(["bogus"], None, None), "unknown")
+    self.assertEqual(remote(["0.0.0.0/0", "::/0"], None, None), "match")
+    self.assertEqual(remote(["10.0.0.0/8", "2001:db8::/32"], None, None), "unknown")
+    self.assertEqual(remote(["::/0"], None, 4), "no_match")
+    self.assertEqual(remote(["::/0"], ip("10.1.2.3"), 4), "no_match")
+    self.assertEqual(remote([], None, None), "no_match")
+    self.assertEqual(local(["10.0.0.0/8"], []), "unknown")
+    self.assertEqual(local(["10.0.0.0/8"], [net("10.8.0.0/24")]), "match")
+    self.assertEqual(
+        local(["10.8.0.0/24"], [net("10.8.0.0/24"), net("10.9.0.0/24")]),
+        "unknown",
+    )
+    self.assertEqual(local(["::/0"], [net("10.8.0.0/24")]), "no_match")
+    self.assertEqual(local(["bogus"], [net("10.8.0.0/24")]), "unknown")
+    self.assertEqual(spark_env_inspector._rule_priority({}, 1000), 1000)
+    self.assertEqual(
+        spark_env_inspector._rule_priority({"priority": "bad"}, 1000), 1000
+    )
+    self.assertEqual(
+        spark_env_inspector._rule_priority({"priority": "50"}, 1000), 50
+    )
+    self.assertEqual(
+        spark_env_inspector._policy_display_name(
+            {"displayName": "dn", "shortName": "sn", "name": "n"}
+        ),
+        "dn",
+    )
+    self.assertEqual(
+        spark_env_inspector._policy_display_name(
+            {"shortName": "sn", "name": "n"}
+        ),
+        "sn",
+    )
+    self.assertEqual(
+        spark_env_inspector._policy_display_name({"name": "n"}), "n"
+    )
+
+  def test_cli_flags_json_and_markdown(self):
+    hierarchy = _policy(
+        "folder-policy",
+        "HIERARCHY",
+        [
+            _policy_rule(31, "goto_next", dest=["0.0.0.0/0"]),
+            _policy_rule(38, "deny", dest=["0.0.0.0/0"]),
+        ],
+    )
+    runner = _verdict_runner(
+        policies=[hierarchy],
+        vpc_rules=[
+            _vpc_rule(
+                "deny-db",
+                900,
+                destinationRanges=["10.50.0.0/16"],
+                denied=[{"IPProtocol": "tcp"}],
+            )
+        ],
+    )
+    base = [
+        "--project=p",
+        "--region=us-central1",
+        "--batch_id=b-fw",
+        "--action=network",
+    ]
+    for bad in (
+        ["--target_ip=10.0.0.1"],
+        ["--target_port=443", "--target_ip=x"],
+    ):
+      with contextlib.redirect_stderr(io.StringIO()):
+        with self.assertRaises(SystemExit, msg=bad):
+          spark_env_inspector.main(base + bad, runner=runner)
+
+    code, stdout, _ = _run_cli(base + ["--format=json"], runner)
+    self.assertEqual(code, 0)
+    self.assertIsNone(json.loads(stdout)["firewall_verdict"])
+    code, stdout, _ = _run_cli(base, runner)
+    self.assertEqual(code, 0)
+    self.assertIn("Re-run with `--target_port=<PORT>`", stdout)
+    self.assertNotIn("## Firewall Verdict", stdout)
+
+    code, stdout, _ = _run_cli(base + ["--target_port=443"], runner)
+    self.assertEqual(code, 0)
+    self.assertNotIn("Re-run with `--target_port=<PORT>`", stdout)
+    verdict_md = stdout.split("## Firewall Verdict", 1)[1].split("\n\n", 1)[0]
+    self.assertEqual(
+        "## Firewall Verdict" + verdict_md,
+        "\n".join([
+            "## Firewall Verdict (`EGRESS tcp:443` to `any IPv4 address`)",
+            "- verdict: `INDETERMINATE` (possible outcomes: ALLOWED, DENIED)",
+            (
+                "- evaluation order: hierarchical policy `folder-policy` ->"
+                " VPC firewall rules -> implied rules"
+            ),
+            (
+                "- hierarchical policy `folder-policy`: first match"
+                " priority=`31` `goto_next` dest=['0.0.0.0/0']"
+            ),
+            (
+                "- VPC firewall rules: first match priority=`900` `deny`"
+                " `deny-db` dest=['10.50.0.0/16'] (indeterminate)"
+            ),
+            (
+                "- implied rules: first match priority=`65535` `allow`"
+                " `implied allow egress`"
+            ),
+            "- unevaluated rules (check by hand):",
+            (
+                "  - VPC firewall rules priority=`900` `deny` `deny-db`:"
+                " matches only some destination addresses; pass --target_ip"
+                " to evaluate it"
+            ),
+        ]),
+    )
+    code, stdout, _ = _run_cli(
+        base + ["--target_port=443", "--target_ip=10.50.0.9"], runner
+    )
+    self.assertEqual(code, 0)
+    self.assertIn(
+        "## Firewall Verdict (`EGRESS tcp:443` to `10.50.0.9`)", stdout
+    )
+    self.assertIn(
+        "- verdict: `DENIED`, decided by VPC firewall rules priority=`900`"
+        " `deny` `deny-db`",
+        stdout,
+    )
+
+
 if __name__ == "__main__":
   unittest.main()
