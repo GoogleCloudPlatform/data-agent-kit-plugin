@@ -18,8 +18,8 @@ destination:
     file (`references/read_write_data.md`).
 -   **BigLake Iceberg Catalog**: Refer to `references/biglake_iceberg.md`.
 -   **Cloud Spanner**: Refer to `references/spanner.md`.
--   **JDBC & Cloud SQL (PostgreSQL / MySQL) & Secret Manager Credentials**:
-    Refer to `references/jdbc_cloudsql.md`.
+-   **JDBC, Cloud SQL (PostgreSQL / MySQL / SQL Server), AlloyDB & Secret
+    Manager**: Refer to `references/jdbc_cloudsql.md`.
 -   **Amazon S3 (`s3a://` / S3-compatible object storage)**: Refer to
     `references/aws_s3.md`.
 -   **Azure Blob Storage & ADLS Gen2 (`abfss://`, `wasbs://`, `wasb://`)**:

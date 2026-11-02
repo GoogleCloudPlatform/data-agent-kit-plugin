@@ -99,6 +99,31 @@ Tips:
 -   Add a `--filter` to limit results, e.g. `status.state = ACTIVE AND
     clusterName = mycluster AND labels.env = staging AND labels.starred = *`
 
+### Creating clusters
+
+Only create a cluster when explicitly requested or when no existing cluster is
+available. Prefer MCP if available. If using gcloud:
+
+```bash
+gcloud dataproc clusters create <CLUSTER_NAME> \
+    --project=<PROJECT_ID> \
+    --region=<REGION> \
+    --subnet=<SUBNET>
+```
+
+-   **Auto Zone Placement**: Specify `--region=<REGION>` and **omit `--zone`**
+    unless a specific zone is explicitly requested, so Dataproc automatically
+    selects a zone with available GCE capacity.
+-   **Avoid Redundant Default Flags**: Do **NOT** pass flags that repeat
+    Dataproc system defaults (such as `--master-machine-type=n1-standard-4`,
+    `--worker-machine-type=n1-standard-4`, or `--num-workers=2`) unless custom
+    sizing is explicitly requested.
+-   **Connector-Specific Flags & Scopes**: Refer to the target connector's
+    reference file (`references/biglake_iceberg.md`,
+    `references/jdbc_cloudsql.md`, `references/aws_s3.md`,
+    `references/azure_storage.md`, `references/spanner.md`) for required
+    optional components, scopes, or properties.
+
 ### Listing jobs
 
 Prefer MCP if available. If using gcloud, use this command template:
@@ -124,19 +149,30 @@ Tips:
 
 ### Submitting jobs
 
-Prefer MCP if available. If using gcloud, use this command template:
+Prefer MCP if available. If using gcloud, use the command template matching the
+requested job type:
 
-```
-gcloud dataproc jobs submit pyspark <LOCAL_SCRIPT_PATH> \
-    --project=<PROJECT_ID> \
-    --cluster=<CLUSTER> \
-    --region=<REGION>
-```
+-   **PySpark job (`.py`)**:
+    ```bash
+    gcloud dataproc jobs submit pyspark <LOCAL_SCRIPT_PATH.py> \
+        --project=<PROJECT_ID> \
+        --cluster=<CLUSTER> \
+        --region=<REGION>
+    ```
+-   **Spark SQL job (`.sql`)**:
+    ```bash
+    gcloud dataproc jobs submit spark-sql \
+        --file=<LOCAL_SCRIPT_PATH.sql> \
+        --project=<PROJECT_ID> \
+        --cluster=<CLUSTER> \
+        --region=<REGION> \
+        --params="KEY1=VALUE1,KEY2=VALUE2"
+    ```
 
-> [!WARNING] The `gcloud dataproc jobs submit pyspark` command directly accepts
-> local file paths and automatically stages them. You MUST NOT attempt to
-> manually create GCS staging buckets or manually use `gcloud storage cp` to
-> upload your scripts before submission.
+> [!WARNING] The `gcloud dataproc jobs submit` commands directly accept local
+> file paths and automatically stage them. You MUST NOT attempt to manually
+> create GCS staging buckets or manually use `gcloud storage cp` to upload your
+> scripts before submission.
 
 ## Dataproc Serverless
 
@@ -171,17 +207,21 @@ Tips:
 ### Launching batches
 
 > [!WARNING] This DOES NOT apply to executing **Python Notebooks (.ipynb)**.
-> [!IMPORTANT] This section applies to **PySpark (.py) job**. For other
-> batch jobs e.g. spark-sql use an appropriate job type.
+> [!IMPORTANT] Match the batch subcommand to the requested job type: use
+> `pyspark` for PySpark scripts (`.py`) and `spark-sql` for Spark SQL scripts
+> (`.sql`). When asked for a Spark SQL script or `spark-sql` batch job, you MUST
+> author a `.sql` script and submit it via
+> `gcloud dataproc batches submit spark-sql` (do **NOT** substitute a `.py`
+> PySpark script).
 
 > [!IMPORTANT] Dataproc Serverless batches (`gcloud dataproc batches submit`) do
 > not require running cluster. You MUST NOT create or provision new Dataproc
 > cluster when submitting serverless batch jobs.
 
-Determine the properties and configuration required by the pyspark script before
-executing the command for Job Submission
+Determine the properties and configuration required by the script before
+executing the command for Job Submission.
 
-#### Basic batch submission command
+#### PySpark batch submission (`pyspark`)
 
 Prefer MCP if available. If using gcloud, use this command template:
 
@@ -194,11 +234,24 @@ java dependencies, you must combine them with commas (e.g.
 gcloud dataproc batches submit pyspark <SCRIPT_PATH.py> \
     --project=<PROJECT_ID> \
     --region=<GCP_REGION> \
-    --version=2.3 \
     --deps-bucket=gs://<BUCKET_NAME>
 ```
 
 You MUST set the `--deps-bucket` to a root GCS bucket URI (`gs://<BUCKET_NAME>`). Do NOT pass a subfolder path (e.g. `gs://<BUCKET_NAME>/deps`), or `gcloud` will fail with `Invalid bucket name`.
+
+#### Spark SQL batch submission (`spark-sql`)
+
+Prefer MCP if available. If using gcloud, use this command template (pass
+`--vars="KEY1=VALUE1,KEY2=VALUE2"` to substitute `${KEY}` variables in the
+`.sql` script):
+
+```bash
+gcloud dataproc batches submit spark-sql <SCRIPT_PATH.sql> \
+    --project=<PROJECT_ID> \
+    --region=<GCP_REGION> \
+    --deps-bucket=gs://<BUCKET_NAME> \
+    --vars="KEY1=VALUE1,KEY2=VALUE2"
+```
 
 > [!IMPORTANT] Dataproc Serverless batches can be expected to take a very long
 > time. **Typical initial execution time:** 10-15 minutes. This is **NORMAL**

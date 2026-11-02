@@ -4,8 +4,7 @@
       "command": "node",
       "type": "stdio",
       "args": [
-        "mcp/dist/index.js",
-        "--mode=notebook"
+        "mcp/dist/notebook-mcp.js"
       ]
     },
     "dak-data-agent-kit": {
@@ -49,6 +48,17 @@
         "X_GOOG_PROXY_HEADERS": "{\"User-Agent\":\"datacloud.antigravity\"}"
       }
     },
+    "dak-dataform": {
+      "command": "node",
+      "type": "stdio",
+      "args": [
+        "mcp/bin/mcp_proxy_bundle.cjs",
+        "https://dataform.$GCP_REGION.rep.googleapis.com/mcp"
+      ],
+      "env": {
+        "X_GOOG_PROXY_HEADERS": "{\"User-Agent\":\"datacloud.antigravity\"}"
+      }
+    },
     "dak-bigtable-data": {
       "command": "node",
       "type": "stdio",
@@ -77,6 +87,17 @@
       "args": [
         "mcp/bin/mcp_proxy_bundle.cjs",
         "https://sqladmin.googleapis.com/mcp"
+      ],
+      "env": {
+        "X_GOOG_PROXY_HEADERS": "{\"User-Agent\":\"datacloud.antigravity\"}"
+      }
+    },
+    "dak-composer": {
+      "command": "node",
+      "type": "stdio",
+      "args": [
+        "mcp/bin/mcp_proxy_bundle.cjs",
+        "https://composer.$GCP_REGION.rep.googleapis.com/mcp"
       ],
       "env": {
         "X_GOOG_PROXY_HEADERS": "{\"User-Agent\":\"datacloud.antigravity\"}"

@@ -201,8 +201,9 @@ Or create or update `~/.data_agent_kit/config.json`:
 
 ## Feedback
 
-We want your feedback! Please [open an issue](issues/new) to report bugs,
-file feature requests, or ask questions.
+We want your feedback! Please
+[open an issue](https://github.com/GoogleCloudPlatform/data-agent-kit-plugin/issues/new)
+to report bugs, file feature requests, or ask questions.
 
 ## Resources
 
