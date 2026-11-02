@@ -2,7 +2,7 @@
 name: bigquery-observability
 license: Apache-2.0
 metadata:
-  version: v2
+  version: v3
   publisher: google
 description: >-
   Provides data-retrieval best practices, tool selection guidance, and
@@ -105,8 +105,8 @@ analytical need:
     `roles/bigquery.user`), avoiding the need for `bigquery.jobs.listAll` or
     `roles/bigquery.admin`. If `JOBS_BY_USER` also returns `403 Access Denied`
     (e.g. when the caller only holds `roles/bigquery.jobUser`, which grants
-    `bigquery.jobs.create` but not `bigquery.jobs.list`), fall back to `bq ls -j
-    -n {max_results} {project_id}` for a zero-compute CLI job listing.
+    `bigquery.jobs.create` but not `bigquery.jobs.list`), fall back to
+    `bq ls -j -n {max_results} {project_id}` for a zero-compute CLI job listing.
 2.  **Dataset-Level over Region/Project-Level:** When querying table metadata,
     columns, or views for a specific dataset, qualify with `{dataset_id}` rather
     than `region-{region}` when project-level metadata access is restricted.
@@ -126,17 +126,19 @@ analytical need:
 ### Execution Guardrails & Query Invariants
 
 *   **Mandatory Partition & Time Filtering:** Always filter on `creation_time`
-    (e.g., `creation_time >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 3
-    DAY)`) or `usage_date` to avoid full metadata table scans.
-*   **Script Wrapper Exclusion:** Add `AND (statement_type != 'SCRIPT' OR
-    statement_type IS NULL)` when aggregating compute spend to avoid
-    double-counting parent scripts and child jobs.
+    (e.g.,
+    `creation_time >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 3 DAY)`) or
+    `usage_date` to avoid full metadata table scans.
+*   **Script Wrapper Exclusion:** Add
+    `AND (statement_type != 'SCRIPT' OR statement_type IS NULL)` when
+    aggregating compute spend to avoid double-counting parent scripts and child
+    jobs.
 *   **Column Pruning:** Never use `SELECT *` against `INFORMATION_SCHEMA`; only
     project required columns.
-*   **Dry Run & Cost Estimation:** Use a dry run (`bq query --dry_run
-    --use_legacy_sql=false "{query}"` or API `dryRun=true`) before executing
-    complex queries, multi-view joins, or large scans to validate syntax and
-    estimate `totalBytesProcessed` at zero cost.
+*   **Dry Run & Cost Estimation:** Use a dry run
+    (`bq query --dry_run --use_legacy_sql=false "{query}"` or API `dryRun=true`)
+    before executing complex queries, multi-view joins, or large scans to
+    validate syntax and estimate `totalBytesProcessed` at zero cost.
 *   **Empty Regional Scope (0 Rows):** If the execution location matches the
     qualifier, but the project has no datasets or jobs in that region, the query
     succeeds and returns **0 rows**. Never assume 0 rows means 0 usage—always
