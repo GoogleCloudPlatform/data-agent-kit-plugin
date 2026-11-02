@@ -32,7 +32,7 @@
       "type": "stdio",
       "args": [
         "${CLAUDE_PLUGIN_ROOT}/mcp/bin/mcp_proxy_bundle.cjs",
-        "https://dataproc-$GCP_REGION.googleapis.com/mcp"
+        "https://dataproc.googleapis.com/mcp"
       ],
       "env": {
         "X_GOOG_PROXY_HEADERS": "{\"User-Agent\":\"datacloud.claude\"}"
@@ -77,6 +77,17 @@
       "args": [
         "${CLAUDE_PLUGIN_ROOT}/mcp/bin/mcp_proxy_bundle.cjs",
         "https://sqladmin.googleapis.com/mcp"
+      ],
+      "env": {
+        "X_GOOG_PROXY_HEADERS": "{\"User-Agent\":\"datacloud.claude\"}"
+      }
+    },
+    "dak-composer": {
+      "command": "node",
+      "type": "stdio",
+      "args": [
+        "${CLAUDE_PLUGIN_ROOT}/mcp/bin/mcp_proxy_bundle.cjs",
+        "https://composer.$GCP_REGION.rep.googleapis.com/mcp"
       ],
       "env": {
         "X_GOOG_PROXY_HEADERS": "{\"User-Agent\":\"datacloud.claude\"}"
