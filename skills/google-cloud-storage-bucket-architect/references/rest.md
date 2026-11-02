@@ -158,7 +158,9 @@ Where:
 
 *   `body.json` contains the JSON request payload.
 *   `$(gcloud auth print-access-token)` dynamically generates a short-lived
-    access token for your currently active `gcloud` credentials.
+    access token for your currently active `gcloud` credentials. This token
+    helper does not require the `CLOUDSDK_METRICS_ENVIRONMENT` prefix because
+    attribution for REST is already recorded via the `User-Agent` header.
 
 --------------------------------------------------------------------------------
 

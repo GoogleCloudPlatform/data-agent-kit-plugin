@@ -14,7 +14,7 @@ FROM
     { TABLE TABLE | (QUERY_STATEMENT) },
     metric_col => 'METRIC_COL',
     dimension_cols => DIMENSION_COLS,
-    interest_label_col => 'INTEREST_LABEL_COL',
+    interest_label_col => 'INTEREST_LABEL_COL'
     [, min_apriori_support => MIN_APRIORI_SUPPORT]
     [, top_k => TOP_K]
     [, enable_pruning => ENABLE_PRUNING]
@@ -26,8 +26,8 @@ FROM
 Argument                  | Requirement  | Type            | Description
 :------------------------ | :----------- | :-------------- | :----------
 **`input_data`**          | **Required** |                 | The source table or subquery containing the data to analyze.
-**`metric_col`**          | **Required** | `String`        | Metric column name. Must be of type: INT64, NUMERIC, BIGNUMERIC, or FLOAT64.
-**`interest_label_col`**  | **Required** | `String`        | Boolean column name: `TRUE` for interest group, `FALSE` for reference group.
+**`metric_col`**          | **Required** | `STRING`        | Metric column name. Must be of type: INT64, NUMERIC, BIGNUMERIC, or FLOAT64. The values in the metric column that you use in the METRIC_COL option must be non-negative, unless you specify 0 for the MIN_APRIORI_SUPPORT value.
+**`interest_label_col`**  | **Required** | `STRING`        | Boolean column name: `TRUE` for interest group, `FALSE` for reference group.
 **`dimension_cols`**      | **Required** | `ARRAY<STRING>` | 1-12 dimension columns (INT64, BOOL, STRING); cannot be `metric_col` or `interest_label_col`.
 **`min_apriori_support`** | Optional     | `FLOAT64`       | Minimum apriori support threshold [0, 1] for output segments. Default: 0.1. Cannot be used with `top_k`.
 **`top_k`**               | Optional     | `INT64`         | Return top k insights [1, 1M] by apriori support. If unset, uses `min_apriori_support=0.1`. Cannot be used with `min_apriori_support`.
@@ -71,5 +71,26 @@ FROM AI.KEY_DRIVERS(
   dimension_cols => ['city', 'vendor_name', 'category_name'],
   interest_label_col => 'IS_H2',
   min_apriori_support => 0
+);
+```
+
+### Finding Top 5 Key Drivers in Bottle Costs
+
+```sql
+SELECT *
+FROM AI.KEY_DRIVERS(
+  (
+    SELECT
+      state_bottle_cost,
+      city,
+      category_name,
+      (EXTRACT(MONTH FROM date) >= 7) AS is_h2
+    FROM `bigquery-public-data.iowa_liquor_sales.sales`
+    WHERE EXTRACT(YEAR FROM date) = 2024
+  ),
+  metric_col => 'state_bottle_cost',
+  dimension_cols => ['city', 'category_name'],
+  interest_label_col => 'is_h2',
+  top_k => 5
 );
 ```

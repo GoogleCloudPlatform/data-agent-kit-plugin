@@ -31,10 +31,10 @@ jobs:
         with:
           # There is no security token. So, it would fail on any links which aren't public.
           #
-          # The google-cloud-storage-* and bigtable-basics skill docs contain
-          # illustrative command examples (gcloud/curl/apt/REST) with placeholder
-          # buckets, endpoints, versions, and accounts. Additionally, external CI
-          # runner IPs hitting Google Cloud documentation links trigger Google
-          # anti-abuse rate limits. Exclude GCS partner skill paths and bigtable-basics
-          # from the link checker.
-          args: "--verbose --no-progress --exclude-path skills/google-cloud-storage-basics --exclude-path skills/google-cloud-storage-fuse --exclude-path skills/google-cloud-storage-bucket-architect --exclude-path skills/bigtable-basics --exclude-path skills/bigtable_basics **/*.md"
+          # The google-cloud-storage-*, bigtable-basics, bigquery-*, and gcp-spark-observability skill docs
+          # contain illustrative command examples and Console URLs with placeholder
+          # buckets, projects, regions, endpoints, versions, and accounts. Additionally,
+          # external CI runner IPs hitting Google Cloud documentation links trigger
+          # Google anti-abuse rate limits. Exclude these partner skill paths from the
+          # link checker.
+          args: "--verbose --no-progress --exclude-path skills/google-cloud-storage-basics --exclude-path skills/google-cloud-storage-fuse --exclude-path skills/google-cloud-storage-bucket-architect --exclude-path skills/bigtable-basics --exclude-path skills/bigtable_basics --exclude-path skills/bigquery-observability --exclude-path skills/bigquery-optimization --exclude-path skills/bigquery-troubleshooting --exclude-path skills/gcp-spark-observability --exclude-path skills/gcp_spark_observability **/*.md"

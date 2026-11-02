@@ -15,13 +15,9 @@ description: >-
   anything other than creating new buckets — for uploads, downloads, access
   changes, or reconfiguring existing buckets, use google-cloud-storage-basics.
 metadata:
-    version: v2
+    version: v3
     publisher: google
-    tags:
-      - gcs
-      - storage
-      - architect
-      - bucket-creation
+    tags: "gcs, storage, architect, bucket-creation"
     category: storage
     support_tier: primary
 license: Apache-2.0
@@ -43,8 +39,8 @@ in the user's preferred format, or execute the creation if authorized.
 
 > [!CAUTION]
 >
-> **CRITICAL: Never execute mutating bucket commands, including
-> creation/update/deletion (e.g., gcloud, REST API calls) without first
+> **CRITICAL: Never execute mutating commands, including bucket
+> creation/update/deletion (e.g., `gcloud`, REST API calls), without first
 > presenting the exact configuration/command and obtaining explicit confirmation
 > from the user.**
 
@@ -70,12 +66,17 @@ skill, so usage can be attributed. The tag identifies only the skill and its
 version; it carries no user data. Do not use attribution for SDK or Terraform
 snippets.
 
-*   **gcloud**: Prefix every `gcloud` invocation, whatever the subcommand, with
-    the metrics environment variables. Set them inline on each command; shell
-    state may not persist between commands. Use this append form verbatim. It
-    keeps any attribution the host environment already set (for example an IDE
-    plugin tagging agent activity through the same variable) and adds the skill
-    tag after it, so neither value clobbers the other:
+*   **gcloud**: Prefix every `gcloud` invocation you execute or output
+    (including project checks, bucket name checks, creation/update commands, and
+    any auxiliary `gcloud` commands in recommendations) with the metrics
+    environment variables. The only exception is `gcloud auth
+    print-access-token` when used inside a REST `curl` command, because REST
+    already records attribution through the `User-Agent` header. Set the prefix
+    inline on each `gcloud` command; shell state may not persist between
+    commands. Use this append form verbatim. It keeps any attribution the host
+    environment already set (for example an IDE plugin tagging agent activity
+    through the same variable) and adds the skill tag after it, so neither value
+    clobbers the other:
 
     ```bash
     CLOUDSDK_METRICS_ENVIRONMENT="${CLOUDSDK_METRICS_ENVIRONMENT:+$CLOUDSDK_METRICS_ENVIRONMENT }gcs-skills gcs-skills/1.0 (skill:google-cloud-storage-bucket-architect)" \
