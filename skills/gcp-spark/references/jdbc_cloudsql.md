@@ -90,11 +90,17 @@ passed to `spark.jars.packages`, which only accepts Maven coordinates):
 > [!WARNING] NEVER embed plaintext secrets or passwords directly in code or
 > scripts, and do not rely on unset local environment variables in remote
 > Dataproc jobs. When using password authentication, always retrieve database
-> passwords from Google Cloud Secret Manager.
+> passwords from Google Cloud Secret Manager. If the Secret Manager secret ID is
+> not provided by the user or fails with `404 Not Found` /
+> `403 PermissionDenied`, you MUST **STOP and ask the user** for the secret
+> ID—do NOT guess secret names, scan unrelated secrets, or create new secrets
+> without user confirmation.
 
 Fetch the secret via the pre-installed `google.auth` and `urllib.request`
 libraries (falling back to `SecretManagerServiceClient` if
-`google-cloud-secret-manager` is installed):
+`google-cloud-secret-manager` is installed; on Dataproc on GCE clusters, ensure
+the cluster is created with `--scopes=cloud-platform` so the VM token includes
+Secret Manager scope):
 
 ```python
 import base64
@@ -225,12 +231,13 @@ use the **Socket Factory Uber JAR** alongside the base JDBC driver JAR.
     the subnet has Cloud NAT configured for public IP egress.
 
 > [!CAUTION]
-> **AlloyDB & SQL Server Socket Factory Conscrypt Requirement**: Dataproc's
-> default Conscrypt OpenSSL provider conflicts with the Netty gRPC TLS handshake
-> in `com.google.cloud.alloydb.SocketFactory` and the TDS login TLS handshake
-> over `com.google.cloud.sql.sqlserver.SocketFactory`. You MUST set the following
-> properties to disable Conscrypt when submitting AlloyDB or SQL Server Socket
-> Factory workloads:
+> **AlloyDB Socket Factory & SQL Server (`mssql-jdbc`) Conscrypt Requirement**:
+> Dataproc's default Conscrypt OpenSSL provider conflicts with the Netty gRPC
+> TLS handshake in `com.google.cloud.alloydb.SocketFactory` and the `mssql-jdbc`
+> TDS login TLS handshake (for **both** Direct IP and
+> `com.google.cloud.sql.sqlserver.SocketFactory`). You MUST set the following
+> properties to disable Conscrypt when submitting AlloyDB Socket Factory or any
+> SQL Server (`mssql-jdbc`) workload:
 > -   **Dataproc Serverless Batch**: Pass `--properties="dataproc.artifacts.remove=conscrypt"`
 > -   **Dataproc GCE Cluster Creation**: Pass `--properties="dataproc:dataproc.conscrypt.provider.enable=false"`
 > -   **`ManagedSparkSession`**: Set `session_config.runtime_config.properties["dataproc.artifacts.remove"] = "conscrypt"`

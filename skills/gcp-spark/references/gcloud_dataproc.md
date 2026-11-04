@@ -45,23 +45,6 @@ gcloud config get compute/region
 
 If region and location are not set, you may suggest using the compute region.
 
-### Prefer MCP if possible
-
-> [!IMPORTANT] If you have access to one or more MCP servers related to Dataproc
-> or Serverless Spark, you MUST use those MCP tools rather than gcloud. ONLY
-> fall back to gcloud if MCP tools are not available.
-
-When using MCP, the ONLY thing you use gcloud for is looking up
-project/region/location to pass as arguments to the MCP tools.
-
-### gcloud as backup
-
-If MCP servers are not available or there are no tools that can be used for your
-use case, use `gcloud` to interact with Dataproc.
-
-In general, Dataproc Clusters and Serverless Batches commands accept `--region`.
-Dataproc Serverless Sessions commands accept `--location`.
-
 ### Saving driver logs locally
 
 > [!TIP] `gcloud dataproc jobs submit`, `gcloud dataproc batches submit`, and
@@ -71,13 +54,7 @@ Dataproc Serverless Sessions commands accept `--location`.
 
 ## Dataproc Clusters
 
-Use this section if the user requests "spark jobs", "spark clusters",
-"clusters", "cluster jobs", or just "jobs". **Do not** use this section if the
-user requests "serverless jobs", "serverless batches", or "batches".
-
 ### Listing clusters
-
-Prefer MCP if available. If using gcloud, use this command template:
 
 ```
 gcloud dataproc clusters list \
@@ -99,9 +76,32 @@ Tips:
 -   Add a `--filter` to limit results, e.g. `status.state = ACTIVE AND
     clusterName = mycluster AND labels.env = staging AND labels.starred = *`
 
-### Listing jobs
+### Creating clusters
 
-Prefer MCP if available. If using gcloud, use this command template:
+Only create a cluster when explicitly requested or when no existing cluster is
+available. Prefer MCP if available. If using gcloud:
+
+```bash
+gcloud dataproc clusters create <CLUSTER_NAME> \
+    --project=<PROJECT_ID> \
+    --region=<REGION> \
+    --subnet=<SUBNET>
+```
+
+-   **Auto Zone Placement**: Specify `--region=<REGION>` and **omit `--zone`**
+    unless a specific zone is explicitly requested, so Dataproc automatically
+    selects a zone with available GCE capacity.
+-   **Avoid Redundant Default Flags**: Do **NOT** pass flags that repeat
+    Dataproc system defaults (such as `--master-machine-type=n1-standard-4`,
+    `--worker-machine-type=n1-standard-4`, or `--num-workers=2`) unless custom
+    sizing is explicitly requested.
+-   **Connector-Specific Flags & Scopes**: Refer to the target connector's
+    reference file (`references/biglake_iceberg.md`,
+    `references/jdbc_cloudsql.md`, `references/aws_s3.md`,
+    `references/azure_storage.md`, `references/spanner.md`) for required
+    optional components, scopes, or properties.
+
+### Listing jobs
 
 ```
 gcloud dataproc jobs list \
@@ -124,19 +124,27 @@ Tips:
 
 ### Submitting jobs
 
-Prefer MCP if available. If using gcloud, use this command template:
+-   **PySpark job (`.py`)**:
+    ```bash
+    gcloud dataproc jobs submit pyspark <LOCAL_SCRIPT_PATH.py> \
+        --project=<PROJECT_ID> \
+        --cluster=<CLUSTER> \
+        --region=<REGION>
+    ```
+-   **Spark SQL job (`.sql`)**:
+    ```bash
+    gcloud dataproc jobs submit spark-sql \
+        --file=<LOCAL_SCRIPT_PATH.sql> \
+        --project=<PROJECT_ID> \
+        --cluster=<CLUSTER> \
+        --region=<REGION> \
+        --params="KEY1=VALUE1,KEY2=VALUE2"
+    ```
 
-```
-gcloud dataproc jobs submit pyspark <LOCAL_SCRIPT_PATH> \
-    --project=<PROJECT_ID> \
-    --cluster=<CLUSTER> \
-    --region=<REGION>
-```
-
-> [!WARNING] The `gcloud dataproc jobs submit pyspark` command directly accepts
-> local file paths and automatically stages them. You MUST NOT attempt to
-> manually create GCS staging buckets or manually use `gcloud storage cp` to
-> upload your scripts before submission.
+> [!WARNING] The `gcloud dataproc jobs submit` commands directly accept local
+> file paths and automatically stage them. You MUST NOT attempt to manually
+> create GCS staging buckets or manually use `gcloud storage cp` to upload your
+> scripts before submission.
 
 ## Dataproc Serverless
 
@@ -171,17 +179,21 @@ Tips:
 ### Launching batches
 
 > [!WARNING] This DOES NOT apply to executing **Python Notebooks (.ipynb)**.
-> [!IMPORTANT] This section applies to **PySpark (.py) job**. For other
-> batch jobs e.g. spark-sql use an appropriate job type.
+> [!IMPORTANT] Match the batch subcommand to the requested job type: use
+> `pyspark` for PySpark scripts (`.py`) and `spark-sql` for Spark SQL scripts
+> (`.sql`). When asked for a Spark SQL script or `spark-sql` batch job, you MUST
+> author a `.sql` script and submit it via
+> `gcloud dataproc batches submit spark-sql` (do **NOT** substitute a `.py`
+> PySpark script).
 
 > [!IMPORTANT] Dataproc Serverless batches (`gcloud dataproc batches submit`) do
 > not require running cluster. You MUST NOT create or provision new Dataproc
 > cluster when submitting serverless batch jobs.
 
-Determine the properties and configuration required by the pyspark script before
-executing the command for Job Submission
+Determine the properties and configuration required by the script before
+executing the command for Job Submission.
 
-#### Basic batch submission command
+#### PySpark batch submission (`pyspark`)
 
 Prefer MCP if available. If using gcloud, use this command template:
 
@@ -194,11 +206,24 @@ java dependencies, you must combine them with commas (e.g.
 gcloud dataproc batches submit pyspark <SCRIPT_PATH.py> \
     --project=<PROJECT_ID> \
     --region=<GCP_REGION> \
-    --version=2.3 \
     --deps-bucket=gs://<BUCKET_NAME>
 ```
 
 You MUST set the `--deps-bucket` to a root GCS bucket URI (`gs://<BUCKET_NAME>`). Do NOT pass a subfolder path (e.g. `gs://<BUCKET_NAME>/deps`), or `gcloud` will fail with `Invalid bucket name`.
+
+#### Spark SQL batch submission (`spark-sql`)
+
+Prefer MCP if available. If using gcloud, use this command template (pass
+`--vars="KEY1=VALUE1,KEY2=VALUE2"` to substitute `${KEY}` variables in the
+`.sql` script):
+
+```bash
+gcloud dataproc batches submit spark-sql <SCRIPT_PATH.sql> \
+    --project=<PROJECT_ID> \
+    --region=<GCP_REGION> \
+    --deps-bucket=gs://<BUCKET_NAME> \
+    --vars="KEY1=VALUE1,KEY2=VALUE2"
+```
 
 > [!IMPORTANT] Dataproc Serverless batches can be expected to take a very long
 > time. **Typical initial execution time:** 10-15 minutes. This is **NORMAL**
@@ -388,84 +413,3 @@ Tips:
     staging AND create_time >= "2023-01-01T00:00:00Z"`
 
 --------------------------------------------------------------------------------
-
-## Workload Monitoring & Fleet Observability
-
-For comprehensive single-region and multi-region fleet assessments, Cloud Asset
-Inventory discovery, configuration auditing, and Cloud Monitoring/Logging
-telemetry, use `@skill:gcp-spark-observability`. Use the following patterns for
-common workload monitoring tasks:
-
-### 1. Failed Workload Triage & Discovery Bridge
-
-When the user asks why a recent Spark batch or job failed without providing an
-ID (e.g., *"Why did my last Spark batch fail?"* or *"Did any Spark jobs fail
-today?"*):
-
-1.  Resolve the active region (`gcloud config get-value dataproc/region` or
-    session context).
-2.  List recent failed Serverless batches (`state = FAILED`, `limit=10`):
-
-    ```bash
-    gcloud dataproc batches list --region=<REGION> \
-        --filter="state = FAILED" \
-        --limit=10 \
-        --format="json(name,uuid,state,createTime,stateTime,stateMessage,creator)"
-    ```
-
-    *(Or call MCP `list_batches` with `filter="state = FAILED"`,
-    `order_by="create_time desc"` and `page_size=10`; MCP omits `stateMessage`,
-    so follow up with `gcloud dataproc batches describe`.)*
-3.  Identify the most recent failed batch ID (sorted by `stateTime` /
-    `createTime` descending) and hand off to `@skill:gcp-spark-troubleshooting`
-    to inspect driver logs, executor exceptions, and stage diagnostics.
-
-### 2. Active Fleet & Resource Inventory
-
-When asked what Spark workloads or sessions are running right now, inspect all
-active surfaces in the target region(s) and summarize in a Markdown table with
-columns `Type`, `ID / Name`, `Region`, `Status`, `Creator`, and `Started`:
-
--   **Serverless Batches**: `gcloud dataproc batches list --region=<REGION>
-    --filter="state = RUNNING OR state = PENDING" --format=json`
--   **Interactive Sessions** (uses `--location`, **not** `--region`): `gcloud
-    beta dataproc sessions list --location=<REGION> --filter="state = ACTIVE OR
-    state = CREATING" --format=json`
--   **Dataproc Clusters**: `gcloud dataproc clusters list --region=<REGION>
-    --filter="status.state = RUNNING OR status.state = CREATING OR status.state
-    = UPDATING" --format=json`
--   **Cluster Jobs**: `gcloud dataproc jobs list --region=<REGION>
-    --state-filter=active --format=json`
-
-### 3. Serverless Compute (DCU-Hours) & Shuffle Consumption
-
-Note that MCP `list_batches` and `get_batch` omit `runtimeInfo`. Use
-`gcloud dataproc batches describe <BATCH_ID> --region=<REGION> --format=json`
-(or `gcloud dataproc batches list --region=<REGION> --format=json`) to read
-`runtimeInfo.approximateUsage`, which is populated only after a batch
-completes (running batches expose `runtimeInfo.currentUsage` instead):
-
--   $\text{DCU-Hours} = \frac{\text{milliDcuSeconds}}{3,600,000}$
--   $\text{Shuffle-GB-Months} = \frac{\text{shuffleStorageGbSeconds}}{2,592,000}$
-
-Rank batches descending by `DCU-Hours` when identifying top compute consumers.
-
-### 4. Zombie / Idle Cluster Waste Detection
-
-To detect idle clusters wasting compute spend:
-
-1.  List active clusters (`status.state = RUNNING`) via `gcloud dataproc
-    clusters list --region=<REGION> --filter="status.state = RUNNING"
-    --format=json`.
-2.  For each active cluster, list recent jobs (`gcloud dataproc jobs list
-    --region=<REGION> --cluster=<CLUSTER_NAME> --limit=20 --format=json`).
-3.  Flag any cluster with **0 active (`RUNNING`/`PENDING`) jobs** whose most
-    recent job completed **> 2 hours ago** (or cluster running > 2 hours with 0
-    jobs ever run) **and** zero running or pending YARN applications
-    (`metrics.yarnMetrics.yarn-apps-running` / `yarn-apps-pending` in the
-    `clusters list` output), since notebooks and `spark-submit` over SSH do not
-    appear in `jobs list`.
-4.  Recommend `gcloud dataproc clusters update <CLUSTER_NAME> --region=<REGION>
-    --stop-max-idle=30m` (or `--delete-max-idle=30m`), or deleting the cluster
-    after explicit user confirmation. **Never delete a running cluster without
-    user confirmation.**
