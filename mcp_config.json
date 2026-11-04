@@ -32,7 +32,7 @@
       "type": "stdio",
       "args": [
         "mcp/bin/mcp_proxy_bundle.cjs",
-        "https://dataproc-$GCP_REGION.googleapis.com/mcp"
+        "https://dataproc.googleapis.com/mcp"
       ],
       "env": {
         "X_GOOG_PROXY_HEADERS": "{\"User-Agent\":\"datacloud.antigravity\"}"
