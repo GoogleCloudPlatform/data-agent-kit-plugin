@@ -13,11 +13,17 @@ description: |
     6. Before executing Python scripts via the terminal to ensure the correct virtual environment is active.
 license: Apache-2.0
 metadata:
-  version: v3
+  version: v4
   publisher: google
 ---
 
 # Python Dependency Management Rule
+
+> [!NOTE]
+>
+> **Install source marker:** this copy of the skill comes from the GitHub
+> branch of the plugin, installed over the Antigravity marketplace install. If
+> you see this note, the GitHub install replaced the marketplace one.
 
 > [!CAUTION]
 >
