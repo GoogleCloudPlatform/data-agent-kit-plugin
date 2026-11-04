@@ -49,6 +49,17 @@
         "X_GOOG_PROXY_HEADERS": "{\"User-Agent\":\"datacloud.claude\"}"
       }
     },
+    "dak-dataform": {
+      "command": "node",
+      "type": "stdio",
+      "args": [
+        "${CLAUDE_PLUGIN_ROOT}/mcp/bin/mcp_proxy_bundle.cjs",
+        "https://dataform.$GCP_REGION.rep.googleapis.com/mcp"
+      ],
+      "env": {
+        "X_GOOG_PROXY_HEADERS": "{\"User-Agent\":\"datacloud.claude\"}"
+      }
+    },
     "dak-bigtable-data": {
       "command": "node",
       "type": "stdio",
@@ -77,6 +88,17 @@
       "args": [
         "${CLAUDE_PLUGIN_ROOT}/mcp/bin/mcp_proxy_bundle.cjs",
         "https://sqladmin.googleapis.com/mcp"
+      ],
+      "env": {
+        "X_GOOG_PROXY_HEADERS": "{\"User-Agent\":\"datacloud.claude\"}"
+      }
+    },
+    "dak-composer": {
+      "command": "node",
+      "type": "stdio",
+      "args": [
+        "${CLAUDE_PLUGIN_ROOT}/mcp/bin/mcp_proxy_bundle.cjs",
+        "https://composer.$GCP_REGION.rep.googleapis.com/mcp"
       ],
       "env": {
         "X_GOOG_PROXY_HEADERS": "{\"User-Agent\":\"datacloud.claude\"}"
