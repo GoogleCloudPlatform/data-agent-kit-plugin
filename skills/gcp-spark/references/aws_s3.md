@@ -57,7 +57,11 @@ Configure `fs.s3a.*` properties using either:
 
 Never hardcode AWS access keys or secret keys in code or CLI flags. Retrieve
 them at runtime from Google Cloud Secret Manager using the pre-installed
-`google.auth` + `urllib.request` REST API (zero extra PyPI packages required):
+`google.auth` + `urllib.request` REST API (zero extra PyPI packages required).
+If the Secret Manager secret IDs are not provided by the user or fail with
+`404 Not Found` / `403 PermissionDenied`, you MUST **STOP and ask the user** for
+the secret IDs—do NOT guess secret names, scan unrelated secrets, or create new
+secrets without user confirmation:
 
 ```python
 import base64
@@ -167,8 +171,10 @@ spark.conf.set("fs.s3a.connection.ssl.enabled", "true")
 
 ## 5. Networking & IAM Requirements
 
-1.  **Secret Manager IAM**: Grant `roles/secretmanager.secretAccessor` to the
-    Dataproc runtime service account so it can read the AWS credentials secrets.
+1.  **Secret Manager IAM & GCE Scopes**: Grant
+    `roles/secretmanager.secretAccessor` to the Dataproc runtime service account
+    so it can read the AWS credentials secrets (and pass
+    `--scopes=cloud-platform` when creating a Dataproc on GCE cluster).
 2.  **Outbound Internet Egress (Cloud NAT)**: Dataproc Serverless batches and
     sessions run on VPC subnets with Private Google Access (`enable_private_ip`
     is default). Because Amazon S3 endpoints live outside Google Cloud, the VPC
