@@ -7,7 +7,8 @@ description: |
   - Authoring or running Spark/PySpark notebooks in any kernel (Local Kernel with
     spark-remote templates, Remote Spark / Remote Kernel, ManagedSparkSession, Spark Connect).
   - Querying, transforming, or writing data with PySpark or Spark SQL, including
-    Apache Iceberg / BigLake Iceberg tables, BigQuery, GCS, Spanner, or Cloud SQL.
+    Apache / BigLake Iceberg, BigQuery, GCS, Spanner, Cloud SQL, AlloyDB,
+    Amazon S3, or Azure Blob Storage / ADLS Gen2.
   - Building PySpark ETL pipelines, machine learning workloads, or batch jobs.
   - Managing Dataproc clusters, serverless batches, or interactive sessions.
   - Optimizing PySpark or Spark SQL queries for performance, memory, and OOM prevention.
@@ -16,7 +17,7 @@ description: |
   - Troubleshooting failed Spark jobs or Dataproc batches (use @skill:gcp-spark-troubleshooting).
 license: Apache-2.0
 metadata:
-  version: v31
+  version: v33
   publisher: google
 ---
 
@@ -84,14 +85,17 @@ metadata:
     all similar tables in the namespace or project.
 
     *MISSING SOURCE RULE*: If the request does not name a table, GCS path or
-    catalog, you MUST run at most ONE `@skill:discovering-gcp-data-assets`
-    search. If it does not return a single clear match, you MUST list the
-    candidates, ask the user which source to use, and STOP. You MUST NOT infer
-    the source by listing buckets, reading existing notebooks or scripts, or
-    running `SHOW NAMESPACES` / `SHOW TABLES`.
+    catalog (or a required database instance/connection or `s3a://` / `abfss://`
+    / `wasbs://` / `wasb://` URI), you MUST run at most ONE
+    `@skill:discovering-gcp-data-assets` search. If it does not return a single
+    clear match, you MUST list the candidates, ask the user which source to use,
+    and STOP. You MUST NOT infer the source by listing buckets, reading existing
+    notebooks or scripts, or running `SHOW NAMESPACES` / `SHOW TABLES`.
 
-    *MINOR TYPO RULE*: If there is a minor typo (e.g. `employees` vs
-    `employee`), you can fix the error and proceed.
+    *MINOR TYPO RULE*: If there is a minor singular/plural or 1–2 character
+    typo in a table name (e.g. `employees` vs `employee`, or `loans` vs `loan`),
+    immediately fix the table name in code and proceed without asking for user
+    confirmation, noting the correction in your response.
 
     *STRICT HALT RULE*: If the discovered table names differ from the requested
     table by more than a minor typo (e.g. completely different words, prefixes,
@@ -113,11 +117,17 @@ metadata:
     immediately. Either (1) ask the user what to do next, or (2) if asked to
     execute a notebook, save the notebook with the error output and recommend
     next steps to resolve the issue. Do NOT scan all buckets for alternative
-    fallback datasets when encountering GCS errors.
+    fallback datasets when encountering GCS errors. NEVER create a new GCS
+    bucket (`gcloud storage buckets create`) without explicit user confirmation;
+    if a required bucket does not exist, STOP and ask the user.
 4.  **Generate spark code**:
 
     *   **Output Format**: **ALWAYS** generate code in **Python Notebooks
-        (.ipynb)** format. Generate scripts (.py) only if explicitly requested.
+        (.ipynb)** format unless a standalone script or batch/cluster job is
+        explicitly requested: generate a Python script (`.py`) when a PySpark
+        script/job is requested, or a Spark SQL script (`.sql`) when a Spark SQL
+        script or `spark-sql` job/batch is requested (refer to
+        `references/gcloud_dataproc.md` for `spark-sql` syntax and submission).
     *   **Spark Session Initialization**:
 
         > [!IMPORTANT] Initializing a Spark session on Google Cloud can take 2-3
@@ -127,7 +137,10 @@ metadata:
         > following are **BANNED**: - `SparkSession.builder.master("local")` -
         > `pyspark.sql.SparkSession.builder.getOrCreate()` in notebooks or local
         > Spark Connect scripts - Any `try/except` fallbacks that revert to a
-        > local `SparkSession`.
+        > local `SparkSession` - Silently switching execution modes when an
+        > explicitly requested mode fails (e.g. falling back from Spark Connect
+        > / interactive session to `gcloud dataproc batches submit` or cluster
+        > creation without asking the user).
         >
         > - **Remote Kernel Notebooks (`.ipynb`)**: `spark` is pre-initialized;
         >   use it directly without calling `ManagedSparkSession` or
@@ -173,6 +186,15 @@ metadata:
         Manager). You MUST NOT hardcode environment-specific variables;
         parameterize project IDs, dataset IDs, table names, and bucket paths via
         `os.environ.get(...)` or arguments.
+    *   **Missing or Inaccessible Custom JAR Rule (Do Not Improvise)**:
+        -   If a required custom `gs://.../*.jar` URI (e.g., JDBC driver or
+            Socket Factory Uber JAR) is **not provided by the user**, or if
+            Spark session/job execution fails because the JAR **does not exist
+            or is inaccessible in GCS**, you MUST **STOP and ask the user** for
+            the `gs://` JAR URI(s).
+        -   **NEVER** guess JAR paths, scan arbitrary GCS buckets for `.jar`
+            files, download JARs from Maven Central (`curl`/`wget`) to upload to
+            GCS, or substitute `spark.jars.packages` Maven coordinates.
     *   **Read and Write data**: **ALWAYS** load only the connector reference
         file(s) needed for the prompt:
         -   **BigQuery, GCS, or Pub/Sub**: `references/read_write_data.md`
@@ -198,7 +220,8 @@ metadata:
 6.  **Compile code before executing**: For notebooks convert them to python
     script using `jupyter nbconvert --to script your-notebook.ipynb` first. Then
     compile the resulting python script using `python3 -m py_compile
-    your-script.py`. The same can be done for pyspark source code.
+    your-script.py`. The same can be done for pyspark source code (skip
+    `py_compile` for pure `.sql` scripts).
 7.  **Execute script or notebook**: When requested to run a job, script,
     session, or execute notebook cells against Managed Spark, refer to
     `references/gcloud_dataproc.md` on how to execute code on Dataproc
@@ -259,33 +282,3 @@ The Managed Spark (Dataproc) service account needs:
 *   `roles/spanner.databaseUser`: Spanner reads and writes
 *   `roles/secretmanager.secretAccessor`: Accessing database passwords and credentials stored in Secret Manager
 
---------------------------------------------------------------------------------
-
-## Spark resource management & observability
-
-Refer to `references/gcloud_dataproc.md` for detailed guidelines on managing
-Spark clusters, jobs, batches, interactive sessions, and Spark Connect sessions.
-
-For fleet-wide and multi-region observability — including active workload
-inventory across Batches, Sessions, Clusters, and Jobs, failed batch discovery,
-Serverless compute consumption (`DCU-Hours` and `Shuffle-GB-Months`), idle or
-zombie cluster waste detection, scheduled pipeline cadence health, configuration
-auditing, and Cloud Monitoring / Cloud Logging telemetry — use the
-`@skill:gcp-spark-observability` skill.
-
---------------------------------------------------------------------------------
-
-## Code Optimization & Pre-Submission Verification
-
-Before submitting any Spark job or Dataproc batch, enforce the pre-submission
-verification protocol in `references/spark_refactoring_guide.md`: inspect the
-code for the anti-patterns catalogued in `references/spark_optimizations.md` and
-obtain explicit user confirmation before applying refactoring.
-
---------------------------------------------------------------------------------
-
-## Troubleshooting & Root Cause Analysis
-
-For troubleshooting failed Spark jobs or Dataproc batches, inspecting/tailing
-GCS driver output logs, analyzing Spark event logs, or performing Root Cause
-Analysis (RCA), use the `@skill:gcp-spark-troubleshooting` skill.
