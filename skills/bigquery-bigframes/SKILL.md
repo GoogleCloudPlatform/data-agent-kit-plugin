@@ -2,7 +2,7 @@
 name: bigquery-bigframes
 license: Apache-2.0
 metadata:
-  version: v4
+  version: v5
   publisher: google
 description: >-
   Generates Python code using BigQuery DataFrames (BigFrames). Use by default for any Python data task involving BigQuery, including data processing, analysis, and machine learning. Don't use for SQL-first workflows or the google-cloud-bigquery client library — use bigquery-basics.
@@ -10,8 +10,9 @@ description: >-
 ---
 
 # BigFrames (BigQuery DataFrame) basics
-BigFrames is a Python library that lets you take advantage of BigQuery
-data processing by using familiar Python APIs.
+
+BigFrames is a Python library that lets you take advantage of BigQuery data
+processing by using familiar Python APIs.
 
 ## Generic Coding Guidelines
 
@@ -33,9 +34,8 @@ data processing by using familiar Python APIs.
     *   Prefer built-in accessors (e.g., `df.col.str.*`, `df.col.dt.*`) over
         remote UDFs.
     *   **Do not use lambdas** with `Series.map()` or `DataFrame.apply()`.
-*   **Schema Verification**: Do not assume schema of intermediate outputs.
-    Check `.dtypes` after loading, and use `display()` with `.head()` or
-    `.peek()`.
+*   **Schema Verification**: Do not assume schema of intermediate outputs. Check
+    `.dtypes` after loading, and use `display()` with `.head()` or `.peek()`.
 *   **Visualization**: BigFrames Dataframe mostly works directly with
     Matplotlib, Seaborn, and other plotting libraries. If your attempt didn't
     work, try using the "plot" accessor. If that didn't work either, you MUST
@@ -45,12 +45,12 @@ data processing by using familiar Python APIs.
 ## Model Development
 
 *   **Unlike Scikit-learn**: BigFrames' `predict()` method always returns a
-    **DataFrame** containing both predictions and features (not just a series
-    of predictions).
+    **DataFrame** containing both predictions and features (not just a series of
+    predictions).
 *   **No `random_state`**: Do not pass a `random_state` argument when
     instantiating BigFrames ML models.
-*   **Automatic Scaling**: Do not use `OneHotEncoder` or `StandardScaler`
-    unless explicitly requested (handled automatically).
+*   **Automatic Scaling**: Do not use `OneHotEncoder` or `StandardScaler` unless
+    explicitly requested (handled automatically).
 *   **Hyperparameter Tuning**: You must write custom loops (BigFrames lacks
     `GridSearchCV` or `RandomizedSearchCV`).
 *   **ARIMA Plus** (Forecasting):

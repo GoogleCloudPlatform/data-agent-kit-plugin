@@ -9,7 +9,7 @@ description: |-
     4. You need to query BigQuery from within a notebook. DO NOT use the Python BigQuery client library; instead, you MUST use the `%%bqsql` magics explained in this skill.
 license: Apache-2.0
 metadata:
-  version: v7
+  version: v8
   publisher: google
 ---
 
@@ -116,16 +116,15 @@ kernel’s Python environment contains the necessary libraries (`bigframes`,
             "BigFrames" and "BigQuery" notebooks MUST use **Local Python**.
     -   **Infer from notebook cells**:
         -   Presence of a Spark Connect session, for example
-            `ManagedSparkSession` or `DataprocSparkSession`, indicates
-            **Local Python**.
+            `ManagedSparkSession` or `DataprocSparkSession`, indicates **Local
+            Python**.
     -   **Infer from notebook metadata**:
         -   Read the `metadata.kernelspec` notebook field. A **Remote Spark**
             kernel name starts with a connection hash.
     -   **Infer from Context**:
         -   For a "Spark" notebook, evidence of a local Python setup (such as a
-            Spark Connect session) means you should lean towards
-            **Local Python**. Without such evidence, lean towards
-            **Remote Spark**.
+            Spark Connect session) means you should lean towards **Local
+            Python**. Without such evidence, lean towards **Remote Spark**.
     -   **Ask when Ambiguous**: If multiple options fit, ask if they prefer a
         **Local Python** or a **Remote Kernel**.
 2.  **For Local Setup**: Use `@skill:managing-python-dependencies` to verify if
@@ -241,10 +240,9 @@ key is to keep them grouped logically and separated by Markdown headers.*
 
 When a notebook cell execution tool is available (exposed as
 `notebook_execute_cell` or `notebook__execute_cell`), you **MUST** use it to
-create and execute cells one at a time. You **MUST NOT** generate `.ipynb`
-files programmatically (for example with `nbformat`) or execute notebooks in
-batch from the shell (for example `jupyter nbconvert --execute` or
-`papermill`).
+create and execute cells one at a time. You **MUST NOT** generate `.ipynb` files
+programmatically (for example with `nbformat`) or execute notebooks in batch
+from the shell (for example `jupyter nbconvert --execute` or `papermill`).
 
 For **Local Python** execution, you **MUST** use a virtual environment and the
 Python version inferred from the kernel definition.
@@ -262,11 +260,11 @@ Python version inferred from the kernel definition.
 
 Retry the cell once **only if** the error is plausibly transient (timeout,
 `DEADLINE_EXCEEDED`, `UNAVAILABLE`, kernel restart, rate limit). Re-invoke the
-cell execution tool with the exact same parameters: do NOT edit the code,
-change the kernel, or alter any tool argument first. If it fails again with the
-**same or substantially similar error**, the failure is confirmed. For
-deterministic errors (`SyntaxError`, `NameError`, `ModuleNotFoundError`,
-`PERMISSION_DENIED`, `NotFound`) skip the retry entirely. Proceed to step 2.
+cell execution tool with the exact same parameters: do NOT edit the code, change
+the kernel, or alter any tool argument first. If it fails again with the **same
+or substantially similar error**, the failure is confirmed. For deterministic
+errors (`SyntaxError`, `NameError`, `ModuleNotFoundError`, `PERMISSION_DENIED`,
+`NotFound`) skip the retry entirely. Proceed to step 2.
 
 > [!WARNING]
 >
@@ -336,10 +334,10 @@ trust.
 6.  **No Silently Reducing Data Scope** — Never add or lower `LIMIT` clauses,
     filter predicates, or sampling to work around timeouts or resource errors
     without explicit user approval.
-7.  **No Shipping Commented-Out Code** — Never leave failing lines commented
-    out or deleted in order to make the cell "succeed". Temporary bisection to
-    isolate a bug is a valid debugging step, but the delivered cell MUST
-    execute its intended logic or not at all.
+7.  **No Shipping Commented-Out Code** — Never leave failing lines commented out
+    or deleted in order to make the cell "succeed". Temporary bisection to
+    isolate a bug is a valid debugging step, but the delivered cell MUST execute
+    its intended logic or not at all.
 
 ### 4. Required User Interaction on Unresolvable Failures
 
@@ -351,10 +349,9 @@ When a failure falls into a "STOP" category above, the agent MUST:
     the symptoms you actually observe; do not invent details.
 2.  **Report**: show the user the exact error message, which cell failed, and
     the diagnosis.
-3.  **Suggest**: propose concrete actions the user can take to resolve it
-    (e.g., "Please verify the bucket exists with
-    `gcloud storage ls gs://foo-bucket/` and that your account has
-    `storage.objectViewer` on it").
+3.  **Suggest**: propose concrete actions the user can take to resolve it (e.g.,
+    "Please verify the bucket exists with `gcloud storage ls gs://foo-bucket/`
+    and that your account has `storage.objectViewer` on it").
 4.  **Wait**: do NOT proceed to subsequent cells. Wait for the user to resolve
     the issue and explicitly confirm before retrying.
 
