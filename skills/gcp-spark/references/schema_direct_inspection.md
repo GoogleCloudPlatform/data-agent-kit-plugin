@@ -5,8 +5,8 @@
 Biglake tables are often specified in format `catalog.schema.table`, the first
 segment is the **Catalog Name**, NOT a GCP project ID.
 
-Prefer using `@skill:discovering-gcp-data-assets` skill to find and lookup
-schema and use the following examples as a fallback mechanisms:
+Prefer using `@skill:knowledge-catalog` skill to find and lookup schema and use
+the following examples as a fallback mechanisms:
 
 ### 1. Cloud Spanner
 
