@@ -11,43 +11,45 @@ of rules in the subsections in this file.
 ## Table of Contents
 
 -   [SQL optimization rules for reducing slot-time](#sql-optimization-rules-for-reducing-slot-time)
-    (Lines 52-588)
+    (Lines 54-595)
     -   [Materialize a CTE with temporary tables](#materialize-a-cte-with-temporary-tables)
-        (Lines 54-94)
+        (Lines 56-96)
     -   [Order multiple temporary tables or variables in reference order](#order-multiple-temporary-tables-or-variables-in-reference-order)
-        (Lines 96-161)
+        (Lines 98-168)
     -   [Add DISTINCT to semijoin subqueries](#add-distinct-to-semijoin-subqueries)
-        (Lines 163-209)
+        (Lines 170-216)
     -   [Replace REGEXP_CONTAINS with LIKE](#replace-regexp_contains-with-like)
-        (Lines 211-229)
+        (Lines 218-236)
     -   [Use SEARCH on columns with a search index](#use-search-on-columns-with-a-search-index)
-        (Lines 231-279)
+        (Lines 238-286)
     -   [In a WHERE clause, use a BETWEEN expression instead of the EXTRACT function](#in-a-where-clause-use-a-between-expression-instead-of-the-extract-function)
-        (Lines 281-314)
+        (Lines 288-321)
     -   [Add a LIMIT clause to an ORDER BY clause](#add-a-limit-clause-to-an-order-by-clause)
-        (Lines 316-346)
+        (Lines 323-353)
     -   [Remove an ORDER BY clause from a CREATE TABLE statement](#remove-an-order-by-clause-from-a-create-table-statement)
-        (Lines 348-378)
+        (Lines 355-385)
     -   [Compare date columns to DATE literals, not string casts](#compare-date-columns-to-date-literals-not-string-casts)
-        (Lines 380-410)
+        (Lines 387-417)
     -   [Add a null filter to a NOT IN subquery](#add-a-null-filter-to-a-not-in-subquery)
-        (Lines 412-441)
+        (Lines 419-448)
     -   [Replace a WHERE IN OR IN clause with LEFT JOINs](#replace-a-where-in-or-in-clause-with-left-joins)
-        (Lines 443-479)
+        (Lines 450-486)
     -   [Replace exact aggregates with approximate aggregates](#replace-exact-aggregates-with-approximate-aggregates)
-        (Lines 481-510)
+        (Lines 488-517)
     -   [Pre-aggregate join inputs before joining](#pre-aggregate-join-inputs-before-joining)
-        (Lines 512-588)
+        (Lines 519-595)
 -   [SQL optimization rules for reducing amount of data](#sql-optimization-rules-for-reducing-amount-of-data)
-    (Lines 590-837)
+    (Lines 597-1011)
     -   [Replace `SELECT *` with a specific column list](#replace-select-with-a-specific-column-list)
-        (Lines 592-629)
+        (Lines 599-636)
     -   [Check the query filters on the partitioned column](#check-the-query-filters-on-the-partitioned-column)
-        (Lines 631-837)
+        (Lines 638-861)
         -   [Fetching table schemas from BigQuery](#fetching-table-schemas-from-bigquery)
-            (Lines 793-821)
+            (Lines 804-832)
         -   [Validating a rewrite with a dry run](#validating-a-rewrite-with-a-dry-run)
-            (Lines 823-837)
+            (Lines 834-861)
+    -   [Prune target partitions in MERGE statements](#prune-target-partitions-in-merge-statements)
+        (Lines 863-1011)
 
 ## SQL optimization rules for reducing slot-time
 
@@ -98,9 +100,12 @@ GROUP BY
 When applying the rules for materializing CTEs into temporary tables (see
 subsection "Materialize a CTE with temporary tables") or declaring variables
 (see rule 3.b. in the subsection "Check the query filters on the partitioned
-column"), order them in the order that they are referenced in the query.
-Temporary tables and variables must come before other temporary tables or
-variables that reference them.
+column" and the subsection "Prune target partitions in MERGE statements"), order
+them in the order that they are referenced in the query. Temporary tables and
+variables must come before other temporary tables or variables that reference
+them. `DECLARE` statements still have to come first in the script, so when a
+variable reads a temporary table, declare the variable first and assign it with
+`SET` after the table is created.
 
 Example of a query with a temporary table and a variable that is out of order:
 
@@ -128,12 +133,14 @@ SELECT
 FROM
   orders
 WHERE
-  timestamp >= last_order_date;
+  DATE(timestamp) >= last_order_date;
 ```
 
 Here is the corrected order of the temporary table and variable:
 
 ```sql
+DECLARE last_order_date DATE;
+
 CREATE TEMP TABLE quantity_sold_per_day AS (
   SELECT
     EXTRACT(DATE from timestamp) AS date,
@@ -143,7 +150,7 @@ CREATE TEMP TABLE quantity_sold_per_day AS (
   GROUP BY 1
 );
 
-DECLARE last_order_date DEFAULT (
+SET last_order_date = (
   SELECT
     max(date)
   FROM
@@ -157,7 +164,7 @@ SELECT
 FROM
   orders
 WHERE
-  timestamp >= last_order_date;
+  DATE(timestamp) >= last_order_date;
 ```
 
 ### Add DISTINCT to semijoin subqueries
@@ -630,13 +637,14 @@ GROUP BY 1;
 
 ### Check the query filters on the partitioned column
 
-Check the given query on how it filters (either a `WHERE` clause in a `SELECT`
-statement or `ON` clause in a `JOIN` statement) on the partitioned column.
+Check the given query on how it filters (a `WHERE` clause in a `SELECT`
+statement or `USING` subquery, or an `ON` or `WHEN` clause in a `JOIN` or
+`MERGE` statement; see rule 3.d for `MERGE`) on the partitioned column.
 
 Steps to follow:
 
-1.  Find all referred tables in `SELECT` or `JOIN` statements. If the query does
-    not specify the project ID, use the project ID from the context.
+1.  Find all referred tables in `SELECT`, `JOIN`, or `MERGE` statements. If the
+    query does not specify the project ID, use the project ID from the context.
 
     Example 1 where the referred tables follow the format `DATASET.TABLE` and do
     not specify the project ID:
@@ -790,6 +798,9 @@ Steps to follow:
       order_timestamp > CURRENT_TIMESTAMP() - INTERVAL 1 DAY;
     ```
 
+    d. For `MERGE` statements, follow the rules described in
+    [Prune target partitions in MERGE statements](#prune-target-partitions-in-merge-statements).
+
 #### Fetching table schemas from BigQuery
 
 Use the following shell command to fetch the table schema from BigQuery:
@@ -822,16 +833,179 @@ Use the following shell command to fetch the table schema from BigQuery:
 
 #### Validating a rewrite with a dry run
 
-After rewriting a query to add partition filters or replace `SELECT *` with
-explicit columns, instruct the user to validate the estimated bytes processed
-before executing the query using a dry run:
+After rewriting a query or `MERGE` statement to add partition filters or replace
+`SELECT *` with explicit columns, instruct the user to validate the estimated
+bytes processed before executing the query using a dry run. Save the statement
+to a file and pass it on standard input:
 
 ```bash
-bq query --use_legacy_sql=false --dry_run "{sql_query}"
+bq query --use_legacy_sql=false --dry_run < query.sql
 ```
+
+Don't pass the statement inline in double quotes: the shell treats the backticks
+around table names as command substitution. In PowerShell, which doesn't support
+`<`, pipe the file instead:
+`Get-Content query.sql -Raw | bq query --use_legacy_sql=false --dry_run`.
 
 A dry run validates SQL syntax and returns the deterministic
 `totalBytesProcessed` estimate after partition pruning and column pruning
 without running the query or incurring compute charges. Note that block-pruning
 savings from clustered columns are determined dynamically during execution and
 are not reflected in the dry-run upper bound.
+
+Dry runs don't support `CREATE TEMP TABLE`, stop at `IF`, `FOR`, and `WHILE`
+statements, and can't evaluate the runtime value of variables in a partition
+filter. When a rewrite uses a multi-statement script, dry-run the rewritten
+`SELECT` or `MERGE` statement alone, substituting literal values for variables,
+the original table or CTE for a temporary table, and literal values or
+`--parameter` flags for query parameters.
+
+### Prune target partitions in MERGE statements
+
+When the target table of a `MERGE` statement is partitioned, add a filter
+condition on the partitioned column with a constant expression. A condition such
+as `T.order_date = S.order_date` compares the partitioned column to a table
+value, which is dynamic, so BigQuery scans every partition of the target table,
+even when the source has no rows. Read the source's range into variables (this
+reads only the source table), add that filter condition to the `ON` clause, and
+skip the `MERGE` when there is nothing to merge.
+
+Example of a `MERGE` that scans every partition of `my_dataset.orders`:
+
+```sql
+MERGE `my_dataset.orders` AS T
+USING `my_dataset.orders_staging` AS S
+ON T.order_id = S.order_id AND T.order_date = S.order_date
+WHEN MATCHED THEN
+  UPDATE SET status = S.status
+WHEN NOT MATCHED THEN
+  INSERT (order_id, order_date, status)
+  VALUES (S.order_id, S.order_date, S.status);
+```
+
+Here is the `MERGE` rewritten to prune target partitions:
+
+```sql
+DECLARE row_count INT64;
+DECLARE min_date, max_date DATE;
+SET (row_count, min_date, max_date) = (
+  SELECT AS STRUCT COUNT(*), MIN(order_date), MAX(order_date)
+  FROM `my_dataset.orders_staging`
+);
+IF row_count > 0 THEN
+  MERGE `my_dataset.orders` AS T
+  USING `my_dataset.orders_staging` AS S
+  ON T.order_id = S.order_id
+    AND T.order_date = S.order_date
+    AND T.order_date BETWEEN min_date AND max_date
+  WHEN MATCHED THEN
+    UPDATE SET status = S.status
+  WHEN NOT MATCHED THEN
+    INSERT (order_id, order_date, status)
+    VALUES (S.order_id, S.order_date, S.status);
+END IF;
+```
+
+The additional filter condition can change which rows match, so check these
+conditions before you suggest it:
+
+-   Add the filter condition to the `ON` clause only when the partitioned column
+    is part of the match key, as in the example. Every matching target row then
+    falls inside the source's range, so the result does not change. If the match
+    key doesn't include the partitioned column (for example, a table partitioned
+    on `updated_at` and matched on `order_id`), a matching row can sit in any
+    partition, so the filter condition turns real matches into
+    `WHEN NOT MATCHED` rows and inserts duplicates. In that case, ask the user
+    how far back a matching row can be and use that window in the filter
+    condition; if no safe window exists, leave `ON` without a partition filter
+    and tell the user the target partitions can't be pruned safely.
+-   The range must describe the rows that the `MERGE` reads. If another load can
+    write to the source between the `SET` or `ASSERT` and the `MERGE`, copy the
+    source into a temporary table first and use that table in both statements.
+    Keep the `DECLARE` statements first, because BigQuery requires them at the
+    start of the script, then create the temporary table, then run the `SET` or
+    `ASSERT`. Don't wrap the `MERGE` in `BEGIN TRANSACTION`: a transaction locks
+    the whole target table, so other transactions on it fail and DML on other
+    partitions waits instead of running in parallel.
+-   A `WHEN NOT MATCHED BY SOURCE` clause acts on every target row that the
+    source lacks, in every partition, so without a filter condition it scans the
+    whole target table. Don't put the filter condition in the `ON` clause here:
+    every target row outside the range would count as not matched by source, so
+    the clause would delete or update it.
+
+    -   If the statement has no `WHEN NOT MATCHED` clause, add the window filter
+        condition on the target's partitioned column to the condition of every
+        `WHEN` clause, for example `WHEN NOT MATCHED BY SOURCE AND T.sale_date
+        BETWEEN @window_start AND @window_end THEN`. BigQuery then scans only
+        those partitions. Take the range from the intended refresh window, not
+        from the source's `MIN` and `MAX`. Tell the user that the statement no
+        longer touches target rows outside the window, and confirm that scope:
+        for example, rows that have just aged out of the window are no longer
+        marked by the `WHEN NOT MATCHED BY SOURCE` clause unless the lower edge
+        is widened by one refresh period.
+    -   If the statement also has a `WHEN NOT MATCHED` clause, BigQuery usually
+        runs a full outer join, which cannot be pruned. If the
+        `WHEN NOT MATCHED BY SOURCE` clause deletes, no `WHEN` clause has a
+        filter, `WHEN MATCHED` doesn't delete or read target columns, and the
+        source holds every row for the window (for example, a full reload of
+        recent partitions), rewrite the statement as a replace with a literal
+        `ON FALSE` merge condition, which avoids the join. Otherwise (for
+        example, when `WHEN NOT MATCHED BY SOURCE` marks missing rows inactive),
+        don't use the replace: it would delete, overwrite, or reinsert rows that
+        should stay as they are. Tell the user the full outer join can't be
+        pruned. For the replace, filter both the insert and the delete by the
+        intended refresh window (query parameters or `DECLARE`d variables set
+        once from an expression such as
+        `DATE_SUB(CURRENT_DATE(), INTERVAL 2 DAY)`), not by the source's `MIN`
+        and `MAX`: if the first or last day of the window has no source rows, a
+        source-derived range would leave that day's stale rows behind. Add the
+        `ASSERT` shown below: an empty source (for example, after a failed
+        upstream load) would delete the whole window, and source rows outside
+        the window would be skipped.
+
+        ```sql
+        ASSERT (
+          SELECT
+            COUNT(*) > 0
+            AND COUNTIF(
+              sale_date IS NULL
+              OR sale_date NOT BETWEEN @window_start AND @window_end) = 0
+          FROM `my_dataset.daily_sales_staging`
+        ) AS 'Staging must be non-empty and inside the refresh window';
+
+        MERGE `my_dataset.daily_sales` AS T
+        USING `my_dataset.daily_sales_staging` AS S
+        ON FALSE
+        WHEN NOT MATCHED
+          AND S.sale_date BETWEEN @window_start AND @window_end THEN
+          INSERT (sale_id, sale_date, amount)
+          VALUES (S.sale_id, S.sale_date, S.amount)
+        WHEN NOT MATCHED BY SOURCE
+          AND T.sale_date BETWEEN @window_start AND @window_end THEN
+          DELETE;
+        ```
+
+        When you suggest this rewrite, tell the user how it differs from the
+        original and confirm the intended scope. The original deletes every
+        target row that the source lacks, including rows older than the window;
+        the rewrite touches only the window. The rewrite deletes and reinserts
+        every row in the window, so columns that only the target has get their
+        default value, a new identity value, or `NULL`; columns that the
+        original `UPDATE` didn't set take the source's values; and duplicate
+        source keys that match an existing row are inserted instead of failing
+        the statement.
+
+For the source table, if it is a staging or delta table meant to be read in
+full, don't ask for a filter condition on it. If the source is a large
+partitioned table, filter it in a
+`USING (SELECT ... WHERE {partition_column} BETWEEN ...)` subquery (not in `ON`
+when `WHEN NOT MATCHED` is present, which doesn't prune the source and inserts
+out-of-range source rows as duplicates), and warn that a source filter condition
+changes which rows are merged and, with `WHEN NOT MATCHED BY SOURCE`, which
+target rows are deleted.
+
+To check the savings, dry-run the `MERGE` alone as described in
+[Validating a rewrite with a dry run](#validating-a-rewrite-with-a-dry-run). If
+the source's dates are spread out (for example, a few late-arriving rows), the
+source's `MIN` to `MAX` range can still cover many partitions, so confirm the
+savings before you claim them.
