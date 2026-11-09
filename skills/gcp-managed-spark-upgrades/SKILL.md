@@ -374,10 +374,13 @@ Step 1.6, or asked to automatically approve the full workflow (rule 5).
     -   temporary resources left behind (e.g. `_temp` paths in GCS).
 3.  **Deliver** to the Target GCS path with `gcloud storage cp`: the final code
     (the job's main file and code dependencies, changed or not, keeping their
-    relative layout) and the report. For an analysis-only request, upload only
-    the report. For a Git source, also leave the changes on the
-    `spark-upgrade-<target_version>` branch (don't push unless the user asks)
-    and name the branch in the report.
+    relative layout) and the report. Keep the local working copy
+    (`src_<app_id>_temp/` or local files) and the local report
+    (`<app_id>_<source_version>_<target_version>_spark_upgrade_report.md`) in
+    the local workspace after uploading—do not delete them unless the user asks.
+    For an analysis-only request, upload only the report. For a Git source, also
+    leave the changes on the `spark-upgrade-<target_version>` branch (don't push
+    unless the user asks) and name the branch in the report.
 
 ## Definition of Done
 
