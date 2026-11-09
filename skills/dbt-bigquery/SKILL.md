@@ -7,7 +7,7 @@ description: Expert guidance for creating, modifying, and optimizing dbt pipelin
   **setting up a new dbt project** or configuring existing one
 license: Apache-2.0
 metadata:
-  version: v7
+  version: v8
   publisher: google
 ---
 

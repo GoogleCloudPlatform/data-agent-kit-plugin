@@ -6,7 +6,7 @@ description: Automated data quality and transformation capabilities for Dataform
   cleaning.
 license: Apache-2.0
 metadata:
-  version: v1
+  version: v2
   publisher: google
 ---
 

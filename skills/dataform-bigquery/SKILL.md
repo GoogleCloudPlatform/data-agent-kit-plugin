@@ -7,7 +7,7 @@ description: Expertise in generating clean, correct, and efficient Dataform pipe
   up a new Dataform project or configuring workflow_settings.yaml.
 license: Apache-2.0
 metadata:
-  version: v7
+  version: v8
   publisher: google
 ---
 

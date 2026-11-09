@@ -2,7 +2,7 @@
 name: bigquery-observability
 license: Apache-2.0
 metadata:
-  version: v2
+  version: v3
   publisher: google
 description: >-
   Provides data-retrieval best practices, tool selection guidance, and

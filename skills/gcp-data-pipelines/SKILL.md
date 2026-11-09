@@ -9,7 +9,7 @@ description: 'Primary entry point for building, managing, and orchestrating data
   '
 license: Apache-2.0
 metadata:
-  version: v2
+  version: v3
   publisher: google
 ---
 

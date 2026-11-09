@@ -2,7 +2,7 @@
 name: schema-mapping
 license: Apache-2.0
 metadata:
-  version: v1
+  version: v2
   publisher: google
 description: >-
   Guides the process of analyzing, mapping, and documenting transformations between source and target schemas for any database, data warehouse, or data platform. Focuses exclusively on creating a high-fidelity mapping plan (Mapping Manifesto).

@@ -16,7 +16,7 @@ description: >-
   storage (Persistent Disk), BigQuery, or databases (Cloud SQL, Spanner,
   Bigtable, Firestore).
 metadata:
-  version: v7
+  version: v8
   publisher: google
   tags: "gcs, storage, cloud-storage, buckets, objects"
   category: storage

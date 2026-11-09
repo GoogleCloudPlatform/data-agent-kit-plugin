@@ -9,7 +9,7 @@ description: |-
     4. You need to query BigQuery from within a notebook. DO NOT use the Python BigQuery client library; instead, you MUST use the `%%bqsql` magics explained in this skill.
 license: Apache-2.0
 metadata:
-  version: v7
+  version: v8
   publisher: google
 ---
 

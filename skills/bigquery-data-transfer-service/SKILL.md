@@ -7,7 +7,7 @@ description: Discovers and inspects BigQuery Data Transfer Service (DTS) configu
   data that may already be managed by a DTS transfer.
 license: Apache-2.0
 metadata:
-  version: v1
+  version: v2
   publisher: google
 ---
 

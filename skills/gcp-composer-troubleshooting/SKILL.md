@@ -8,7 +8,7 @@ description: 'Provides expert guidance for troubleshooting Cloud Composer (Apach
   '
 license: Apache-2.0
 metadata:
-  version: v1
+  version: v2
   publisher: google
 ---
 

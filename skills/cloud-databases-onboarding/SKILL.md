@@ -10,7 +10,7 @@ description: >-
   existing databases, or troubleshooting active Database Migration Service (DMS) jobs.
 license: Apache-2.0
 metadata:
-  version: v1
+  version: v2
   publisher: google
   category: Databases
 ---

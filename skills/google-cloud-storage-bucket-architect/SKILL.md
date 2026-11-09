@@ -15,7 +15,7 @@ description: >-
   anything other than creating new buckets — for uploads, downloads, access
   changes, or reconfiguring existing buckets, use google-cloud-storage-basics.
 metadata:
-    version: v3
+    version: v4
     publisher: google
     tags: "gcs, storage, architect, bucket-creation"
     category: storage

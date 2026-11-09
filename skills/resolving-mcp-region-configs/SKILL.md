@@ -7,7 +7,7 @@ description: >-
   Trigger: an expected mcp__*_{service}_* tool is missing entirely (not just failing), or a call to one fails/hangs on a malformed host. Check via ToolSearch/deferred-tools listing before falling back to gcloud/bq CLI. Asks the user for a region, patches the live MCP config file(s) for every affected regional server (Dataproc, Composer, and Dataform), and tells the user how to restart without losing session context.
 license: Apache-2.0
 metadata:
-  version: v6
+  version: v7
   publisher: google
 ---
 

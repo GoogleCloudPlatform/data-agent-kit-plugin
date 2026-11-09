@@ -13,7 +13,7 @@ description: |
     6. Before executing Python scripts via the terminal to ensure the correct virtual environment is active.
 license: Apache-2.0
 metadata:
-  version: v3
+  version: v4
   publisher: google
 ---
 

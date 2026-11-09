@@ -14,7 +14,7 @@ description: |
 
 license: Apache-2.0
 metadata:
-  version: v2
+  version: v3
   publisher: google
 ---
 
@@ -181,8 +181,10 @@ other references labeled with the job type (e.g. "For PySpark").
 
 ## Workflow
 
-> [!IMPORTANT] All GCP operations require active authentication. If you
-> encounter authentication errors, ask the user to run `gcloud auth login` and
+> [!IMPORTANT]
+>
+> All GCP operations require active authentication. If you encounter
+> authentication errors, ask the user to run `gcloud auth login` and
 > `gcloud auth application-default login`. If an account is active but a call
 > returns `403`, diagnose missing IAM roles instead.
 

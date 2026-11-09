@@ -8,7 +8,7 @@ description: This skill helps the agent generate or update orchestration pipelin
   This skill also helps deploy and trigger orchestration pipelines.
 license: Apache-2.0
 metadata:
-  version: v6
+  version: v7
   publisher: google
 ---
 
@@ -226,8 +226,10 @@ following fields:
         `run_vertex_custom_job` example and reminder 7 in
         `references/orchestration-pipelines-schema.md`.
 
-        > [!IMPORTANT] Custom Jobs (`agentPlatform.createAndRunCustomJob`)
-        > REQUIRE a Composer environment with Airflow 2.11+ or 3.x.
+        > [!IMPORTANT]
+        >
+        > Custom Jobs (`agentPlatform.createAndRunCustomJob`) REQUIRE a Composer
+        > environment with Airflow 2.11+ or 3.x.
 
     -   **Model Export Signature for Batch Prediction**: When creating a custom
         training pipeline in PySpark followed by a Agent Platform batch

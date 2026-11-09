@@ -4,7 +4,7 @@ description: |
   Enforces resource attribution for CLI commands. Use this skill whenever you are running `bq` or `gcloud` commands via `run_command`. It ensures mandatory labeling for supported `bq` operations while avoiding invalid flags on read-only commands.
 license: Apache-2.0
 metadata:
-  version: v6
+  version: v7
   publisher: google
 ---
 

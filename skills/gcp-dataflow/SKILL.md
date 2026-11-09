@@ -27,7 +27,7 @@ description: >
 
 license: Apache-2.0
 metadata:
-  version: v5
+  version: v6
   publisher: google
 ---
 

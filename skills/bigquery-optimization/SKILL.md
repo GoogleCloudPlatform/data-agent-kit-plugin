@@ -2,7 +2,7 @@
 name: bigquery-optimization
 license: Apache-2.0
 metadata:
-  version: v1
+  version: v2
   publisher: google
 description: >-
   Provides workflows to optimize BigQuery environments (capacity planning,

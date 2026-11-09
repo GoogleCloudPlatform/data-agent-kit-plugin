@@ -3,7 +3,7 @@ name: bigtable-basics
 description: >-
   Provisions instances and tables, designs performant schemas, and queries data in Bigtable. Use when designing Bigtable row keys, configuring column families, writing SQL queries or client library code (Java, Go, Python) for Bigtable, or diagnosing performance/hotspotting issues. Also use when provisioning Bigtable clusters using gcloud or cbt CLIs. Don't use for generic Cloud SQL administration.
 metadata:
-  version: v2
+  version: v3
   publisher: google
   category: Databases
 license: Apache-2.0
