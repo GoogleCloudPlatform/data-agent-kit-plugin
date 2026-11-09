@@ -2,7 +2,7 @@
 name: bigquery-graph-query
 license: Apache-2.0
 metadata:
-  version: v2
+  version: v3
   publisher: google
 description: >-
   Provides guidelines and best practices for querying BigQuery property graphs and semantic graphs: native GQL (Graph Query Language) pattern matching, multi-hop and variable-length paths, aggregation, top-N, path extraction, output formatting (graph visualization with TO_JSON vs tabular), GRAPH_TABLE relational SQL integration, and semantic graph querying via the GRAPH_EXPAND TVF with starting-node view selection and AGG() measures. Also covers hybrid semantic search, combining `VECTOR_SEARCH` candidate generation with graph traversal when a node carries an embedding-backed property. Use when querying graph topology, node/edge connections, paths, or semantic measures over an existing BigQuery graph. Don't use for Cypher or non-BigQuery graph databases, or for creating/modifying a graph schema.
@@ -22,8 +22,9 @@ Graph** or a **Semantic Graph**:
 
 -   **Property Graph (topology, paths, connections)**:
     -   **Schema in Context**: `<property_graph>` DDL / node & edge tables.
-    -   **Target Query Engine / Mechanism**: **Native GQL** (`GRAPH ... MATCH
-        ... RETURN`) by default; `GRAPH_TABLE` if joining relational tables.
+    -   **Target Query Engine / Mechanism**: **Native GQL**
+        (`GRAPH ... MATCH ... RETURN`) by default; `GRAPH_TABLE` if joining
+        relational tables.
 -   **Semantic Graph (business metrics, dimensions, measures)**:
     -   **Schema in Context**: `<semantic_graph start_node="X">` flattened
         views.
@@ -85,11 +86,11 @@ Before generating any GQL, you MUST:
 ### Core Directives
 
 1.  **Default Query Construction (Standalone GQL)**: Write standalone GQL
-    queries using the `RETURN` statement natively (`GRAPH ... MATCH ...
-    RETURN`). This natively supports aggregation, grouping, and top-N (see
-    below). **Only** use the `GRAPH_TABLE` table-valued function when you must
-    join graph results with a separate relational table (see the SQL-integration
-    reference).
+    queries using the `RETURN` statement natively
+    (`GRAPH ... MATCH ... RETURN`). This natively supports aggregation,
+    grouping, and top-N (see below). **Only** use the `GRAPH_TABLE` table-valued
+    function when you must join graph results with a separate relational table
+    (see the SQL-integration reference).
 2.  **Keyword Escaping**: You **MUST** enforce backticks around any reserved SQL
     and GQL keywords used as identifiers (e.g., `order`, `begin`, `path` used as
     column, label, or variable names).
@@ -168,9 +169,9 @@ there exists ..." questions, use a subquery. Two rules prevent the common errors
 
 1.  **Use `FILTER`, not `WHERE`, for `EXISTS` / `IN` / `LIKE` subqueries.**
     These throw errors inside a `WHERE` clause.
-2.  **Re-declare the graph name inside the subquery block.** A subquery `{ ...
-    }` must repeat `GRAPH <project>.<dataset>.<graph>` even though the outer
-    query already declared it.
+2.  **Re-declare the graph name inside the subquery block.** A subquery
+    `{ ... }` must repeat `GRAPH <project>.<dataset>.<graph>` even though the
+    outer query already declared it.
 
 ```sql
 GRAPH <project>.<dataset>.<graph>
@@ -359,10 +360,11 @@ that are **not reachable from the starting node are dropped from the view** — 
 the wrong starting node silently under-counts.
 
 -   **Rule:** To aggregate a measure `M` that is defined on node `N` (its column
-    is named `N_<measure>`, e.g. `Department_total_budget`), use `start_node =>
-    "N"`. You may then `GROUP BY` or filter on `N` and on any node reachable
-    from `N` (e.g. a parent entity). Do **not** start from a finer-grained node,
-    which would drop rows of `N` that have no finer-grained children.
+    is named `N_<measure>`, e.g. `Department_total_budget`), use
+    `start_node => "N"`. You may then `GROUP BY` or filter on `N` and on any
+    node reachable from `N` (e.g. a parent entity). Do **not** start from a
+    finer-grained node, which would drop rows of `N` that have no finer-grained
+    children.
 
 -   **Worked example.** For "total budget per college", where the schema has
     `Department_total_budget INT64 OPTIONS(is_measure=TRUE, ...)`:
@@ -429,9 +431,9 @@ or measure that has no starting-node view:
 
 ### 4. Querying Measures with `AGG()`
 
-Columns marked with `is_measure=TRUE` (e.g., `Customer_customer_count INT64
-OPTIONS(is_measure=TRUE)`) are measure columns. You **MUST** aggregate them with
-the `AGG()` function.
+Columns marked with `is_measure=TRUE` (e.g.,
+`Customer_customer_count INT64 OPTIONS(is_measure=TRUE)`) are measure columns.
+You **MUST** aggregate them with the `AGG()` function.
 
 -   **Syntax:** `AGG(<measure_column_name>)`
 -   Do not apply `SUM`, `AVG`, `COUNT`, etc. directly to a measure column — use
@@ -466,8 +468,9 @@ the `AGG()` function.
 ### 5. Prefer Measures (AGG) over Standard SQL Aggregations
 
 You **MUST** prioritize using pre-defined measures (columns with
-`is_measure=TRUE`) over writing standard SQL aggregations (like `COUNT(DISTINCT
-...)`, `SUM`, etc.) whenever a relevant measure is available in the schema.
+`is_measure=TRUE`) over writing standard SQL aggregations (like
+`COUNT(DISTINCT ...)`, `SUM`, etc.) whenever a relevant measure is available in
+the schema.
 
 -   **Context:** Semantic graphs define business logic within measures to ensure
     accuracy and prevent issues like overcounting. Generating aggregations via

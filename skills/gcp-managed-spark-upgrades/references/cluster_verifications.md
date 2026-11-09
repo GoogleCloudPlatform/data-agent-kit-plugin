@@ -58,4 +58,6 @@ gcloud dataproc jobs submit pyspark <STAGED_VERIFY_SCRIPT_GCS_URI> \
 > A cluster is billed until it is deleted. Delete the cluster once the job finishes successfully or after 3 retries (SKILL.md Step 2.3):
 > `gcloud dataproc clusters delete upg-verify-<unique-id> --project=<PROJECT_ID> --region=<REGION> --quiet` (`--quiet` skips the interactive confirmation prompt).
 
-Leave the staged `_temp` code and test output in place and list them in the report; delete them only if the user asks.
+Leave the staged `_temp` code, test output, local working copy
+(`src_<app_id>_temp/`), and local upgrade report in place and list them in the
+report; delete them only if the user asks.

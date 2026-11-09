@@ -7,7 +7,7 @@ description: Discovers and inspects BigQuery Data Transfer Service (DTS) configu
   data that may already be managed by a DTS transfer.
 license: Apache-2.0
 metadata:
-  version: v1
+  version: v2
   publisher: google
 ---
 
@@ -67,8 +67,8 @@ region.
 
     -   **Single Transfer Found**:
 
-        -   Check if the transfer has at least one successful run: `bq ls
-            --transfer_run --transfer_config=<RESOURCE_NAME>`
+        -   Check if the transfer has at least one successful run:
+            `bq ls --transfer_run --transfer_config=<RESOURCE_NAME>`
         -   If found: Use existing transfer config.
         -   If not found: Confirm with user if it's ok to trigger the transfer
             run.
