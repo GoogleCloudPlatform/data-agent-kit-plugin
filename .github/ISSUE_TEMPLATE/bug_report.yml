@@ -30,7 +30,7 @@ body:
       label: Pre-reqs
       description: |
         Please run through the following list and make sure you've tried the usual "quick fixes":
-        - Search the [current open issues](https://github.com/gemini-cli-extensions/data-cloud-ai-dev-kit/issues)
+        - Search the [current open issues](https://github.com/GoogleCloudPlatform/data-agent-kit-plugin/issues)
         - Update to the latest version of the extension and your coding agent (Gemini CLI, Claude Code, or Codex)
       options: 
         - label: "I've searched the current open issues"

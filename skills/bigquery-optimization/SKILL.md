@@ -2,7 +2,7 @@
 name: bigquery-optimization
 license: Apache-2.0
 metadata:
-  version: v1
+  version: v2
   publisher: google
 description: >-
   Provides workflows to optimize BigQuery environments (capacity planning,
@@ -100,18 +100,18 @@ workflow:
         directly (e.g., `region=us`, `region=europe-west1`). In SQL queries
         against `INFORMATION_SCHEMA`, use the regional dataset qualifier (e.g.,
         `region-us`, `region-europe-west1`).
--   **Zero-Row Result Guard:** If querying `TABLE_STORAGE` with `WHERE
-    table_schema = '{dataset_id}'` returns 0 rows, do not proceed with an empty
-    or zero-usage evaluation. Treat this as an indicator that the dataset may
-    reside in a different region or have no native tables; stop and prompt the
-    user to confirm the dataset's regional location.
+-   **Zero-Row Result Guard:** If querying `TABLE_STORAGE` with
+    `WHERE table_schema = '{dataset_id}'` returns 0 rows, do not proceed with an
+    empty or zero-usage evaluation. Treat this as an indicator that the dataset
+    may reside in a different region or have no native tables; stop and prompt
+    the user to confirm the dataset's regional location.
 -   **Populate Concrete Parameters:** When generating URLs and SQL queries,
     always substitute known `project_id` and `region` values directly into the
     code and links. Never leave literal `{project_id}` or `{location}`
     placeholders for the user to manually edit.
 -   **No Autonomous Purchasing or Financial Mutations:** Never provide the user
-    with executable scripts (e.g., `gcloud` or `bq` shell commands like `bq
-    update --storage_billing_model=...`) designed to autonomously purchase
+    with executable scripts (e.g., `gcloud` or `bq` shell commands like
+    `bq update --storage_billing_model=...`) designed to autonomously purchase
     annual commitments, alter edition tier bindings, or mutate storage billing
     models. Always guide the user to execute commitment purchases, reservation
     changes, and storage billing model updates manually via the Cloud Console

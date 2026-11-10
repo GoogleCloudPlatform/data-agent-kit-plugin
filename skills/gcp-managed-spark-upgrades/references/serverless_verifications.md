@@ -48,6 +48,7 @@ gcloud dataproc batches submit pyspark <STAGED_VERIFY_SCRIPT_GCS_URI> \
 
 - The submit command streams the driver output until the batch finishes. If you used `--async` or lost the stream, run `gcloud dataproc batches wait upg-verify-<unique-id> --project=<PROJECT_ID> --region=<REGION>`.
 - Confirm the final state:
+  
     ```bash
     gcloud dataproc batches describe upg-verify-<unique-id> \
         --project=<PROJECT_ID> \
@@ -56,6 +57,7 @@ gcloud dataproc batches submit pyspark <STAGED_VERIFY_SCRIPT_GCS_URI> \
     ```
     Verification passes only if the state is `SUCCEEDED` and the expected test output exists under `<target_path>/test-output_<app_id>_temp/`.
 - If the batch fails, read the driver output:
+  
     ```bash
     gcloud logging read \
         'resource.type="cloud_dataproc_batch" AND resource.labels.batch_id="upg-verify-<unique-id>" AND logName="projects/<PROJECT_ID>/logs/dataproc.googleapis.com%2Foutput"' \
@@ -71,4 +73,6 @@ gcloud dataproc batches submit pyspark <STAGED_VERIFY_SCRIPT_GCS_URI> \
 > `gcloud dataproc batches cancel upg-verify-<unique-id> --project=<PROJECT_ID> --region=<REGION>`
 
 - A finished batch uses no compute. Keep it, so that its details and logs stay available for the report, unless the user asks you to delete it (`gcloud dataproc batches delete upg-verify-<unique-id> --project=<PROJECT_ID> --region=<REGION> --quiet`).
-- Leave the staged `_temp` code and test output in place and list them in the report; delete them only if the user asks.
+-   Leave the staged `_temp` code, test output, local working copy
+    (`src_<app_id>_temp/`), and local upgrade report in place and list them in
+    the report; delete them only if the user asks.

@@ -4,12 +4,9 @@ Checks that apply to every job type when upgrading between Managed Spark image o
 
 ## Official sources
 
-- Apache Spark migration guides:
-  - Core: https://spark.apache.org/docs/latest/core-migration-guide.html
-  - SQL: https://spark.apache.org/docs/latest/sql-migration-guide.html
-  - Structured Streaming: https://spark.apache.org/docs/latest/streaming/ss-migration-guide.html
-  - MLlib: https://spark.apache.org/docs/latest/ml-migration-guide.html
-  - PySpark: https://spark.apache.org/docs/latest/api/python/migration_guide/pyspark_upgrade.html
+-   Apache Spark migration guides: `fetch_migration_notes.py` downloads the
+    sections that apply ("Spark Migration Notes"). Open a published guide only
+    if the script reports that it couldn't download it.
 - GCP Managed Spark release notes: https://docs.cloud.google.com/managed-spark/docs/release-notes
 
 ## Version to Spark Mapping
@@ -25,18 +22,22 @@ Map the source and target to Spark versions first, using the list for their depl
 - `2.1`: Spark 3.3, Python 3.10, Scala 2.12 (pandas 1.4, NumPy 1.22, PyArrow 9.0)
 - `2.2`: Spark 3.5, Python 3.11, Scala 2.12 (pandas 2.1, NumPy 1.26, PyArrow 14.0)
 - `2.3`: Spark 3.5, Python 3.11, Scala 2.12 (pandas 2.1, NumPy 1.26, PyArrow 16.1)
-- `3.0`: Spark 4.1, **Python 3.12** (3.11 in 3.0.0-RC2), Scala 2.13 (pandas 3.0, NumPy 2.4, PyArrow 19.0)
+-   `3.0`: Spark 4.1, Python 3.12 (3.11 in 3.0.0-RC2), Scala 2.13 (pandas 3.0,
+    NumPy 2.4, PyArrow 19.0)
 
 ### Managed Spark Serverless runtimes
 
 - `1.0`: Spark 3.2, Python 3.9, Scala 2.12
 - `1.1`: Spark 3.3, Python 3.10, Scala 2.12
-- `1.2`: Spark 3.5, **Python 3.12** (note: `distutils` is removed in Python 3.12), Scala 2.12 (pandas 2.2, NumPy 1.26, PyArrow 15.0)
+-   `1.2`: Spark 3.5, Python 3.12, Scala 2.12 (pandas 2.2, NumPy 1.26, PyArrow
+    15.0)
 - `2.0`: Spark 3.3, Python 3.10, Scala 2.13
 - `2.1`: Spark 3.4, Python 3.11, Scala 2.13
-- `2.2`: Spark 3.5, **Python 3.12** (note: `distutils` is removed in Python 3.12), Scala 2.13 (pandas 2.2, NumPy 1.26, PyArrow 15.0)
+-   `2.2`: Spark 3.5, Python 3.12, Scala 2.13 (pandas 2.2, NumPy 1.26, PyArrow
+    15.0)
 - `2.3`: Spark 3.5, Python 3.11, Scala 2.13 (pandas 2.2, NumPy 1.26, PyArrow 15.0)
-- `3.0`: Spark 4.0, **Python 3.12**, Scala 2.13 (pandas 2.3, NumPy 2.1, PyArrow 19.0)
+-   `3.0`: Spark 4.0, Python 3.12, Scala 2.13 (pandas 2.3, NumPy 2.1, PyArrow
+    19.0)
 
 If a version isn't in its list, check the version list (https://cloud.google.com/dataproc/docs/concepts/versioning/dataproc-version-clusters for clusters, https://cloud.google.com/dataproc-serverless/docs/concepts/versions/spark-runtime-versions for Serverless): it may be newer than these lists, or it may not exist (e.g. a mistyped version), in which case ask the user to confirm it. Older versions can lose their own version page; their row on the version list still gives their components (as of the version's final release).
 
@@ -82,27 +83,49 @@ If the source cluster or job uses GPUs or the RAPIDS Accelerator for Apache Spar
 
 ## Spark Migration Notes
 
-Upgrades are **cumulative**: when upgrading across multiple versions (for example, Managed Spark 1.5 / Spark 2.4 directly to Managed Spark 3.0 / Spark 4.0+), apply **every** breaking change across all intermediate versions.
+This skill doesn't keep a list of Spark breaking changes, which would go stale.
+Fetch them for the exact source and target Spark versions ("Component Versions";
+e.g. `3.5.3` and `4.1.2`, or a source known only as `<major>.<minor>`):
 
-### High-Frequency Cumulative Breaking Changes (Always Check First)
+1.  **Fetch the notes.**
 
-1. **Spark 2.4 → Spark 3.0+ (Cluster 1.4/1.5 → 2.0+):**
-   - **`SQLContext` / `HiveContext` deprecated/removed:** Replace `SQLContext(sc)` and `HiveContext(sc)` with `SparkSession.builder.appName(...).enableHiveSupport().getOrCreate()` (include `.enableHiveSupport()` whenever `HiveContext` or Hive tables are used).
-   - **`registerTempTable` removed/deprecated:** Replace `df.registerTempTable("name")` with `df.createOrReplaceTempView("name")`.
-   - **`DataFrame.unionAll` deprecated/removed:** Replace `df1.unionAll(df2)` with `df1.union(df2)`.
-   - **`F.date_add` / `F.date_sub` second argument type enforcement:** The second argument (days offset) must be an integer type (`int` / `IntegerType` / `ShortType`); string or float columns fail. Explicitly cast non-integer columns, e.g. `F.date_add(F.col("txn_date"), F.col("offset_days").cast("int"))`.
-   - **Proleptic Gregorian calendar:** Date/timestamp parsing and formatting in `datetimePattern` became stricter in Spark 3.0+.
+    ```bash
+    uv run <skill_dir>/scripts/fetch_migration_notes.py --from=<source_spark> --to=<target_spark> --out=migration_notes_<app_id>_temp
+    ```
 
-2. **Spark 3.1 → Spark 3.2+ / 3.3+ (Cluster 2.0 → 2.1+):**
-   - **Koalas replaced by native Pandas API on Spark:** Replace `import databricks.koalas as ks` with `import pyspark.pandas as ps` (and update `ks.` calls to `ps.`).
+    The script downloads the Core, SQL, Structured Streaming, MLlib, and PySpark
+    migration guides (plus `koalas_to_pyspark.rst` when upgrading across Spark
+    3.2) from the Apache Spark repository at the target's release tag, keeps
+    every "Upgrading from X to Y" section between the two versions (upgrades are
+    cumulative), and writes one file per guide. (On pre-3.0 upgrades such as
+    `2.3` → `2.4`, guides read from `master` whose sections start at `2.4 to
+    3.0` report `no sections in range`.) It also prints an index, saved as
+    `index.md`, that lists those files and gives the Java, Scala, and Python
+    versions that each Spark version supports and the target's minimum PySpark
+    dependency versions; use these instead of looking them up. Take any value
+    that the index marks as `unavailable` from the version's Managed Spark
+    component page ("Component Versions") or its Spark documentation root
+    (`https://spark.apache.org/docs/<x.y.z>/` for current releases,
+    `https://archive.apache.org/dist/spark/docs/<x.y.z>/` for archived releases,
+    or `https://spark.apache.org/docs/latest/` when only `<major>.<minor>` is
+    known): `<docs_root>/index.html` lists Java, Scala, and Python runtimes, and
+    `<docs_root>/api/python/getting_started/install.html` (Spark 3.1+) lists
+    minimum PySpark dependency versions. Act on the exit code:
 
-3. **Spark 3.3 → Spark 3.5+ (Cluster 2.1 / Serverless 1.1 → Cluster 2.2+ / Serverless 1.2, 2.2+):**
-   - **YARN executor failure validity config replaced:** Replace the deprecated/removed property `spark.yarn.executor.failuresValidityInterval` with the cluster-manager-agnostic `spark.executor.failuresValidityInterval`.
-
-4. **Spark 3.x → Spark 4.0+ (Cluster 2.x / Serverless 2.x → 3.0):**
-   - **ANSI SQL mode enabled by default (`spark.sql.ansi.enabled=true`):** In Spark 4.0+, invalid casts (such as `CAST(amount_str AS INT)` on malformed strings) or arithmetic errors throw runtime exceptions instead of returning `NULL`. Always address this in SQL/DataFrame casts when upgrading to 3.0: either replace `CAST(<col> AS <type>)` with `TRY_CAST(<col> AS <type>)` in the SQL/DataFrame query (preferred per SKILL.md rule 2), or set `spark.sql.ansi.enabled=false` (and document the legacy flag).
-   - **Default `CREATE TABLE` provider changed from Hive to Parquet (`spark.sql.sources.default`):** In Spark 4.0+, `spark.sql.legacy.createHiveTableByDefault` is `false`, so an unqualified `CREATE TABLE [IF NOT EXISTS] db.tbl AS SELECT ...` creates a DataSource (Parquet) table instead of a Hive table. To keep creating a Hive table on Spark 4.0+, explicitly add `USING hive` (e.g. `CREATE TABLE IF NOT EXISTS db.tbl USING hive AS SELECT ...`) or a `STORED AS` clause.
-
-### Additional Official Migration Guides
-
-If the workload uses additional APIs not covered in the checklist above (e.g. Structured Streaming watermarks, MLlib estimators, or specialized SQL functions), consult the relevant section of the official migration guides listed in "Official sources" for the source-to-target version range. Avoid redundant web searches for the standard items already covered above.
+    -   `0`: every guide was downloaded.
+    -   `1`: a download failed or a guide wasn't found, and the error links the
+        target's published migration guides. The index marks those guides as
+        `NOT FETCHED` or `not found`; if there's no `index.md`, no guide was
+        downloaded. Read the missing guides' sections in the published guides,
+        or report those guides as not checked.
+    -   `2`: a Spark version is invalid, the target has no Apache Spark release
+        tag or branch, or `--out` isn't a directory of its own. Re-check the
+        versions from "Component Versions", or use a new
+        `migration_notes_<app_id>_temp` directory, and run the script again.
+2.  **Check every note.** You MUST read each file that the index lists, in full,
+    and check each note against the code, its dependency manifests, Spark
+    properties, and job arguments; don't skip notes by guessing their
+    importance. Each note that applies is a finding, fixed as SKILL.md rule 2
+    describes; a note about a feature the job doesn't use needs no change.
+    Delete `migration_notes_<app_id>_temp/` in SKILL.md Step 3 after writing the
+    report.
