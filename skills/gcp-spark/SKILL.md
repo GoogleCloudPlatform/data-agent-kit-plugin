@@ -17,7 +17,7 @@ description: |
   - Troubleshooting failed Spark jobs or Dataproc batches (use @skill:gcp-spark-troubleshooting).
 license: Apache-2.0
 metadata:
-  version: v33
+  version: v34
   publisher: google
 ---
 
@@ -50,28 +50,33 @@ metadata:
 
 1.  **Understand user request**:
 
-    -   When asked to generate a new spark notebook you **MUST** clarify with
-        the user which kernel type will be used: "Local Python" (Spark Connect)
-        or "Remote Spark" where the Spark session (`spark` variable) is
-        automatically initialized. If the user selects "Local Python", you MUST
-        additionally clarify which dataprocSessionConfig should be used (scan
-        for existing serverless session templates), and **MUST** initialize the
-        session with `ManagedSparkSession` by adding the following cells to the
-        notebook:
+    -   New Spark notebooks target the **Local Python** kernel and connect to
+        Managed Spark Serverless with `ManagedSparkSession` (Spark Connect); do
+        NOT ask the user which kernel to use. Only when the prompt explicitly
+        asks for a **Remote Spark** kernel or to run against a Dataproc
+        **cluster**, skip session initialization and use the pre-initialized
+        `spark` variable. Use the Runtime Profile (formerly Session Template)
+        named in the prompt; otherwise ask the user which one to use (scan for
+        existing ones with
+        `gcloud dataproc session-templates list --location=<REGION>`). Local
+        Python notebooks MUST start with these two cells (plain constants; no
+        `os.environ`, no `Session()` objects):
 
         ```python
-        from google.cloud.dataproc_v1 import Session
-        # requires google-cloud-spark-connect pypi package for execution
+        PROJECT_ID = "<PROJECT_ID>"
+        REGION = "<REGION>"
+        RUNTIME_PROFILE = "<RUNTIME_PROFILE_ID>"
+        ```
+
+        ```python
+        # %pip install -U 'google-cloud-spark-connect[client,interactive]~=2.2'
         from google.cloud.managed_spark_connect import ManagedSparkSession
 
-        session_config = Session()
-        session_config.session_template = (
-            "projects/<PROJECT_ID>/locations/<REGION>/sessionTemplates/<TEMPLATE_ID>"
-        )
         spark = (
-            ManagedSparkSession.builder.projectId("<PROJECT_ID>")
-            .location("<REGION>")
-            .dataprocSessionConfig(session_config)
+            ManagedSparkSession.builder
+            .projectId(PROJECT_ID)
+            .location(REGION)
+            .runtimeProfile(RUNTIME_PROFILE)
             .getOrCreate()
         )
         ```

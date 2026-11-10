@@ -19,29 +19,15 @@
 ### Option A: Zero-Config (Preferred) — Session Template / Runtime Profile
 
 When generating PySpark **notebook** code, assume the Dataproc kernel already
-has the Iceberg catalog configured via its Session Template. **MUST NOT add
-in-code catalog configuration.** On a **Remote Spark** kernel, `spark` is
-pre-initialized—use `spark.read.format("iceberg")...` directly. On a **Local
-Python** kernel, initialize `ManagedSparkSession`:
+has the Iceberg catalog configured via its Runtime Profile (formerly Session
+Template). **MUST NOT add in-code catalog configuration.** Initialize the
+session as described in `SKILL.md`, passing the Iceberg-enabled `<TEMPLATE_ID>`
+to `.runtimeProfile(...)`, then read directly from the catalog registered by
+that Runtime Profile:
 
 ```python
-# Catalog and BigLake settings are pre-configured by the Dataproc Session Template.
+# Catalog and BigLake settings are pre-configured by the Runtime Profile.
 # No .config() calls are needed.
-from google.cloud.managed_spark_connect import ManagedSparkSession
-from google.cloud.dataproc_v1 import Session
-
-# 1. Initialize the Dataproc Session configuration object
-session = Session()
-session.session_template = "projects/<PROJECT_ID>/locations/<REGION>/sessionTemplates/<TEMPLATE_ID>"
-spark = (
-    ManagedSparkSession.builder
-    .projectId("<PROJECT_ID>")
-    .location("<REGION>")
-    .dataprocSessionConfig(session)
-    .getOrCreate()
-)
-
-# Read directly from the catalog already registered by the kernel's session template
 df = spark.read.format("iceberg").load("`<CATALOG_NAME>`.<NAMESPACE_NAME>.<TABLE_NAME>")
 ```
 

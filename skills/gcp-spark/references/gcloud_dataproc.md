@@ -153,6 +153,7 @@ Prefer MCP if available. If using gcloud, use the command template matching the
 requested job type:
 
 -   **PySpark job (`.py`)**:
+
     ```bash
     gcloud dataproc jobs submit pyspark <LOCAL_SCRIPT_PATH.py> \
         --project=<PROJECT_ID> \
@@ -160,6 +161,7 @@ requested job type:
         --region=<REGION>
     ```
 -   **Spark SQL job (`.sql`)**:
+
     ```bash
     gcloud dataproc jobs submit spark-sql \
         --file=<LOCAL_SCRIPT_PATH.sql> \
@@ -330,7 +332,7 @@ Python scripts, follow these steps:
     ```bash
     uv venv venv --python 3.12
     source venv/bin/activate
-    uv pip install -U google-cloud-spark-connect
+    uv pip install -U 'google-cloud-spark-connect[client,interactive]~=2.2'
     ```
 
 3.  **Pip environment**:
@@ -338,7 +340,7 @@ Python scripts, follow these steps:
     ```bash
     python3 -m venv venv
     source venv/bin/activate
-    pip install -U google-cloud-spark-connect
+    pip install -U 'google-cloud-spark-connect[client,interactive]~=2.2'
     ```
 
 4.  **Project and region settings**:
@@ -355,16 +357,23 @@ Python scripts, follow these steps:
     Retrieve those values and put them using builder methods.
 
 5.  **Initialize `ManagedSparkSession` & Execute**: Use `ManagedSparkSession`
-    from `google.cloud.managed_spark_connect` to connect to Dataproc Serverless.
-    Session provisioning takes **2–3 minutes**; execute scripts in the
-    foreground (e.g. `python3 script.py`):
+    from `google.cloud.managed_spark_connect` (`google-cloud-spark-connect`
+    **~=2.2**) to connect to Dataproc Serverless. Session provisioning takes
+    **2–3 minutes**; execute scripts in the foreground (e.g.
+    `python3 script.py`):
 
     ```python
     from google.cloud.managed_spark_connect import ManagedSparkSession
 
+    PROJECT_ID = "<PROJECT_ID>"
+    REGION = "<REGION>"
+    RUNTIME_PROFILE = "<RUNTIME_PROFILE_ID>"  # Runtime Profile (formerly Session Template)
+
     spark = (
-        ManagedSparkSession.builder.projectId("<PROJECT_ID>")
-        .location("<REGION>")
+        ManagedSparkSession.builder
+        .projectId(PROJECT_ID)
+        .location(REGION)
+        .runtimeProfile(RUNTIME_PROFILE)
         .getOrCreate()
     )
 
@@ -379,37 +388,38 @@ Python scripts, follow these steps:
     You can configure Spark properties using the `.config()` method:
 
     ```python
-    from google.cloud.managed_spark_connect import ManagedSparkSession
-
     spark = (
-        ManagedSparkSession.builder.config("spark.executor.memory", "4g")
+        ManagedSparkSession.builder
+        .projectId(PROJECT_ID)
+        .location(REGION)
+        .config("spark.executor.memory", "4g")
         .config("spark.executor.cores", "2")
         .getOrCreate()
     )
     ```
 
-    For advanced configuration e.g. when using session templates, use the
-    `Session` class:
+    For advanced configuration (subnet, service account, TTLs) use the dedicated
+    builder methods; a Runtime Profile is optional and the runtime version does
+    not need to be set (the client defaults to `3.0`):
 
     ```python
-    from google.cloud.dataproc_v1 import Session
-    from google.cloud.managed_spark_connect import ManagedSparkSession
+    import datetime
 
-    session_config = Session()
-    session_config.session_template = (
-        "projects/<PROJECT_ID>/locations/<REGION>/sessionTemplates/<TEMPLATE_ID>"
-    )
-    session_config.environment_config.execution_config.subnetwork_uri = (
-        "<SUBNET_URI>"
-    )
-    session_config.runtime_config.version = "3.0"
     spark = (
-        ManagedSparkSession.builder.projectId("<PROJECT_ID>")
-        .location("<REGION>")
-        .dataprocSessionConfig(session_config)
+        ManagedSparkSession.builder
+        .projectId(PROJECT_ID)
+        .location(REGION)
+        .runtimeProfile(RUNTIME_PROFILE)  # optional
+        .subnetwork("<SUBNET_URI>")
+        .serviceAccount("<SERVICE_ACCOUNT_EMAIL>")
+        .idleTtl(datetime.timedelta(minutes=30))
         .getOrCreate()
     )
     ```
+
+    Anything not covered by a builder method can be set with
+    `.sessionConfig(Session(...))` using `Session` from
+    `google.cloud.dataproc_v1`.
 
 6.  **Local Environment Cleanup**:
 
