@@ -11,16 +11,33 @@ How to run the optional verification (SKILL.md Step 2) for a Serverless workload
 - **Network tags and encryption key:** `--tags=<TAGS>` and `--kms-key=<KMS_KEY>` if the source batch set them (`networkTags`, `kmsKey`).
 - **Service account:** `--service-account=<SA_EMAIL>` if the source batch used one or the user gave one. Otherwise leave it out (see "Service account" in `serverless_input_validations.md`): on 1.x/2.x the batch then runs as the Compute Engine default service account, and on 3.x with the submitting user's credentials.
 - **Custom container image:** `--container-image=<TARGET_IMAGE_URI>` only if the source batch used a custom container; the image must be rebuilt for the target runtime.
-- **Carry forward from the source batch:** the entry point, job arguments, properties, and dependency flags (for PySpark: `--py-files`, `--jars`, `--files`, `--archives`), with the Step 1 changes applied.
+-   **Carry forward from the source batch:** the entry point, job arguments,
+    properties, and dependency flags (for PySpark: `--py-files`, `--jars`,
+    `--files`, `--archives`; for Scala/Java: `--jar=<MAIN_JAR>` if the source
+    batch set `mainJarFileUri`, or `--class=<MAIN_CLASS>` with its jar in
+    `--jars` if it set `mainClass`, plus `--jars`, `--files`, `--archives`),
+    with the Step 1 changes applied.
 - **Resources:** Serverless has no machine types: the source batch's [resource allocation properties](https://docs.cloud.google.com/managed-spark/docs/concepts/spark-properties-serverless#resource_allocation_properties), passed with `--properties`, set the hardware. Keep them as the source set them: driver and executor cores, memory, and memory overhead; disk size and tier; compute tier and `dataproc.tier`; `spark.executor.instances`; and the `spark.dynamicAllocation.*` limits. Anything the source didn't set uses the Serverless default (e.g. 4 cores per executor, autoscaling up to 1000 executors).
-- **Staged code:** if the job's output paths are hardcoded in the script (rather than passed via CLI arguments), create a separate temporary file `<script>_<app_id>_temp.py` in which every output path is redirected to `<target_path>/test-output_<app_id>_temp/` (while keeping the original production output path untouched in `<script>.py`). Upload the verification script (`<script>_<app_id>_temp.py` or `<script>.py`) and its dependencies to the temporary staging location (or `<target_path>/upg-verify_<app_id>_temp/`).
+-   **Staged code:** if the job's output paths are hardcoded in the script or
+    code (rather than passed via CLI arguments), create a separate temporary
+    file `<script>_<app_id>_temp.py` (or recompile a temporary JAR for
+    Scala/Java) in which every output path is redirected to
+    `<target_path>/test-output_<app_id>_temp/` (while keeping the original
+    production output path untouched in `<script>.py` or the release JAR).
+    Upload the verification artifact (`<script>_<app_id>_temp.py`,
+    `<script>.py`, or the JAR) and its dependencies to the temporary staging
+    location (or `<target_path>/upg-verify_<app_id>_temp/`).
 - **Output:** every output, redirected as SKILL.md rule 4 describes: list each job argument or property you changed, or the `_temp` copy of the code. Never submit the un-redirected script that writes to production output paths during Step 2 verification.
 
 **Confirm before you submit the batch (checkpoint 2).** Show the user every value above, resource properties included, and where each came from (SKILL.md rule 1): the user, the source batch, or the Serverless default. Ask them to confirm the configuration or say what to change, e.g. a lower `spark.dynamicAllocation.maxExecutors` to cap the cost. Apply any changes, and re-check changed inputs as `serverless_input_validations.md` describes. Retries (SKILL.md Step 2.3) reuse the confirmed configuration; ask again only if a fix needs a different one. If the user asked to automatically approve the workflow (SKILL.md rule 5), show the configuration and continue without waiting, here and on retries.
 
 ## V2. Submit the test batch
 
-Submit with the `gcloud dataproc batches submit` subcommand for the job type, keeping the flags shown here. For PySpark (using the `_temp` script copy if outputs were hardcoded in the script):
+Submit with the `gcloud dataproc batches submit` subcommand for the job type,
+keeping the flags shown here.
+
+For PySpark (using the `_temp` script copy if outputs were hardcoded in the
+script):
 
 ```bash
 gcloud dataproc batches submit pyspark <STAGED_VERIFY_SCRIPT_GCS_URI> \
@@ -39,6 +56,35 @@ gcloud dataproc batches submit pyspark <STAGED_VERIFY_SCRIPT_GCS_URI> \
     [--staging-bucket=<TARGET_BUCKET_NAME>] \
     [-- <JOB_ARGS>]
 ```
+
+For Scala/Java:
+
+```bash
+gcloud dataproc batches submit spark \
+    --jar=<STAGED_VERIFY_JAR_GCS_URI> \
+    --batch=upg-verify-<unique-id> \
+    --project=<PROJECT_ID> \
+    --region=<REGION> \
+    --version=<MAJOR.MINOR> \
+    --subnet=<SUBNET> \
+    --ttl=<DURATION> \
+    --labels=purpose=upgrade-verification \
+    [--service-account=<SA_EMAIL>] \
+    [--tags=<TAGS>] [--kms-key=<KMS_KEY>] \
+    [--container-image=<TARGET_IMAGE_URI>] \
+    [--jars=<URIS>] [--files=<URIS>] [--archives=<URIS>] \
+    [--properties=<KEY=VALUE,...>] \
+    [--staging-bucket=<TARGET_BUCKET_NAME>] \
+    [-- <JOB_ARGS>]
+```
+
+-   If the source batch set `mainClass` instead of `mainJarFileUri`, replace
+    `--jar=<STAGED_VERIFY_JAR_GCS_URI>` with `--class=<MAIN_CLASS>`, and put the
+    staged jar first in `--jars`
+    (`--jars=<STAGED_VERIFY_JAR_GCS_URI>[,<OTHER_URIS>]`, or keep the
+    `file:///usr/lib/...` URI if `mainClass` runs an image-provided jar per
+    `jvm_build_reference.md`, section 1): the command takes exactly one of
+    `--jar` and `--class`, and no positional jar.
 
 - `--ttl` (e.g. `2h`) unconditionally terminates a runaway batch. Set it to about 2–3 times the source batch's run time.
 - `--staging-bucket` takes a bucket name, not a `gs://` path. Use it on 1.x/2.x runtimes so that dependencies and driver output stay in your bucket; 3.x manages staging internally.
