@@ -14,7 +14,7 @@ description: |
 
 license: Apache-2.0
 metadata:
-  version: v3
+  version: v4
   publisher: google
 ---
 
@@ -83,13 +83,14 @@ other references labeled with the job type (e.g. "For PySpark").
     each value came from in the report.
 2.  **Compatibility changes only.** Change only what the target version
     requires: removed or deprecated APIs, dependency versions, Spark properties,
-    and edits that keep the source behavior on the target (for example adding
-    `USING hive` to a `CREATE TABLE`, or casting an argument whose type is now
-    enforced). Don't change business logic, filters, joins, schemas, or
-    production input/output paths. Prefer code changes over legacy flags
-    (`spark.sql.legacy.*`, `spark.sql.ansi.enabled=false`), because later Spark
-    releases can remove those flags; use a flag only when the code can't keep
-    the old behavior or can't be edited, and list every flag in the report.
+    and edits that keep the source behavior on the target (for example, stating
+    explicitly a default that the target changed, or casting an argument to the
+    type that the target now enforces). Don't change business logic, filters,
+    joins, schemas, or production input/output paths. Prefer code changes over
+    the flags that restore the previous behavior (e.g. `spark.sql.legacy.*`),
+    because later Spark releases can remove those flags; use a flag only when
+    the code can't keep the old behavior or can't be edited, and list every flag
+    in the report.
 3.  **Edit a local working copy.** Never overwrite the source objects in GCS,
     and don't push to a Git remote unless the user asks. Step 1.3 describes how
     to get the working copy. If a write to the Target GCS path would replace one
@@ -188,8 +189,11 @@ other references labeled with the job type (e.g. "For PySpark").
 > `gcloud auth application-default login`. If an account is active but a call
 > returns `403`, diagnose missing IAM roles instead.
 
-`<skill_dir>/scripts/resolve_version.py` uses only the Python standard library.
-Run it with `uv run`; if `uv` isn't installed, use `python3` instead.
+The scripts in `<skill_dir>/scripts/` (`resolve_version.py` and
+`fetch_migration_notes.py`) use only the Python standard library. Run them with
+`uv run`; if `uv` isn't installed, use `python3` instead. Don't read their
+source: the commands in this skill show how to call them, and `--help` lists
+their options.
 
 ### Step 1: Analyze & Upgrade (mandatory)
 
@@ -302,10 +306,10 @@ Run it with `uv run`; if `uv` isn't installed, use `python3` instead.
         arguments with the job type's analysis reference (see the scope gate)
         and
         [spark_migration_reference.md](references/spark_migration_reference.md):
-        the Spark migration notes between the source and target (looked up in
-        the official guides), and the connector and GPU/RAPIDS checks. For a
-        Serverless upgrade from runtime 1.x/2.x to 3.x, also report the platform
-        changes in
+        the Spark migration notes between the source and target (fetched with
+        `fetch_migration_notes.py`), and the connector and GPU/RAPIDS checks.
+        For a Serverless upgrade from runtime 1.x/2.x to 3.x, also report the
+        platform changes in
         [serverless_input_validations.md](references/serverless_input_validations.md#runtime-3x-platform-changes).
     -   Run the job type's build checks (for PySpark,
         [pyspark_analysis.md](references/pyspark_analysis.md#4-build-checks-against-the-target-version))
@@ -367,6 +371,8 @@ Step 1.6, or asked to automatically approve the full workflow (rule 5).
         known only as `<major>.<minor>`);
     -   findings and changes with `file:line`, including every legacy flag
         added;
+    -   the Spark migration guides checked (from the `fetch_migration_notes.py`
+        index), and any guide reported as not checked;
     -   build-check results, with "not run" and the reason for any check that
         couldn't run;
     -   verification results, or "not run";
@@ -376,7 +382,8 @@ Step 1.6, or asked to automatically approve the full workflow (rule 5).
     -   temporary resources left behind (e.g. `_temp` paths in GCS).
 3.  **Deliver** to the Target GCS path with `gcloud storage cp`: the final code
     (the job's main file and code dependencies, changed or not, keeping their
-    relative layout) and the report. Keep the local working copy
+    relative layout) and the report. Delete `migration_notes_<app_id>_temp/`
+    once the report is written. Keep the local working copy
     (`src_<app_id>_temp/` or local files) and the local report
     (`<app_id>_<source_version>_<target_version>_spark_upgrade_report.md`) in
     the local workspace after uploading—do not delete them unless the user asks.
