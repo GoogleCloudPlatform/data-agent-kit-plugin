@@ -18,8 +18,8 @@ destination:
     file (`references/read_write_data.md`).
 -   **BigLake Iceberg Catalog**: Refer to `references/biglake_iceberg.md`.
 -   **Cloud Spanner**: Refer to `references/spanner.md`.
--   **JDBC & Cloud SQL (PostgreSQL / MySQL) & Secret Manager Credentials**:
-    Refer to `references/jdbc_cloudsql.md`.
+-   **JDBC, Cloud SQL (PostgreSQL / MySQL / SQL Server), AlloyDB & Secret
+    Manager**: Refer to `references/jdbc_cloudsql.md`.
 -   **Amazon S3 (`s3a://` / S3-compatible object storage)**: Refer to
     `references/aws_s3.md`.
 -   **Azure Blob Storage & ADLS Gen2 (`abfss://`, `wasbs://`, `wasb://`)**:
@@ -36,9 +36,11 @@ BigQuery connector JARs (`spark-bigquery-with-dependencies`) are pre-installed
 in the runtime environment. Do **NOT** pass `com.google.cloud.spark:spark-*-bigquery`
 via `spark.jars.packages` when running on Dataproc.
 
--   **Interactive Notebooks (`.ipynb`) & Spark Connect**: Use the
-    pre-initialized `spark` variable on **Remote Spark** kernels, or initialize
-    with `ManagedSparkSession` on **Local Python** kernels (see `SKILL.md`).
+-   **Interactive Notebooks (`.ipynb`) & Spark Connect**: By default, initialize
+    with `ManagedSparkSession` on a **Local Python** kernel as described in
+    `SKILL.md`. If the user explicitly asked for a **Remote Spark** kernel or to
+    run against a Dataproc **cluster**, use the pre-initialized `spark` variable
+    instead.
 -   **Dataproc Batch & Cluster Jobs (`.py`)**: Initialize with standard
     `SparkSession.builder` (see `SKILL.md`).
 

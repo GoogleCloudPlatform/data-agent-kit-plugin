@@ -16,7 +16,7 @@ description: >-
   storage (Persistent Disk), BigQuery, or databases (Cloud SQL, Spanner,
   Bigtable, Firestore).
 metadata:
-  version: v7
+  version: v8
   publisher: google
   tags: "gcs, storage, cloud-storage, buckets, objects"
   category: storage
@@ -45,8 +45,8 @@ Before running `gcloud storage` or `curl` in a shell, check your available tools
 for the `cloud-storage` MCP server (either the local
 [MCP Toolbox](references/mcp-usage.md) or the Google-hosted remote Cloud Storage
 MCP server). **Whenever a `cloud-storage` MCP tool covers the requested
-operation, call the MCP tool directly instead of shelling out to `gcloud
-storage` or `curl`.**
+operation, call the MCP tool directly instead of shelling out to
+`gcloud storage` or `curl`.**
 
 **Why MCP first:** MCP tools are built for agents. Each operation is a single
 direct call, so it runs faster than starting a new `gcloud` command every time,
@@ -242,8 +242,8 @@ Toolbox (`cloud-storage`), read [MCP Usage](references/mcp-usage.md). When a
     [Routing to Specialized Cloud Storage Skills](#routing-to-specialized-cloud-storage-skills)).
     The options below create a basic default bucket.
 
-    Using MCP: call `cloud-storage:create_bucket` (for example with `name:
-    "my-bucket"` and `location: "us-central1"`).
+    Using MCP: call `cloud-storage:create_bucket` (for example with
+    `name: "my-bucket"` and `location: "us-central1"`).
 
     Using the gcloud CLI:
 

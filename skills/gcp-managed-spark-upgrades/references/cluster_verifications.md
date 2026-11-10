@@ -9,9 +9,28 @@ How to run the optional verification (SKILL.md Step 2) for a cluster job: a temp
 - **Subnet:** `--subnet=<SUBNET>`, checked as described in `cluster_input_validations.md`.
 - **Service account:** `--service-account=<SA_EMAIL>` if the source cluster used one or the user gave one.
 - **Hardware:** match the source cluster's machine types, worker count, disks, and accelerators.
-- **Cluster properties and initialization actions:** carry forward the source cluster's (e.g. `dataproc:pip.packages`, Conda settings, GPU or RAPIDS initialization actions), with the Step 1 compatibility changes applied (e.g. the target `rapids-version` metadata).
-- **Job settings:** the source job's entry point, arguments, properties, and dependency flags (for PySpark: `--py-files`, `--jars`, `--files`, `--archives`), with the Step 1 changes applied.
-- **Staged code:** if the job's output paths are hardcoded in the script (rather than passed via CLI arguments), create a separate temporary file `<script>_<app_id>_temp.py` in which every output path is redirected to `<target_path>/test-output_<app_id>_temp/` (while keeping the original production output path untouched in `<script>.py`). Upload the verification script (`<script>_<app_id>_temp.py` or `<script>.py`) and its dependencies to the temporary staging location (or `<target_path>/upg-verify_<app_id>_temp/`).
+-   **Cluster properties and initialization actions:** carry forward the source
+    cluster's (e.g. `dataproc:pip.packages`, Conda settings, GPU or RAPIDS
+    initialization actions), with the Step 1 compatibility changes applied (e.g.
+    the target `rapids-version` metadata, connector metadata from "Connectors"
+    in `spark_migration_reference.md`, and for Scala/Java, leaving out
+    initialization actions that copied jars into Spark's directories, as section
+    3 of `jvm_build_reference.md` describes).
+-   **Job settings:** the source job's entry point, arguments, properties, and
+    dependency flags (for PySpark: `--py-files`, `--jars`, `--files`,
+    `--archives`; for Scala/Java: `--jar=<MAIN_JAR>` if the source job set
+    `mainJarFileUri`, or `--class=<MAIN_CLASS>` with its jar in `--jars` if it
+    set `mainClass`, plus `--jars`, `--files`, `--archives`), with the Step 1
+    changes applied.
+-   **Staged code:** if the job's output paths are hardcoded in the script or
+    code (rather than passed via CLI arguments), create a separate temporary
+    file `<script>_<app_id>_temp.py` (or recompile a temporary JAR for
+    Scala/Java) in which every output path is redirected to
+    `<target_path>/test-output_<app_id>_temp/` (while keeping the original
+    production output path untouched in `<script>.py` or the release JAR).
+    Upload the verification artifact (`<script>_<app_id>_temp.py`,
+    `<script>.py`, or the JAR) and its dependencies to the temporary staging
+    location (or `<target_path>/upg-verify_<app_id>_temp/`).
 - **Output:** every output, redirected as SKILL.md rule 4 describes: list each job argument or property you changed, or the `_temp` copy of the code. Never submit the un-redirected script that writes to production output paths during Step 2 verification.
 
 **Confirm before you create the cluster (checkpoint 2).** Show the user every value above and where each came from (SKILL.md rule 1). Ask them to confirm the configuration or say what to change, e.g. fewer workers to lower the cost. Apply any changes, and re-check changed inputs as `cluster_input_validations.md` describes. Retries (SKILL.md Step 2.3) reuse the confirmed configuration; ask again only if a fix needs a different one. If the user asked to automatically approve the workflow (SKILL.md rule 5), show the configuration and continue without waiting, here and on retries.
@@ -34,7 +53,11 @@ gcloud dataproc clusters create upg-verify-<unique-id> \
 
 ## V3. Submit the job and confirm the result
 
-Submit with the `gcloud dataproc jobs submit` subcommand for the job type, keeping the cluster, project, region, label, and output redirection shown here. For PySpark (using the `_temp` script copy if outputs were hardcoded in the script):
+Submit with the `gcloud dataproc jobs submit` subcommand for the job type,
+keeping the cluster, project, region, label, and output redirection shown here.
+
+For PySpark (using the `_temp` script copy if outputs were hardcoded in the
+script):
 
 ```bash
 gcloud dataproc jobs submit pyspark <STAGED_VERIFY_SCRIPT_GCS_URI> \
@@ -47,6 +70,28 @@ gcloud dataproc jobs submit pyspark <STAGED_VERIFY_SCRIPT_GCS_URI> \
     [-- <JOB_ARGS>]
 ```
 
+For Scala/Java:
+
+```bash
+gcloud dataproc jobs submit spark \
+    --jar=<STAGED_VERIFY_JAR_GCS_URI> \
+    --cluster=upg-verify-<unique-id> \
+    --project=<PROJECT_ID> \
+    --region=<REGION> \
+    --labels=purpose=upgrade-verification \
+    [--jars=<URIS>] [--files=<URIS>] [--archives=<URIS>] \
+    [--properties=<KEY=VALUE,...>] \
+    [-- <JOB_ARGS>]
+```
+
+-   If the source job set `mainClass` instead of `mainJarFileUri`, replace
+    `--jar=<STAGED_VERIFY_JAR_GCS_URI>` with `--class=<MAIN_CLASS>`, and put the
+    staged jar first in `--jars`
+    (`--jars=<STAGED_VERIFY_JAR_GCS_URI>[,<OTHER_URIS>]`, or keep the
+    `file:///usr/lib/...` URI if `mainClass` runs an image-provided jar per
+    `jvm_build_reference.md`, section 1): the command takes exactly one of
+    `--jar` and `--class`, and no positional jar.
+
 - `<JOB_ARGS>`: the job arguments gathered in V1, in their original order and with output paths redirected; if there are none, leave out `--` as well. Write each argument as its own single-quoted shell token so the shell doesn't split or expand it (write a single quote inside an argument as `'\''`). For example, source `args` of `["--date=2026-10-01", "--output=gs://prod/curated/rollup"]` become `-- '--date=2026-10-01' '--output=<target_path>/test-output_<app_id>_temp/rollup'`.
 - The command prints the job ID and streams the driver output until the job finishes. If the stream is lost, run `gcloud dataproc jobs wait <JOB_ID> --project=<PROJECT_ID> --region=<REGION>`.
 - Verification passes only if `gcloud dataproc jobs describe <JOB_ID> --project=<PROJECT_ID> --region=<REGION> --format="value(status.state)"` returns `DONE` and the expected test output exists under `<target_path>/test-output_<app_id>_temp/`.
@@ -58,4 +103,6 @@ gcloud dataproc jobs submit pyspark <STAGED_VERIFY_SCRIPT_GCS_URI> \
 > A cluster is billed until it is deleted. Delete the cluster once the job finishes successfully or after 3 retries (SKILL.md Step 2.3):
 > `gcloud dataproc clusters delete upg-verify-<unique-id> --project=<PROJECT_ID> --region=<REGION> --quiet` (`--quiet` skips the interactive confirmation prompt).
 
-Leave the staged `_temp` code and test output in place and list them in the report; delete them only if the user asks.
+Leave the staged `_temp` code, test output, local working copy
+(`src_<app_id>_temp/`), and local upgrade report in place and list them in the
+report; delete them only if the user asks.
