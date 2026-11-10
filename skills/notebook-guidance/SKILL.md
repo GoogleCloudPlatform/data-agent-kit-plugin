@@ -9,7 +9,7 @@ description: |-
     4. You need to query BigQuery from within a notebook. DO NOT use the Python BigQuery client library; instead, you MUST use the `%%bqsql` magics explained in this skill.
 license: Apache-2.0
 metadata:
-  version: v8
+  version: v9
   publisher: google
 ---
 
@@ -75,9 +75,9 @@ comparison is involved, favor a notebook and a visualization. A notebook is the
         *   Tell the user to run the notebook.
         *   Tell the user to let you know once the notebook run is completed so
             you can check the outputs to verify it's correct and fix any errors.
-2.  **IDENTIFY DATA EARLY**: Use `@skill:discovering-gcp-data-assets` or
-    BigQuery list tools to find the correct `project.dataset.table` before
-    writing ANY code. If the table ID is missing, ask the user.
+2.  **IDENTIFY DATA EARLY**: Use `@skill:discover-assets` or BigQuery list tools
+    to find the correct `project.dataset.table` before writing ANY code. If the
+    table ID is missing, ask the user.
 3.  **CLEAN FINAL STATE**: The final notebook MUST NOT have failed cells. It is
     normal for cells to encounter errors during in-notebook prototyping—fix
     failed cells in-place using `replace_cell` (or delete failed attempts)

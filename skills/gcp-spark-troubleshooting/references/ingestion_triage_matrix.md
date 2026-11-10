@@ -302,8 +302,8 @@ without a listener on that port.
 
 -   Compare the DataFrame schema (from the code, via
     `scripts/spark_code_inspector.py`) with the live destination schema (via
-    `@skill:discovering-gcp-data-assets`): `REQUIRED` columns reject nulls, and
-    nested `STRUCT` / `RECORD` fields must match by name and type.
+    `@skill:discover-assets`): `REQUIRED` columns reject nulls, and nested
+    `STRUCT` / `RECORD` fields must match by name and type.
 -   Fix by casting and aligning columns and by filtering or quarantining rows
     that violate `REQUIRED`. Relaxing or extending the destination schema is a
     change for the table owner, and dropping, replacing, or overwriting an

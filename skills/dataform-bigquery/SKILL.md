@@ -7,7 +7,7 @@ description: Expertise in generating clean, correct, and efficient Dataform pipe
   up a new Dataform project or configuring workflow_settings.yaml.
 license: Apache-2.0
 metadata:
-  version: v8
+  version: v9
   publisher: google
 ---
 
@@ -95,9 +95,8 @@ Follow these steps when fulfilling Dataform-related requests:
     -   **Preview Data**:
         `bq head --format=prettyjson <PROJECT_ID>:<DATASET_ID>.<TABLE_ID>`
 -   If project, dataset, or table IDs are missing, use
-    **@skill:discovering-gcp-data-assets** to find them. **Ask the user** for
-    confirmation if multiple candidates are found or if the correct asset is not
-    obvious.
+    **@skill:discover-assets** to find them. **Ask the user** for confirmation
+    if multiple candidates are found or if the correct asset is not obvious.
 -   Review resolved SQLX actions from the DAG to understand data context and
     relationships.
 

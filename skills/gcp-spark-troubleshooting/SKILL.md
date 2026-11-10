@@ -3,7 +3,7 @@ name: gcp-spark-troubleshooting
 description: "Provides expert guidance for troubleshooting Google Cloud Spark and Dataproc workloads (Dataproc Serverless batches, interactive sessions, and standard Dataproc clusters), and inspecting, streaming, searching, tailing, or summarizing Spark driver outputs and event logs in Cloud Storage. Use when debugging, diagnosing, or performing Root Cause Analysis (RCA) on failed or slow Spark jobs, PySpark scripts (.py), JVM archives (.jar), compressed event logs (.zst), or IAM, VPC, and classpath errors such as OutOfMemoryError, 403 PERMISSION_DENIED, NoSuchMethodError, and ClassNotFoundException. Do NOT use for authoring new Spark jobs (use gcp-spark), planning or performing runtime version upgrades (use gcp-managed-spark-upgrades), or non-Spark engines such as Dataflow or BigQuery Data Transfer Service."
 license: Apache-2.0
 metadata:
-  version: v7
+  version: v8
   publisher: google
 ---
 
@@ -434,7 +434,7 @@ collect in Steps 1-5.
         -   **Non-`.class` archive entries** (`MANIFEST.MF`, `.properties`,
             `.xml`) are returned as plain text.
     -   Verify table schemas referenced in the code using
-        `@skill:discovering-gcp-data-assets`.
+        `@skill:discover-assets`.
 
 5.  **Root Cause Analysis (RCA) & Remediation**:
 
@@ -507,7 +507,7 @@ layer.
     certificates) are distributed
     (`scripts/spark_env_inspector.py --action=classpath`). Check connector
     properties in the code and compare DataFrame schemas with live destination
-    tables via `@skill:discovering-gcp-data-assets`.
+    tables via `@skill:discover-assets`.
 5.  **Stage Execution & Row Conservation**: Even when `state=SUCCEEDED`, inspect
     stage metrics (`scripts/spark_stage_diagnostics.py` with rules authored from
     `references/diagnostic_rules_catalog.md`, or

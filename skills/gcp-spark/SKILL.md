@@ -17,7 +17,7 @@ description: |
   - Troubleshooting failed Spark jobs or Dataproc batches (use @skill:gcp-spark-troubleshooting).
 license: Apache-2.0
 metadata:
-  version: v34
+  version: v35
   publisher: google
 ---
 
@@ -80,23 +80,23 @@ metadata:
             .getOrCreate()
         )
         ```
-2.  **Understand schemas**: **ALWAYS** use `@skill:discovering-gcp-data-assets`
-    skill or `references/schema_direct_inspection.md` to understand input and
-    output schemas. Include the schema in your thought process BEFORE generating
-    any code. Do NOT guess column names. Cap GCP data asset discovery attempts
-    at **3 retries max**. Unless explicitly specified, assume that the assets
-    are located in the same project. Avoid scanning for assets across other
-    projects as it can take a long time. If an expected dataset or table does
-    not exist, use `@skill:discovering-gcp-data-assets` to discover all similar
-    tables in the namespace or project.
+2.  **Understand schemas**: **ALWAYS** use `@skill:discover-assets` skill or
+    `references/schema_direct_inspection.md` to understand input and output
+    schemas. Include the schema in your thought process BEFORE generating any
+    code. Do NOT guess column names. Cap GCP data asset discovery attempts at
+    **3 retries max**. Unless explicitly specified, assume that the assets are
+    located in the same project. Avoid scanning for assets across other projects
+    as it can take a long time. If an expected dataset or table does not exist,
+    use `@skill:discover-assets` to discover all similar tables in the namespace
+    or project.
 
     *MISSING SOURCE RULE*: If the request does not name a table, GCS path or
     catalog (or a required database instance/connection or `s3a://` / `abfss://`
     / `wasbs://` / `wasb://` URI), you MUST run at most ONE
-    `@skill:discovering-gcp-data-assets` search. If it does not return a single
-    clear match, you MUST list the candidates, ask the user which source to use,
-    and STOP. You MUST NOT infer the source by listing buckets, reading existing
-    notebooks or scripts, or running `SHOW NAMESPACES` / `SHOW TABLES`.
+    `@skill:discover-assets` search. If it does not return a single clear match,
+    you MUST list the candidates, ask the user which source to use, and STOP.
+    You MUST NOT infer the source by listing buckets, reading existing notebooks
+    or scripts, or running `SHOW NAMESPACES` / `SHOW TABLES`.
 
     *MINOR TYPO RULE*: If there is a minor singular/plural or 1–2 character typo
     in a table name (e.g. `employees` vs `employee`, or `loans` vs `loan`),
@@ -227,7 +227,7 @@ metadata:
         small, not a hard limit.
 5.  **Verify schema before write**: **ALWAYS** verify that the dataframe and
     destination schema match, use `df.printSchema()` for dataframe schema and
-    refer to `@skill:discovering-gcp-data-assets` skill or
+    refer to `@skill:discover-assets` skill or
     `references/schema_direct_inspection.md` to verify destination schema.
 6.  **Compile code before executing**: For notebooks convert them to python
     script using `jupyter nbconvert --to script your-notebook.ipynb` first. Then
