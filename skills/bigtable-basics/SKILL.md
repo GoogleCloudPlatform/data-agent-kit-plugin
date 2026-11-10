@@ -3,7 +3,7 @@ name: bigtable-basics
 description: >-
   Provisions instances and tables, designs performant schemas, and queries data in Bigtable. Use when designing Bigtable row keys, configuring column families, writing SQL queries or client library code (Java, Go, Python) for Bigtable, or diagnosing performance/hotspotting issues. Also use when provisioning Bigtable clusters using gcloud or cbt CLIs. Don't use for generic Cloud SQL administration.
 metadata:
-  version: v2
+  version: v3
   publisher: google
   category: Databases
 license: Apache-2.0
@@ -19,8 +19,8 @@ with Google Bigtable.
 -   **Control Plane vs. Data Plane:**
     -   Use **`gcloud`** for Control Plane & DDL operations: Manage Instances,
         Clusters, App Profiles, Backups, and IAM. Manage schemas: Create,
-        update, and delete Tables, Column Families, Logical Views,
-        Materialized Views, and Authorized Views.
+        update, and delete Tables, Column Families, Logical Views, Materialized
+        Views, and Authorized Views.
     -   Use **`cbt`** for Data Plane operations: Reading, writing, and
         inspecting data.
 -   **Performance First:** Bigtable is a NoSQL database. Efficiency is tied to
@@ -31,14 +31,14 @@ with Google Bigtable.
 -   **Observability:** When diagnosing performance or hotspotting, **always**
     mention **Key Visualizer** (via Cloud Console) as the primary diagnostic
     tool because it provides the most granular view of access patterns across
-    row keys. This should be followed by the hot-tablets tool and table stats
-    in gcloud CLI and `include-stats=full` option under `cbt read` to diagnose
-    slow queries.
+    row keys. This should be followed by the hot-tablets tool and table stats in
+    gcloud CLI and `include-stats=full` option under `cbt read` to diagnose slow
+    queries.
 
-> [!IMPORTANT] **Safety Rule:** You MUST obtain explicit user confirmation before
-> making non-emulator database changes. You MUST mention this safety requirement
-> when providing commands or instructions that modify the database structure or
-> data.
+> [!IMPORTANT] **Safety Rule:** You MUST obtain explicit user confirmation
+> before making non-emulator database changes. You MUST mention this safety
+> requirement when providing commands or instructions that modify the database
+> structure or data.
 
 ## Quick Recipes
 
@@ -96,7 +96,8 @@ defined as SQL queries but they must be created using gcloud CLI.
 
 1.  **Prefer Terraform** for production schema changes to prevent accidental
     data loss.
-2.  For manual `cbt` changes, first check the existing state by listing the table's column families and GC policies before proposing any modifications:
+2.  For manual `cbt` changes, first check the existing state by listing the
+    table's column families and GC policies before proposing any modifications:
 
     ```bash
     cbt ls {table}
