@@ -3,8 +3,9 @@
 # Phase 1 — Discover & Plan (`references/plan.md`)
 
 During Phase 1 you are in **read-only mode**. Do **not** run `kcmd init` (except
-to inspect an existing remote context set, Rule C), do **not** create or modify
-any file under `bundle/`, and do **not** run `kcmd push`.
+to inspect an existing remote context set in an empty workspace with no local
+OKF files yet, Rule C), do **not** create or modify any file under `bundle/`,
+and do **not** run `kcmd push`.
 
 --------------------------------------------------------------------------------
 
@@ -37,9 +38,9 @@ any file under `bundle/`, and do **not** run `kcmd push`.
     -   **Targeted single-entry or definition edit:** Read the target concept
         file first. If changing a definition, column filter, or threshold,
         search `bundle/` (or the active in-place `<okf_folder>/` using your host
-        search tool or `grep -rn "<entry-id-or-concept>" bundle/`) to find every
-        entry, sample query, and link that references it so you can list
-        **ripple effects** before or alongside the edit.
+        search tool or `grep -rnF -- "<entry-id-or-concept>" <okf_folder>/`) to
+        find every entry, sample query, and link that references it so you can
+        list **ripple effects** before or alongside the edit.
 -   If the user asks only to **export / download** an existing remote context
     set to a local folder without edits: confirm the destination folder and
     target context set in a brief Gate 1 plan; after approval, run `kcmd init`
@@ -78,9 +79,10 @@ Inspect what the user gave you:
     **Exception, existing context set named by topic but not by ID:** If the
     user asks to pull, review, or edit an existing context set and gives a
     project (or a topic) but not its ID, look it up before asking: search
-    Knowledge Catalog (`search_entries` first; otherwise list the project's
-    entry groups in the source tables' locations, their multi-region (`us` or
-    `eu`), and `global` with
+    Knowledge Catalog (`search_entries` with
+    `(entrygroup.type=context-set) <topic>`, scoped to `<PROJECT>` when given;
+    otherwise list the project's entry groups in the source tables' locations,
+    their multi-region (`us` or `eu`), and `global` with
     `gcloud dataplex entry-groups list --project=<PROJECT> --location=<LOC>`)
     and show the matches in plain language for the user to pick before running
     `kcmd init` or `kcmd pull`. Ask for the ID only if the lookup finds nothing
@@ -104,12 +106,13 @@ Inspect what the user gave you:
             `Attested Computation` pages, and upstream frontmatter are handled).
         -   Say that the import works on the user's folder in place (one copy by
             default; see `SKILL.md` §4 and `references/navigate.md` §1): if the
-            folder isn't named `bundle/`, run `kcmd init` first, remove only the
+            folder isn't named `bundle/`, back up `<folder>` first when
+            targeting an existing remote set, run `kcmd init`, remove only the
             scaffolded stub `bundle/` folder, and link `bundle -> <folder>`
-            (`ln -s` on macOS/Linux; `mklink /J` on Windows) rather than copying
-            or renaming it; make a separate copy only if the user explicitly
-            asks. For option 1 below, list every page move, rename, and
-            deletion.
+            (`ln -s` on macOS/Linux; `cmd /c mklink /J` on Windows) rather than
+            copying or renaming it; make a separate copy only if the user
+            explicitly asks. For option 1 below, list every page move, rename,
+            and deletion.
         -   List what you propose adding on top, and **always ask whether the
             user wants to (1) convert to our progressive-disclosure layout
             (recommended) or (2) keep and push the OKF bundle in its current
@@ -142,10 +145,12 @@ says those are the tables to use:
     `resource:`.)*
 -   When the Knowledge Catalog MCP is available, inspect existing Knowledge
     Catalog resource entries to inform context set authoring: call
-    `lookup_entry` on each table's entry name to read its full schema, column
-    descriptions, existing `overview` / `queries` aspects, and location (if the
-    location isn't known yet, read it per `references/source_engines.md` or run
-    a single scoped `search_entries` call to obtain the full entry name).
+    `lookup_entry` with `view: "ALL"` (and `location` matching the entry) on
+    each table's entry name to read its full schema, column descriptions,
+    existing `overview` / `queries` aspects, and location (if the location isn't
+    known yet, read it per `references/source_engines.md` or run a single scoped
+    `search_entries` call to obtain the full entry name; on
+    `bigquery-public-data`, fall back to `bq show --schema` / BigQuery MCP).
 -   **Do NOT run broad catalog searches for tables when exact table IDs were
     already given.**
 -   Search Knowledge Catalog (`search_entries`) for relevant `@dataplex`
@@ -166,7 +171,8 @@ project X"*, or *"our revenue tables"*):
     inform context set authoring.
 -   Inspect every candidate table's full schema, row/column descriptions,
     existing `overview` / `queries` aspects, and timestamps/deprecation notes
-    (call `lookup_entry` via the Knowledge Catalog MCP).
+    (call `lookup_entry` with `view: "ALL"` and matching `location` via the
+    Knowledge Catalog MCP).
 -   **Lookalike / duplicate table check:** Whenever discovery returns multiple
     similar tables (e.g., `orders` vs `orders_v2` vs `orders_legacy` vs
     `stg_orders`), **flag all lookalike candidates** in your plan, compare their
@@ -176,8 +182,8 @@ project X"*, or *"our revenue tables"*):
 ### Rule C — Existing remote context set
 
 If the user references an existing remote context set
-(`PROJECT.LOCATION.CONTEXT_SET_ID`) and `catalog.yaml` is not yet initialized
-locally, you may run
+(`PROJECT.LOCATION.CONTEXT_SET_ID`) and the workspace has **no local OKF files
+or `bundle/` yet** (`catalog.yaml` not initialized), you may run
 `kcmd init --entry-group <PROJECT>.<LOCATION>.<CONTEXT_SET_ID> --format okf`,
 then `kcmd pull` only if `init` didn't already pull the entries (or read the
 existing `bundle/` if already pulled), to read the current state. This only
@@ -225,7 +231,9 @@ titles, and paths, and never include raw CLI commands, flags, or
 Format your response clearly with these sections:
 
 1.  **Target Context Set & Layout:**
-    -   If remote scope given: the project, location, context set name, display
+    -   If remote scope given: the project, location, context set name (must
+        match `^[a-z]([a-z0-9-]{0,61}[a-z0-9])?$` — lowercase letters, digits,
+        and hyphens only; flag underscores or uppercase at Gate 1), display
         name, description, and where the files will go (directly under
         `bundle/`, with no `<id>/<project>/<location>/` folder prefix). **If the
         location is missing**, propose the source tables' shared location as the

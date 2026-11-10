@@ -209,10 +209,10 @@ extra:
 
 > Copy real column descriptions verbatim. For every column with no description
 > in the schema and no definition in a user doc, write
-> `No description in source.` (optionally noting values observed from an
-> aggregate query you ran, or quoting and citing a formula or filter where a doc
-> uses the column without defining it). Never paraphrase a column name into a
-> meaning (never `"The <qualifier> of the <noun>"` for a column named
+> `No description in source.` (optionally followed by values observed from an
+> aggregate query you ran, or a quoted, cited formula or filter where a doc uses
+> the column without defining it). Never paraphrase a column name into a meaning
+> (never `"The <qualifier> of the <noun>"` for a column named
 > `<noun>_<qualifier>`).
 
 ### SQL queries (`dataplex-types.global.queries` aspect)
@@ -249,12 +249,12 @@ Entry ID: `documents/<slug>`, `documents/concepts/<slug>` (with
 (with `extra.resource.parent: documents/learnings`). Use `type: Knowledge Base`
 (or `type: Concept` / `type: Learning`).
 
-Optional OKF v0.2 provenance, trust, and lifecycle keys (`sources`,
-`usage_window`, `generated: { by, at }`, `verified: [{ by, at }]` or
-`{ by, at }`, `status: draft | stable | deprecated`, and an ISO 8601
-`stale_after` when known) may appear in frontmatter; preserve all existing keys
-when editing or importing, including unknown or extension keys verbatim (OKF
-v0.2 §4.1).
+Optional OKF v0.2 provenance, trust, and lifecycle keys (`sources` with required
+`resource` per item, `usage_window`, `generated: { by, at }`,
+`verified: [{ by, at }]` or `{ by, at }`, `status: draft | stable | deprecated`,
+and an ISO 8601 `stale_after` carrying an explicit UTC offset like `...Z` when
+known) may appear in frontmatter; preserve all existing keys when editing or
+importing, including unknown or extension keys verbatim (OKF v0.2 §4.1).
 
 ```markdown
 ---
@@ -327,10 +327,10 @@ links:
     source: assets/bigquery/<bq_project>/<dataset>/<table>
     target: "projects/<BQ_PROJECT>/locations/<bq_location>/entryGroups/@bigquery/entries/bigquery.googleapis.com/projects/<BQ_PROJECT>/datasets/<DATASET>/tables/<TABLE>"
 
-  # 2. Directed definition link: context-set entry -> EXISTING @dataplex glossary term (only valid target)
+  # 2. Directed definition link: context-set entry -> EXISTING @dataplex glossary term (only valid target; copy full entry.name verbatim from search_entries / lookup_entry)
   - type: definition
     source: documents/<concept_slug>
-    target: "projects/<PROJECT>/locations/global/entryGroups/@dataplex/entries/<GLOSSARY_TERM_ENTRY_ID>"
+    target: "projects/<PROJECT>/locations/<glossary_location>/entryGroups/@dataplex/entries/<GLOSSARY_TERM_ENTRY_ID>"
 
   # 3a. Undirected related links: index pages <-> child entries (connects the context graph in Knowledge Catalog)
   - type: related

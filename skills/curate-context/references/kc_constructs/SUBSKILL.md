@@ -155,11 +155,12 @@ All OKF v0.2 frontmatter families are supported and preserved losslessly by
 `kcmd`:
 
 -   **Provenance (`sources` & `usage_window`, §5.1):** `sources:` is a list of
-    `{ id, resource, title, author, usage_count, last_modified }` entries with
-    optional sibling `usage_window: { from, to }`. Attribute individual claims
-    in the body with Markdown footnotes matching `sources[].id` (e.g.
-    `[^rev-policy]` with `[^rev-policy]: Revenue recognition policy`), never a
-    `# Citations` body list.
+    `{ id, resource, title, author, usage_count, last_modified }` entries
+    (`resource` is required on every authored item) with optional sibling
+    `usage_window: { from, to }`. Attribute individual claims in the body with
+    Markdown footnotes matching `sources[].id` (e.g. `[^rev-policy]` with
+    `[^rev-policy]: Revenue recognition policy`), never a `# Citations` body
+    list.
 -   **Trust (`generated` & `verified`, §§5.2–5.3, §7):** `generated: { by, at }`
     and `verified:` as either a list `[{ by, at }]` or a single mapping
     `{ by, at }` (treated as a one-element list). Actors use
@@ -169,7 +170,9 @@ All OKF v0.2 frontmatter families are supported and preserved losslessly by
 -   **Lifecycle & freshness (`status`, `stale_after`, §§5.4–5.5):**
     `status: draft | stable | deprecated` (default `stable`; never fabricate a
     `dataplex-types.global.certification` aspect) and an optional ISO 8601
-    `stale_after` instant (**omit if unknown — never invent a review date**).
+    `stale_after` datetime with explicit UTC offset (`Z` or `±HH:MM`; **omit if
+    unknown — never invent a review date, and never author a bare `YYYY-MM-DD`
+    date on OKF v0.2 timestamp fields**).
 -   **Extensions (§4.1):** Preserve any unknown or extension keys (including
     upstream values or keys this skill doesn't recognize) verbatim at any level
     without re-serializing unchanged values.

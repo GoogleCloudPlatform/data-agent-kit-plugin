@@ -2,19 +2,19 @@
 name: curate-context
 description: >-
   Creates, imports, pulls, edits, repairs, or publishes a Knowledge Catalog (KC) context set as
-  Open Knowledge Format (OKF v0.2) markdown under `bundle/` with the `kcmd` CLI, for tables in
-  BigQuery, Spanner, BigLake, Cloud SQL, AlloyDB, or Hive Metastore. Load it FIRST for any request
-  that mentions a context set, an OKF bundle or folder, or `kcmd`, before running `kcmd`
-  (never an unscoped `kcmd` from pip or npx, and never an unconfirmed `./kcmd`) or editing any file:
-  e.g. "build a context set from our sales tables and metric doc", "update the churn definition in
-  our context set and publish". Plans first, validates, and publishes only after the user approves
-  both the plan and the review, even when told to work autonomously. Keeps the user's own OKF
-  folder and structure. If the request also asks for OSI-G semantic models, ontology canvases, new
-  glossary terms, access changes, or certification, still use it: it builds the context set and
-  declines those parts. Not for read-only catalog or data questions.
+  Open Knowledge Format (OKF v0.2) markdown under `bundle/` with `kcmd`, for BigQuery, Spanner,
+  BigLake, Cloud SQL, AlloyDB, or Hive Metastore. Load FIRST whenever creating, importing, pulling,
+  editing, repairing, or publishing a context set or OKF bundle/folder, or using `kcmd`, before
+  running `kcmd` (never unscoped `kcmd` from pip/npx or unconfirmed `./kcmd`) or editing files:
+  e.g. "build a context set from our sales tables and metric doc", "update churn in our context set
+  and publish". Plans first, validates, and publishes only after user approval at both gates, even
+  when told to work autonomously. Keeps the user's OKF folder/structure. If also asked for OSI-G
+  semantic models, ontology canvases, new glossary terms, access changes, or certification, still
+  use it: builds the context set and declines those parts. Never for read-only catalog search or
+  data questions.
 license: Apache-2.0
 metadata:
-  version: v3
+  version: v4
   publisher: google
 ---
 
@@ -76,10 +76,11 @@ SQL query must come from:
     prompt, an OKF bundle),
 -   an existing context set pulled into `bundle/` with `kcmd pull`, or an
     existing resource entry, aspect, glossary term, or schema fetched from
-    Knowledge Catalog (`search_entries` and `lookup_entry` via the Knowledge
-    Catalog MCP to inspect source table entries in any engine's system entry
-    group, column descriptions, existing `overview` / `schema` / `queries`
-    aspects, and `@dataplex` glossary terms to inform context set authoring), or
+    Knowledge Catalog (`search_entries` and `lookup_entry` with `view: "ALL"`
+    and matching `location` via the Knowledge Catalog MCP to inspect source
+    table entries, column descriptions, existing `overview` / `schema` /
+    `queries` aspects, and `@dataplex` glossary terms; fall back to `bq show` /
+    engine MCP on `bigquery-public-data`), or
 -   a live schema or query result from the source's engine.
 
 **No unverified specifics.** Each of the following needs a source — a schema or
@@ -89,17 +90,17 @@ session (cite which) — or it stays out of the pages and goes under **Open
 questions** in the plan:
 
 -   **Column meanings (NEVER gloss from column names).** Always inspect the
-    table schema (`lookup_entry` via the Knowledge Catalog MCP when additional
-    entry/column metadata is needed, the engine's schema read in
-    `references/source_engines.md`, or provided schema files) before writing
-    column tables. Never infer, paraphrase, or restate a column's meaning from
-    its name alone (for example turning `<noun>_<qualifier>` into
-    `"The <qualifier> of the <noun>"`, or expanding abbreviations or units
-    implied by a name). If a column has no description in the schema and no
-    document defines what it is or contains, write the exact literal text
-    `No description in source.` in the description cell (optionally noting
-    values observed from an aggregate query you ran, or quoting and citing a
-    formula or filter where a document uses the column without defining it).
+    table schema (`lookup_entry` with `view: "ALL"` via the Knowledge Catalog
+    MCP, the engine's schema read in `references/source_engines.md`, or provided
+    schema files) before writing column tables. Never infer, paraphrase, or
+    restate a column's meaning from its name alone (for example turning
+    `<noun>_<qualifier>` into `"The <qualifier> of the <noun>"`, or expanding
+    abbreviations or units implied by a name). If a column has no description in
+    the schema and no document defines what it is or contains, write the exact
+    literal text `No description in source.` in the description cell (optionally
+    followed by values observed from an aggregate query you ran, or a quoted,
+    cited formula or filter where a document uses the column without defining
+    it).
 -   **Value sets, thresholds, and cutoffs** (allowed values of a status or
     category column, numeric lower/upper bounds, time windows).
 -   **Prescriptive rules and edge-case interpretations** ("should filter /
@@ -150,12 +151,14 @@ callout in the concept doc, and ask the user which is authoritative.
     -   **You must present:** The structured authoring plan
         (`references/plan.md`)
     -   **And then:** **End your turn.** Wait for the user to approve.
--   **Gate 2 — Push approval**
+-   **Gate 2 — Push approval (NEVER in the same turn as authoring)**
     -   **Before you:** Run `kcmd push` (without `--dry-run`)
     -   **You must present:** Validation results (`kcmd push --dry-run`, SQL
         compile-check status), summary of added/modified/deleted entries and
         links, and any Tier-2 findings (`references/review_publish.md`)
-    -   **And then:** **End your turn.** Wait for the user to approve pushing.
+    -   **And then:** **End your turn.** Wait for the user to approve pushing
+        (approving Gate 1 only approves writing local files and `--dry-run`,
+        never `kcmd push`).
     -   **After the push:** End the report with the line `Published context set:
         projects/<PROJECT>/locations/<LOCATION>/entryGroups/<ID>`.
 
@@ -193,9 +196,10 @@ context-set work:
     governance/steward action in the console/IAM, not performed by this
     authoring workflow).
 -   **Setting access** (IAM) on the context set, e.g. "owner-only" or "readable
-    by group X". This workflow doesn't change permissions; a new context set
-    gets the access its project grants. Say so in the Gate 1 plan and tell the
-    user to set access in the console or IAM after publishing.
+    by group X". This workflow doesn't change permissions, and context sets do
+    not inherit read access from standard project viewer roles: say so at Gate
+    1, and tell the user to grant `roles/dataplex.contentUser` in the console or
+    IAM after publishing.
 -   **Creating or modifying Knowledge Catalog Business Glossary terms** in
     `@dataplex` (you can *link* to existing `@dataplex` glossary terms via
     `definition` links, or create a `Knowledge Base` concept doc *inside* the
@@ -266,7 +270,7 @@ run it even when the user asks you not to run live queries.
     `<folder>` if targeting an existing remote set), remove only the newly
     scaffolded stub `bundle/` folder (never user files), and link `bundle` to
     `<folder>` (`ln -s <folder> bundle` on macOS/Linux;
-    `mklink /J bundle <folder>` directory junction on Windows; see
+    `cmd /c mklink /J bundle "<folder>"` directory junction on Windows; see
     `references/navigate.md`). Say so in the Gate 1 plan, and ask before moving
     or renaming anything.
 -   **Importing an existing OKF bundle or respecting a custom directory
@@ -346,15 +350,16 @@ Commands, flags, file names like `catalog.yaml`, and placeholders like
     next in the same words, for example *"When you're ready, tell me to publish
     and I'll run the catalog publish preview again first."*, never a command for
     the user to run.
--   **Only three allowed exceptions:** (1) a concrete
-    `gcloud dataplex entry-groups add-iam-policy-binding ...` command that the
-    user must run themselves to grant reader access, (2) telling the user that
-    `kcmd` is not installed on `PATH` and asking confirmation before installing
-    the official `@google-cloud/kcmd` npm package (or giving the
-    `npm install -g @google-cloud/kcmd` command / Data Agent Kit setup
-    instructions; never the unscoped `kcmd`) or before first running a workspace
-    `./kcmd` launcher, or (3) answering an explicit user question about how the
-    CLI works.
+-   **Only three allowed exceptions:** (1) a concrete `gcloud dataplex
+    entry-groups add-iam-policy-binding <ID> --project=<P> --location=<L>
+    --member=<user|group>:<EMAIL> --role=roles/dataplex.contentUser` command
+    that the user must run themselves to grant reader access, (2) telling the
+    user that `kcmd` is not installed on `PATH` and asking confirmation before
+    installing `@google-cloud/kcmd` (or sharing
+    `npm install -g @google-cloud/kcmd`; never the unscoped `kcmd` or setup
+    skills that don't install it) or before first running a workspace `./kcmd`
+    launcher, or (3) answering an explicit user question about how the CLI
+    works.
 
 --------------------------------------------------------------------------------
 
@@ -362,38 +367,25 @@ Commands, flags, file names like `catalog.yaml`, and placeholders like
 
 ```
   ┌─────────────────────────────────────────────────────────────────────┐
-  │ 0. FIND kcmd (PATH / user bin; ask before ./kcmd or install)       │
-  └──────────────────────────────────┬──────────────────────────────────┘
-                                     ▼
-  ┌─────────────────────────────────────────────────────────────────────┐
+  │ 0. FIND kcmd (PATH / user bin; ask before ./kcmd or install)        │
+  ├─────────────────────────────────────────────────────────────────────┤
   │ 1. DISCOVER & PLAN (read-only)                  references/plan.md  │
-  │    • Inspect local files FIRST (ls / read existing OKF .md files)   │
-  │    • Only run kcmd init (plus pull if needed) for a remote set      │
+  │    • Inspect local files FIRST; kcmd init/pull only in empty dir    │
   │    • Check lookalike tables, source conflicts, ripple effects       │
   │    • Present structured plan ──► STOP (Gate 1: wait for approval)   │
-  └──────────────────────────────────┬──────────────────────────────────┘
-                                     ▼
-  ┌─────────────────────────────────────────────────────────────────────┐
-  │ 2. AUTHOR OKF DIRECTLY    references/kc_constructs/SUBSKILL.md &    │
-  │                           references/kc_constructs/output_contract.md│
+  ├─────────────────────────────────────────────────────────────────────┤
+  │ 2. AUTHOR OKF DIRECTLY         references/kc_constructs/SUBSKILL.md │
+  │                         references/kc_constructs/output_contract.md │
   │    • Local OKF or `kcmd init --entry-group <P.L.ID> --format okf`   │
-  │    • Write/edit `.md` files & `_links.yaml` directly                │
-  │    • For targeted edits: touch ONLY the target file (+ affected)    │
-  └──────────────────────────────────┬──────────────────────────────────┘
-                                     ▼
-  ┌─────────────────────────────────────────────────────────────────────┐
+  │    • Write/edit `.md` files & `_links.yaml` (targeted = target only)│
+  ├─────────────────────────────────────────────────────────────────────┤
   │ 3. VALIDATE & REPAIR                          references/validate.md│
-  │    • Check Tier-1 OKF hierarchy, frontmatter, and links             │
-  │    • Compile-check each SQL query in its engine (cost-free)         │
-  │    • Run `kcmd push --dry-run` (preview planned creates/updates)    │
-  └──────────────────────────────────┬──────────────────────────────────┘
-                                     ▼
-  ┌─────────────────────────────────────────────────────────────────────┐
+  │    • Check Tier-1 hierarchy/links, SQL compile checks, `--dry-run`  │
+  ├─────────────────────────────────────────────────────────────────────┤
   │ 4. REVIEW & PUBLISH                     references/review_publish.md│
-  │    • Local-only mode: present validation summary & changed files    │
-  │    • Remote mode: present `kcmd push --dry-run` summary ──► STOP    │
-  │    • Only after explicit push approval: run `kcmd push`             │
-  │    • Verify published entries in Knowledge Catalog                  │
+  │    • Local-only: summary & changed files (no push)                  │
+  │    • Remote: present `--dry-run` Gate 2 summary ──► STOP            │
+  │    • ONLY after separate Gate 2 approval: `kcmd push` + KC lookup   │
   └─────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -461,34 +453,38 @@ Don't crawl the filesystem for other copies. If `kcmd` is not installed in Step
 2.  **State at the very top of your reply** that the Knowledge Catalog CLI
     (`kcmd`) isn't installed and that nothing has been created or published yet.
     Offer to install the official scoped npm package `@google-cloud/kcmd` (or
-    share `npm install -g @google-cloud/kcmd` / Data Agent Kit setup steps), and
-    **never** run or suggest the unscoped `npm install kcmd`, `npx kcmd`, or
-    `pip install kcmd` (unrelated third-party packages).
+    share `npm install -g @google-cloud/kcmd`), and **never** run or suggest the
+    unscoped `npm install kcmd`, `npx kcmd`, `pip install kcmd`, or unrelated
+    setup skills.
 3.  **Prepare the Gate 1 plan in the same reply** (grounded in local files, in
     plain product language without raw CLI syntax) and ask whether to install
     `@google-cloud/kcmd` alongside approving the plan.
 4.  **Only after the user confirms installing `kcmd`** (or confirms they
     installed it themselves): if they asked you to install it and
     `npm --version` succeeds, run `npm install -g @google-cloud/kcmd` and verify
-    with `kcmd --version`; if the global folder isn't writable, fall back to
-    `npm install --prefix "$HOME/.local" -g @google-cloud/kcmd`, verify with
-    `"$HOME/.local/bin/kcmd" --version`, and use `"$HOME/.local/bin/kcmd"` on
-    every later `kcmd` call in this session. Resume from the approved step
-    without asking them to repeat their prompt. If the npm install fails (e.g.,
-    offline), report the failure in one line and stop without writing files.
+    with `kcmd --version` (or `<npm prefix -g>/bin/kcmd` / `\kcmd.cmd` on
+    Windows if IDE `PATH` omits global npm); if the global folder isn't
+    writable, fall back to
+    `npm install --prefix <user-local-dir> -g @google-cloud/kcmd`
+    (`"$HOME/.local"` -> `"$HOME/.local/bin/kcmd"` on macOS/Linux;
+    `"$env:USERPROFILE\.local"` in PowerShell or `"%USERPROFILE%\.local"` in
+    `cmd` -> `<user-local-dir>\kcmd.cmd` on Windows) and use that exact path on
+    every later `kcmd` call. Resume from the approved step without asking them
+    to repeat their prompt. If the npm install fails (e.g., offline), report the
+    failure in one line and stop without writing files.
 
 ```bash
-# `kcmd` below means the command Step 0 resolved (`kcmd` on PATH, `"$HOME/.local/bin/kcmd"` after a user-local install, or a user-confirmed `./kcmd`); `bq` comes from PATH.
-# Workspace setup (ONLY after Gate 1 approval, or to inspect an existing remote context set)
+# `kcmd` = Step 0 resolved path (`kcmd`, `"$HOME/.local/bin/kcmd"`, or confirmed `./kcmd`); `bq` from PATH.
+# Workspace setup (ONLY after Gate 1 approval, or to inspect an existing remote set in an empty workspace)
 kcmd init --entry-group <PROJECT>.<LOCATION>.<CONTEXT_SET_ID> --format okf   # writes `layout: okf` to catalog.yaml
 kcmd pull                      # only if init didn't already pull the existing context set
 
-# Validation (run after authoring/editing bundle/, before Gate 2)
+# Validation (run after authoring/editing bundle/, before presenting Gate 2 and STOPPING)
 kcmd push --dry-run
 bq query --dry_run --use_legacy_sql=false <<'SQL'   # BigQuery; other engines: references/source_engines.md
 <SQL>
 SQL
 
-# Publish (ONLY after Gate 2 approval)
+# Publish (ONLY after separate Gate 2 approval — NEVER in the same turn as init or file edits!)
 kcmd push
 ```

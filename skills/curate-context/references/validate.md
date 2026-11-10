@@ -20,7 +20,7 @@ since your pull (`references/navigate.md` §3). The Tier-1 checklist in Step 3.2
 is what covers the whole bundle.
 
 ```bash
-# 1. Check what a push would do, without publishing
+# 1. Check what a push would do, without publishing (`kcmd` = exact Step 0 command)
 kcmd push --dry-run
 
 # 2. Compile-check each sample SQL query in a table page's `queries` aspect (Step 3.3)
@@ -61,12 +61,17 @@ those pages stay byte-for-byte unless the user approves the fix.
     -   **Pulled / custom pages:** A pulled `Context Overlay` page is not a
         defect for missing `resource:` or Table Context sections, and an
         imported OKF `Attested Computation` page kept in a user's as-is layout
-        is valid (`references/kc_constructs/SUBSKILL.md` §2). Note also that for
-        nested folders (`documents/<slug>.md`,
-        `assets/<engine>/<container>/<table>.md`), `kcmd` defaults the parent
-        entry from the parent path segment when `extra.resource.parent` is
-        omitted, whereas top-level `assets.md` and `documents.md` require
-        `extra.resource.parent: agents`.
+        is valid (`references/kc_constructs/SUBSKILL.md` §2). Note also that
+        when a nested page's immediate parent directory has a matching
+        `<parent-dir>.md` entry (e.g. `documents/<slug>.md` under
+        `documents.md`, or `assets/<engine>/<container>/<table>.md` under
+        `<container>.md`), `kcmd` defaults the parent entry from that path
+        segment if `extra.resource.parent` is omitted — whereas top-level
+        `assets.md` / `documents.md` (`extra.resource.parent: agents`) and
+        compact-spine container pages like
+        `assets/bigquery/<project>/<dataset>.md`
+        (`extra.resource.parent: assets`) require an explicit
+        `extra.resource.parent`.
 
 Tier-1 defects, how to detect each, and how to fix it:
 
@@ -92,13 +97,16 @@ Tier-1 defects, how to detect each, and how to fix it:
         rule when the user chose to keep their own OKF directory structure
         as-is.
 -   **Generic or missing root `description:`**
-    -   **How to detect it:** `bundle/agents.md` has no `description:`, one
-        under 50 or over 1,024 characters, or a generic one that names no core
-        table, metric or concept (e.g. "Entry point for data agents…" or only
-        the title)
+    -   **How to detect it:** When creating a new bundle, importing with the
+        progressive-disclosure layout, or editing `agents.md` itself,
+        `bundle/agents.md` has no `description:`, one under 50 or over 1,024
+        characters, or a generic one that names no core table, metric or concept
+        (e.g. "Entry point for data agents…" or only the title)
     -   **How to fix it in `bundle/`:** Rewrite it from the plan's sources to
         name the main tables and key metrics/concepts and the questions the set
-        answers.
+        answers (on a targeted edit to another page in a pulled set, report a
+        generic `agents.md` description in Gate 2 rather than rewriting
+        `agents.md` unasked).
 -   **Orphan entry or disconnected KC Graph index**
     -   **How to detect it:** A concept `.md` file (`type:` present; never
         untyped `index.md` or `log.md`) is not linked from any index Contents
@@ -154,8 +162,8 @@ Tier-1 defects, how to detect each, and how to fix it:
         invents an ungrounded `stale_after` date or
         `dataplex-types.global.certification` aspect
     -   **How to fix it in `bundle/`:** Replace ungrounded column cells with
-        `No description in source.` (optionally noting observed aggregate values
-        or quoting and citing a doc formula/filter where the column appears);
+        `No description in source.` (optionally followed by observed aggregate
+        values or a quoted, cited doc formula/filter where the column appears);
         remove any ungrounded `stale_after` or fabricated `certification` aspect
         while preserving genuine upstream OKF v0.2 metadata
         (`references/kc_constructs/SUBSKILL.md` §2).
@@ -221,7 +229,8 @@ guessed:
     includes):
 
     -   Search `bundle/` (or the active in-place `<okf_folder>/` using your host
-        search tool or `grep -rn "<changed-entry-id-or-concept>" bundle/`) and
+        search tool or
+        `grep -rnF -- "<changed-entry-id-or-concept>" <okf_folder>/`) and
         inspect the links (`bundle/_links.yaml` or `<okf_folder>/_links.yaml`,
         and page frontmatter `links` / `extra.links` / `x-kcmd.links`) to find
         every other concept doc, table-context doc, and sample query that links

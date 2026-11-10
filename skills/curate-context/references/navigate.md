@@ -54,30 +54,39 @@ layout: okf
     `kcmd` reads pages from `<workspace>/bundle/`, so for a folder `<folder>`
     with another name (after Gate 1):
     1.  Keep `<folder>` unlinked while running
-        `kcmd init --entry-group <P>.<L>.<ID> --format okf` so `kcmd init`'s
-        scaffolded `bundle/` stub doesn't create a nested `bundle/<basename>`
-        link and any auto-pull on an existing remote context set lands in the
-        temporary `bundle/` first (reconcile or merge pulled pages if needed
-        without overwriting local `<folder>` files prior to Gate 2).
+        `kcmd init --entry-group <P>.<L>.<ID> --format okf` (verify first that
+        any pre-existing `bundle/` in the repo is an OKF bundle, not an
+        unrelated app build/vendor folder) so `kcmd init`'s scaffolded `bundle/`
+        stub doesn't create a nested `bundle/<basename>` link and any auto-pull
+        on an existing remote context set lands in the temporary `bundle/` first
+        (back up `<folder>` and reconcile/merge pulled pages into `<folder>`
+        before replacing the temporary `bundle/`, and never run `kcmd pull`
+        after linking without backing up `<folder>` first).
     2.  Remove only the newly scaffolded stub `bundle/` directory (never user
         files), then create a directory link `bundle -> <folder>` next to
         `catalog.yaml` (`ln -s <folder> bundle` on macOS/Linux;
-        `mklink /J bundle <folder>` directory junction on Windows, which works
-        without elevated privileges). `kcmd` reads and writes through the link.
-        Converting to the progressive-disclosure layout restructures `<folder>`
-        in place (moves, new index pages, deletions; `SKILL.md` §4). Make a
-        separate copy only if the user explicitly asks.
+        `cmd /c mklink /J bundle "<folder>"` directory junction on Windows,
+        removed via `cmd /c rmdir bundle` rather than recursive delete). `kcmd`
+        reads and writes through the link. Converting to the
+        progressive-disclosure layout restructures `<folder>` in place (moves,
+        new index pages, deletions; `SKILL.md` §4). Make a separate copy only if
+        the user explicitly asks.
 
 --------------------------------------------------------------------------------
 
 ## 2. Commands
+
+*(In every command below, substitute the exact `kcmd` path resolved in
+`SKILL.md` Step 0, e.g. `kcmd`, `"$HOME/.local/bin/kcmd"`, or user-confirmed
+`./kcmd`.)*
 
 -   `kcmd init --entry-group <P>.<L>.<ID> --format okf`
     -   **Purpose:** Create (or update) `catalog.yaml` for the context set with
         `layout: okf` (if `bundle/` is still empty afterwards for an existing
         context set, run `kcmd pull`)
     -   **When to run:** **Only after Gate 1 approval**, or before `kcmd pull`
-        when inspecting an existing remote context set
+        when inspecting an existing remote context set in an empty workspace (no
+        local OKF files yet)
 -   `kcmd pull`
     -   **Purpose:** Pull remote entries & links into `bundle/`
     -   **When to run:** During discovery (or read-only export), when

@@ -28,10 +28,15 @@ segment in `entry.name`.
     -   **System entry group & entry id (resource name):** `@bigquery`;
         `bigquery.googleapis.com/projects/<p>/datasets/<d>/tables/<t>` (other
         dataset/regional assets use `.../models/<m>`, `.../routines/<r>`,
-        `.../propertyGraphs/<g>`, or `.../locations/<l>/connections/<c>`)
+        `.../propertyGraphs/<g>`, or
+        `bigqueryconnection.googleapis.com/projects/<p>/locations/<l>/connections/<c>`)
     -   **Entry location:** Dataset or connection location (e.g. `us`)
-    -   **Read the schema:** `lookup_entry`; fallback `bq show --schema`
-    -   **Cost-free compile check:**
+    -   **Read the schema:** `lookup_entry` with `view: "ALL"`; fallback
+        BigQuery MCP `get_table_info` or
+        `bq show --schema --format=prettyjson <p>:<d>.<t>` (required on
+        `bigquery-public-data`, where `lookup_entry` fails IAM)
+    -   **Cost-free compile check:** BigQuery MCP `execute_sql_readonly`
+        (`dry_run: true`), or CLI (`--project_id=<billing_project>` if needed):
 
         ```bash
         bq query --dry_run --use_legacy_sql=false <<'SQL'
@@ -46,16 +51,18 @@ segment in `entry.name`.
         `spanner.googleapis.com/projects/<p>/instances/<i>/databases/<db>/tables/<t>`
         (property graphs use `.../databases/<db>/graphs/<g>`)
     -   **Entry location:** Default leader region of the instance config
-    -   **Read the schema:** `lookup_entry`; fallback
-        `gcloud spanner databases ddl describe`
-    -   **Cost-free compile check** (plan only, reads no rows):
+    -   **Read the schema:** `lookup_entry` with `view: "ALL"`; fallback Spanner
+        MCP `get_database_ddl` or `gcloud spanner databases ddl describe <db>
+        --instance=<i> --project=<p>`
+    -   **Cost-free compile check** (plan only, reads no rows): Spanner MCP
+        `get_query_plan`, or CLI:
 
         ```bash
         sql=$(cat <<'SQL'
         <SQL>
         SQL
         )
-        gcloud spanner databases execute-sql <db> --instance=<i> --query-mode=PLAN --sql="$sql"
+        gcloud spanner databases execute-sql <db> --instance=<i> --project=<p> --query-mode=PLAN --sql="$sql"
         ```
 
     -   **`sqlDialect`:** `GOOGLE_SQL` for a GoogleSQL-dialect database;
@@ -89,36 +96,42 @@ segment in `entry.name`.
         `cloudsql.googleapis.com/projects/<p>/locations/<l>/instances/<i>/databases/<db>/tables/<t>`;
         PostgreSQL and SQL Server add `/schemas/<s>` before `/tables/<t>`
     -   **Entry location:** `<l>` in the resource name
-    -   **Read the schema:** `lookup_entry` (entry type names the engine, e.g.
-        `cloudsql-postgresql-table`); fallback `INFORMATION_SCHEMA.COLUMNS`
-    -   **How to run SQL:** the Cloud SQL MCP server's `execute_sql` tool (needs
-        the instance's Data API access enabled and a database user through IAM
-        database auth or a Secret Manager password), or a database client the
-        user already has connected
+    -   **Read the schema:** `lookup_entry` with `view: "ALL"` (entry type names
+        the engine, e.g. `cloudsql-postgresql-table`); fallback
+        `INFORMATION_SCHEMA.COLUMNS`
+    -   **How to run SQL:** the Cloud SQL MCP server's `execute_sql_readonly` /
+        `execute_sql` tool (needs the instance's Data API access enabled and a
+        database user through IAM database auth or a Secret Manager password),
+        or a database client the user already has connected
     -   **Cost-free compile check:** `EXPLAIN <SQL>` (never `EXPLAIN ANALYZE`);
-        SQL Server: run the query after `SET SHOWPLAN_XML ON` in a connected
-        client (plan only), otherwise report "not run"
+        SQL Server: in a stateful connected client only, run as separate batches
+        (`SET SHOWPLAN_XML ON` → `<SQL>` → `SET SHOWPLAN_XML OFF`, never across
+        stateless MCP calls), otherwise report "not run"
     -   **`sqlDialect`:** Omit (see note)
 -   **AlloyDB** (PostgreSQL)
 
     -   **System entry group & entry id (resource name):** `@alloydb`;
         `alloydb.googleapis.com/projects/<p>/locations/<l>/clusters/<c>/databases/<db>/schemas/<s>/tables/<t>`
     -   **Entry location:** `<l>` in the resource name
-    -   **Read the schema:** `lookup_entry`; fallback
+    -   **Read the schema:** `lookup_entry` with `view: "ALL"`; fallback
         `INFORMATION_SCHEMA.COLUMNS`
-    -   **How to run SQL:** the AlloyDB MCP server's `execute_sql` tool (needs a
-        database user and password the user gives you; its `validate_only`
-        option checks a statement without running it), or a database client the
-        user already has connected
-    -   **Cost-free compile check:** `EXPLAIN <SQL>` (never `EXPLAIN ANALYZE`),
-        or `execute_sql` with `validate_only`
+    -   **How to run SQL:** the AlloyDB MCP server's `execute_sql_read_only` /
+        `execute_sql` tool (uses IAM database auth on
+        `projects/<p>/locations/<l>/clusters/<c>/instances/<i>` — needs an IAM
+        database user on the instance; `execute_sql`'s `validate_only` option
+        checks a statement without running it), or a database client the user
+        has connected (using database user/password credentials the user
+        provides)
+    -   **Cost-free compile check:** `EXPLAIN <SQL>` (never `EXPLAIN ANALYZE`,
+        e.g. via `execute_sql_read_only` or a connected client), or
+        `execute_sql` with `validate_only: true`
     -   **`sqlDialect`:** Omit (see note)
 -   **Other Knowledge Catalog systems** (for example Bigtable `@bigtable`,
     Firestore `@firestore`, or third-party systems in custom entry groups): find
-    the entry with `search_entries`, read it with `lookup_entry`, and copy its
-    exact name. Table Context pages and documents work the same way. If there's
-    no cost-free compile check for the system, don't author SQL for it, or
-    report "compile check: not run".
+    the entry with `search_entries`, read it with `lookup_entry`
+    (`view: "ALL"`), and copy its exact name. Table Context pages and documents
+    work the same way. If there's no cost-free compile check for the system,
+    don't author SQL for it, or report "compile check: not run".
 
 Notes that apply to every engine:
 
@@ -127,10 +140,14 @@ Notes that apply to every engine:
     field is optional. For PostgreSQL / MySQL SQL there is no matching value:
     omit `sqlDialect` on that query and say which engine and dialect it runs on
     in its `description`. Never write a value outside the enum.
--   **Schema reads.** Prefer the Knowledge Catalog MCP (`lookup_entry`,
-    `search_entries`) for every engine: it returns columns, descriptions, and
-    existing aspects in one call. Use the engine CLI or `INFORMATION_SCHEMA`
-    only when the entry lacks what you need.
+-   **Schema reads.** Prefer the Knowledge Catalog MCP (`lookup_entry` with
+    `view: "ALL"` and `location` matching the entry's location, plus
+    `search_entries`) for every engine: `view: "ALL"` returns columns,
+    descriptions, `overview`, `queries`, and custom aspects in one call
+    (omitting `view: "ALL"` returns empty `{}` for optional aspects; CLI
+    fallback `gcloud dataplex entries lookup --view=ALL`). Use the engine MCP /
+    CLI or `INFORMATION_SCHEMA` when the entry lacks what you need (or on
+    `bigquery-public-data`, where `lookup_entry` fails IAM).
 -   **Read-only access to operational databases.** On Spanner, Cloud SQL, and
     AlloyDB, run only read-only statements (`EXPLAIN`, plan-only queries,
     `INFORMATION_SCHEMA` reads, bounded aggregates); never DDL, DML, or user or

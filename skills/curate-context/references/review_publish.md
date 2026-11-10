@@ -35,7 +35,7 @@ to download a remote context set locally without edits):
 Before presenting the Gate 2 Review, run:
 
 ```bash
-# 1. Check what a push would do, without publishing
+# 1. Check what a push would do, without publishing (`kcmd` = exact Step 0 command)
 kcmd push --dry-run
 
 # 2. Verify each sample SQL query compiles via its engine's compile check
@@ -118,23 +118,26 @@ ahead and publish"). Approving the plan, or a reply that asks to see something
 ("show me the diff", "stage it"), is not push approval: re-present the review
 and stop. Once the user approves:
 
-1.  Run it in the foreground and wait for it to finish (never in the background,
-    and never end the turn while it is still running):
+1.  Run the exact `kcmd` command resolved in Step 0 in the foreground and wait
+    for it to finish (never in the background, and never end the turn while it
+    is still running):
 
     ```bash
     kcmd push
     ```
 
-    Wait for its final `RESULT:` line before running any other command (don't
-    inspect or edit the workspace while a push is still in flight). If the push
-    fails or its output reveals issues, any change to `bundle/` needs a new
-    `kcmd push --dry-run`, a new Gate 2 review, and a new approval before you
-    push again. If it stops because the published context set changed since your
-    pull, follow `references/navigate.md` §4; never use `--force`.
+    Wait for the command to complete (`RESULT:` or `Pushed ...`) before running
+    any other command (don't inspect or edit the workspace while a push is still
+    in flight). If the push fails or its output reveals issues, any change to
+    `bundle/` needs a new `kcmd push --dry-run`, a new Gate 2 review, and a new
+    approval before you push again. If it stops because the published context
+    set changed since your pull, follow `references/navigate.md` §4; never use
+    `--force`.
 2.  **Verify the published context set in Knowledge Catalog:** After `kcmd push`
     succeeds, verify that the published context set and its entries are live in
     Knowledge Catalog by looking up the context set's root entry (`lookup_entry`
-    / `search_entries` via the Knowledge Catalog MCP on
+    with `view: "ALL"` and matching `location` / `search_entries` via the
+    Knowledge Catalog MCP on
     `projects/<PROJECT>/locations/<LOCATION>/entryGroups/<CONTEXT_SET_ID>/entries/agents`,
     or `entries/<pushed-entry-id>` when a custom OKF layout has no `agents.md`,
     or `gcloud dataplex entries list --project=<PROJECT> --location=<LOCATION>
@@ -143,8 +146,8 @@ and stop. Once the user approves:
     pushed entries and links, the Knowledge Catalog post-push verification
     status, any other writes the output lists, and which local files the push
     rewrote (for example links moved from `_links.yaml` into page frontmatter).
-    **Always end the report with this line**, using the full resource name (not
-    just the ID):
+    **Always end the report with this single line**, using the full resource
+    name (not just the ID):
 
-    > Published context set:
-    > `projects/<PROJECT>/locations/<LOCATION>/entryGroups/<CONTEXT_SET_ID>`
+    `Published context set:
+    projects/<PROJECT>/locations/<LOCATION>/entryGroups/<CONTEXT_SET_ID>`
