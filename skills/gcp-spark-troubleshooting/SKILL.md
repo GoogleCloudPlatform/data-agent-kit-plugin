@@ -3,7 +3,7 @@ name: gcp-spark-troubleshooting
 description: "Provides expert guidance for troubleshooting Google Cloud Spark and Dataproc workloads (Dataproc Serverless batches, interactive sessions, and standard Dataproc clusters), and inspecting, streaming, searching, tailing, or summarizing Spark driver outputs and event logs in Cloud Storage. Use when debugging, diagnosing, or performing Root Cause Analysis (RCA) on failed or slow Spark jobs, PySpark scripts (.py), JVM archives (.jar), compressed event logs (.zst), or IAM, VPC, and classpath errors such as OutOfMemoryError, 403 PERMISSION_DENIED, NoSuchMethodError, and ClassNotFoundException. Do NOT use for authoring new Spark jobs (use gcp-spark), planning or performing runtime version upgrades (use gcp-managed-spark-upgrades), or non-Spark engines such as Dataflow or BigQuery Data Transfer Service."
 license: Apache-2.0
 metadata:
-  version: v8
+  version: v9
   publisher: google
 ---
 
@@ -440,6 +440,12 @@ collect in Steps 1-5.
 
     -   Correlate logs, stage metrics, and code logic.
     -   Pinpoint the exact failure cause and line number.
+    -   **Separate the root cause from later blockers.** The root cause is the
+        failure this run hit, backed by its error in the logs. A fault on a code
+        path that the run never reached (for example a write that comes after
+        the failing step) is a later blocker: report it under `Later Blockers`
+        in the RCA report with its own least-privilege fix, and do not present
+        it as a cause of this failure.
     -   **Differentiate the root cause by environment** — the same symptom has
         different causes on each:
         -   **Serverless Batches**: dynamic-allocation memory limits, VPC /
@@ -478,7 +484,8 @@ collect in Steps 1-5.
 
 When a Spark workload connects to external catalogs, databases, or object stores
 — or finishes slowly or with unexpected row counts — work through these layers
-in order and report every fault on the failing path, not only the first one.
+in order and report every fault you find, not only the first one, keeping the
+root cause apart from later blockers (see Step 5).
 `references/ingestion_triage_matrix.md` explains the mechanisms behind each
 layer.
 
@@ -498,10 +505,12 @@ layer.
     destination to its path with
     `scripts/spark_env_inspector.py --action=network`: Private Google Access for
     Google APIs, Cloud NAT for public endpoints, and peering, VPN, or Private
-    Service Connect for private databases. Then check the effective firewall
-    rules and policies and the private Cloud DNS bindings. Identify VPC Service
-    Controls denials from the error text; the inspector does not read
-    perimeters.
+    Service Connect for private databases. Pass `--target_port` and the address
+    from the logs as `--target_ip` to get both a `route_verdict` and a
+    `firewall_verdict`; a connection needs a route and an allowing firewall, so
+    recommend a fix for every part that `connection_summary` lists as blocking.
+    Then check the private Cloud DNS bindings. Identify VPC Service Controls
+    denials from the error text; the inspector does not read perimeters.
 4.  **Runtime Classpath, Connectors & Schemas**: Compare attached JARs with the
     runtime's Spark and Scala versions and confirm that worker files (such as CA
     certificates) are distributed
@@ -557,9 +566,11 @@ remediation recipes:
     when the user explicitly asks you to and confirms that specific change.
 -   **Least-Privilege IAM**: Recommend the narrowest predefined role, on the
     specific resource (bucket, dataset, secret, key, or service account), for
-    the principal that failed. Never recommend basic roles (`roles/owner`,
-    `roles/editor`) or public principals (`allUsers`, `allAuthenticatedUsers`);
-    if the user asks for one, explain the risk and offer the narrow role.
+    the principal that failed. For a CMEK key, that is the service agent of the
+    resource that uses the key (see `references/ingestion_triage_matrix.md`).
+    Never recommend basic roles (`roles/owner`, `roles/editor`) or public
+    principals (`allUsers`, `allAuthenticatedUsers`); if the user asks for one,
+    explain the risk and offer the narrow role.
 -   **Targeted Network Rules**: Scope firewall rules to the required ranges,
     protocols, ports, and target tags or service accounts. Never recommend
     ingress from `0.0.0.0/0` or rules that open all ports, except the documented
