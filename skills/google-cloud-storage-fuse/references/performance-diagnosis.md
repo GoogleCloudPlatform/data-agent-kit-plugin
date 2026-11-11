@@ -27,12 +27,13 @@ operations-dominated bill.
 
 ## Step 1 — Establish telemetry
 
-Environment                           | How to get client metrics
-:------------------------------------ | :------------------------
-GKE ≥ 1.33.0-gke.2248000              | `gcsfusecsi/*` metrics are in Cloud Monitoring by default — no action.
-Self-managed mount → Cloud Monitoring | Remount with `--cloud-metrics-export-interval-secs=60` (needs `roles/monitoring.metricWriter`; native metrics are Preview).
-Self-managed mount → local scrape     | Remount with `--prometheus-port=9920`, then `curl -s localhost:9920/metrics`.
-No remount possible yet               | Server-side: `storage.googleapis.com/api/request_count` grouped by the `method` label.
+Environment                                    | How to get client metrics
+:--------------------------------------------- | :------------------------
+GKE ≥ 1.37.0-gke.YYYY000                       | `gcsfusecsi/volume/*` metrics (monitored resource `k8s_gcs_fuse_volume`) are in Cloud Monitoring by default — no action.
+GKE 1.33.0-gke.2248000 to < 1.37.0-gke.YYYY000 | `gcsfusecsi/*` metrics (monitored resource `k8s_pod`) are in Cloud Monitoring by default — no action.
+Self-managed mount → Cloud Monitoring          | Remount with `--cloud-metrics-export-interval-secs=60` (needs `roles/monitoring.metricWriter`; native metrics are Preview).
+Self-managed mount → local scrape              | Remount with `--prometheus-port=9920`, then `curl -s localhost:9920/metrics`.
+No remount possible yet                        | Server-side: `storage.googleapis.com/api/request_count` grouped by the `method` label.
 
 ```bash
 # Self-managed: remount with metrics, reproduce the workload, then inspect
@@ -59,9 +60,16 @@ Metric (Cloud Monitoring / Prometheus form)                                     
 `fs/ops_error_count` by `fs_error_category`                                                | Errors surfacing to the app.
 Server-side `api/request_count` by `method` (e.g. `ReadObject`)                            | Request mix without any mount change; also the bridge to billing.
 
-On GKE the same client metrics appear prefixed and underscored:
-`gcsfusecsi/file_cache_read_count`, `gcsfusecsi/gcs_request_count`,
-`gcsfusecsi/fs_ops_count`, etc.
+On GKE (≥ 1.33.0-gke.2248000), the same client metrics appear prefixed and
+underscored in Cloud Monitoring according to your cluster version:
+
+Schema element                | GKE ≥ 1.37.0-gke.YYYY000                                   | GKE < 1.37.0-gke.YYYY000
+:---------------------------- | :--------------------------------------------------------- | :-----------------------
+Monitored resource            | `k8s_gcs_fuse_volume`                                      | `k8s_pod`
+Metric prefix                 | `kubernetes.io/gcsfusecsi/volume/`                         | `kubernetes.io/gcsfusecsi/`
+File system latency metric    | `gcsfusecsi/volume/fs_ops_latencies`                       | `gcsfusecsi/fs_ops_latency`
+`volume_name` & `bucket_name` | Resource labels on `k8s_gcs_fuse_volume`                   | Metric labels on `k8s_pod`
+Workload aggregation labels   | `k8s_controller_type`, `k8s_controller_name` metric labels | `pod_uid` metric label (removed in 1.37+)
 
 ## Step 3 — Map the signature to the misconfiguration
 

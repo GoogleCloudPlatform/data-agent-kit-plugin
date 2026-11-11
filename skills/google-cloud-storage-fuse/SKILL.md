@@ -16,7 +16,7 @@ description: >-
   without a mount (google-cloud-storage-basics) or for fully POSIX-compliant
   shared file systems (Filestore, Managed Lustre; use gke-storage).
 metadata:
-    version: v2
+    version: v3
     publisher: google
     tags: "gcs, gcsfuse, fuse, mount, file-system"
     category: storage
