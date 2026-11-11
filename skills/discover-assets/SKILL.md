@@ -14,7 +14,7 @@ description: >-
   schemas and full SQL are already provided.
 license: Apache-2.0
 metadata:
-  version: v1
+  version: v2
   publisher: google
 ---
 
@@ -401,6 +401,13 @@ Then pass the contract, with the full untruncated lookup payloads (schemas,
 column descriptions, aspects, overview, data-quality notes, join keys), to SQL
 generation. After running the SQL, confirm the result matches every contract
 line before giving the final answer.
+
+## Semantic Models (When Applicable)
+
+If the task needs a governed semantic model / ontology (`OSI+G`) for the data in
+scope — e.g. schema mapping, dbt/ELT pipeline generation, or semantic modeling —
+use **@skill:semantic-ontology**. It resolves the model from the local workspace
+first, then Knowledge Catalog, and returns it as authored.
 
 ## Predicate Reference
 
