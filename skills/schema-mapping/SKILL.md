@@ -2,7 +2,7 @@
 name: schema-mapping
 license: Apache-2.0
 metadata:
-  version: v1
+  version: v2
   publisher: google
 description: >-
   Guides the process of analyzing, mapping, and documenting transformations between source and target schemas for any database, data warehouse, or data platform. Focuses exclusively on creating a high-fidelity mapping plan (Mapping Manifesto).
@@ -98,8 +98,8 @@ story (e.g., verifying if a timestamp is ISO-8601, if a string is a JSON array,
 or checking the distribution of values):
 
 1.  **Proactive Inspection**: If environment access allows, run
-    platform-specific queries (e.g., `SELECT ... LIMIT 10`, `SELECT
-    COUNT(DISTINCT ... )`) to sample values.
+    platform-specific queries (e.g., `SELECT ... LIMIT 10`,
+    `SELECT COUNT(DISTINCT ... )`) to sample values.
 2.  **User Inquiry**: If direct access is not possible, output sample queries
     and ask the user to provide the output to confirm assumptions before
     finalizing the plan.
@@ -117,8 +117,8 @@ Categorize mappings and plan cleanliness transformations:
 *   **Aggregated Mapping**: Requires collapsing 1-to-many relationships (e.g.,
     calculating `SUM`, `COUNT`, `ARRAY_AGG` or string concatenation).
 *   **Gaps (Unmapped fields)**: Target fields that do not exist in the source.
-    *   **Constraint Checking**: Verify whether the target column has a `NOT
-        NULL` or `REQUIRED` constraint in the target schema.
+    *   **Constraint Checking**: Verify whether the target column has a
+        `NOT NULL` or `REQUIRED` constraint in the target schema.
     *   **Handling Nullable Gaps**: If the target column is nullable, explicitly
         flag it as `NULL` or define a default value.
     *   **Handling Non-Nullable Gaps**: If the target column is `NOT NULL`, you
@@ -146,8 +146,8 @@ Categorize mappings and plan cleanliness transformations:
 Specify the logical join path to connect the Anchor Table with all contributing
 source tables:
 
-1.  Define the join condition/keys (e.g., `source_order.customer_id =
-    source_customer.id`).
+1.  Define the join condition/keys (e.g.,
+    `source_order.customer_id = source_customer.id`).
 2.  Identify join scale properties:
     -   **Large-to-Large**: Joining two high-volume transaction tables.
     -   **Large-to-Small**: Joining a transaction table to a static lookup table

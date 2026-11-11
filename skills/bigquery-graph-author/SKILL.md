@@ -2,7 +2,7 @@
 name: bigquery-graph-author
 license: Apache-2.0
 metadata:
-  version: v2
+  version: v3
   publisher: google
 description: >-
   Provides an end-to-end journey for authoring a BigQuery property graph from your tables or from a model document/diagram (an ER diagram, an ontology, a semantic model): dataset discovery, candidate relationships verified against the data, a readable plan, and `CREATE PROPERTY GRAPH` DDL with schema best practices and semantic measures/dimensions, plus an opt-in verification suite for the landed graph. Use when creating or replacing a property graph, authoring a graph from a dataset or a document, or verifying relationships or suspicious edge counts. Don't use for querying an existing graph, for non-BigQuery graph databases, or for drawing/rendering diagrams.
@@ -87,27 +87,29 @@ decision rules and worked patterns are inside it, not summarised here.
 proposal.** Three layers: **layer 1** — two or three plain sentences (tables
 explored, relationships confirmed, what plain schema access could not show, what
 was excluded for weak evidence) plus the roster reconciliation with its
-arithmetic visible (`node + edge + both + excluded + undecided = objects
-returned`; if the totals differ, do not present the design — find the lost
-object). **Layer 2** — every edge, one row: relationship, source badge (aligned
-to `data-discovery.md`'s credence levels), `Resolved %` as measured (never
-inferred from the badge; "not checked + reason" over a blank cell). **Layer 3**
-— a collapsed audit appendix; every layer-2 badge must trace to a specific piece
-of evidence in it. Then the proposal in prose, not DDL: each node with its key;
-each edge with source, destination, direction and a one-line reason citing its
-evidence; semantic proposal rows per `semantic-enrichment.md`. When a document
-is in play, the mapping table and document ledger ride in the same proposal.
+arithmetic visible
+(`node + edge + both + excluded + undecided = objects returned`; if the totals
+differ, do not present the design — find the lost object). **Layer 2** — every
+edge, one row: relationship, source badge (aligned to `data-discovery.md`'s
+credence levels), `Resolved %` as measured (never inferred from the badge; "not
+checked + reason" over a blank cell). **Layer 3** — a collapsed audit appendix;
+every layer-2 badge must trace to a specific piece of evidence in it. Then the
+proposal in prose, not DDL: each node with its key; each edge with source,
+destination, direction and a one-line reason citing its evidence; semantic
+proposal rows per `semantic-enrichment.md`. When a document is in play, the
+mapping table and document ledger ride in the same proposal.
 
 **Do not propose a trivial graph.** If verification leaves no relationship with
 data-side evidence, a property graph adds nothing over the base tables — report
 that finding and stop, rather than shipping node tables with no verified edges.
 
 **If the source tables declare no primary or foreign keys, the plan may carry
-one optional suggestion**: a sample `ALTER TABLE … ADD PRIMARY KEY (…) NOT
-ENFORCED` / `ALTER TABLE … ADD FOREIGN KEY … NOT ENFORCED` statement for the
-user to run themselves — declared constraints are the strongest catalog evidence
-and help the optimizer. The skill itself never executes `ALTER`; schema changes
-stay outside this skill's write surface.
+one optional suggestion**: a sample
+`ALTER TABLE … ADD PRIMARY KEY (…) NOT ENFORCED` /
+`ALTER TABLE … ADD FOREIGN KEY … NOT ENFORCED` statement for the user to run
+themselves — declared constraints are the strongest catalog evidence and help
+the optimizer. The skill itself never executes `ALTER`; schema changes stay
+outside this skill's write surface.
 
 **The proposal turn ends the turn.** Ask the user to confirm or correct the
 plan, and stop — no `validate_ddl`, no `execute_ddl`, no DDL text in that turn.
@@ -132,8 +134,8 @@ Two common traps to check **before** validating:
     fails with a bare `Syntax error: Unexpected keyword`. Prefer renaming
     (`Ordered`, `ContainsProduct`); backticks also work but must then appear in
     every query.
--   **Prefix the table, bare the reference.** Element tables inside `NODE
-    TABLES`/`EDGE TABLES` carry the dataset prefix (`<dataset>.users`);
+-   **Prefix the table, bare the reference.** Element tables inside
+    `NODE TABLES`/`EDGE TABLES` carry the dataset prefix (`<dataset>.users`);
     `REFERENCES` takes the bare in-graph alias (`REFERENCES Users (id)`).
     Getting them backwards is the most common first `validate_ddl` failure.
 
@@ -172,8 +174,8 @@ return to the plan — never rerun or re-word around a "no".**
 -   If the user asks for something outside creating graphs, views or tables —
     dropping a table, deleting rows, altering a schema — say plainly that this
     skill cannot do it. Do not attempt a workaround.
--   Adding semantics to a graph that already exists is a full `CREATE OR
-    REPLACE` in which elements not re-declared are **silently dropped** — which
-    is exactly why semantics ride in the first DDL. If the ask arrives after the
-    build, open `references/semantic-enrichment.md` and follow its after-build
-    caution.
+-   Adding semantics to a graph that already exists is a full
+    `CREATE OR REPLACE` in which elements not re-declared are **silently
+    dropped** — which is exactly why semantics ride in the first DDL. If the ask
+    arrives after the build, open `references/semantic-enrichment.md` and follow
+    its after-build caution.
