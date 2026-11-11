@@ -3,7 +3,7 @@ name: gcp-managed-airflow-migrations
 description: Provides guidance for migrating Apache Airflow DAGs in Managed Service for Apache Airflow (MSAA; formerly Cloud Composer). Covers migration to Airflow 2.11.1 (MSAA Gen 2 and 3) and Airflow 3 (MSAA Gen 3), including environment inspection, GCS download/upload and scanning patterns for breaking changes.
 license: Apache-2.0
 metadata:
-  version: v1
+  version: v2
   publisher: google
 ---
 
@@ -161,8 +161,8 @@ migrating to Airflow 3).
 *   **Remediation:**
     *   Replace `timeout` with `conn_timeout` in `SSHHook`.
     *   Replace `with hook as conn:` with `with hook.get_conn() as conn:`.
-    *   Use `get_tunnel()` as context manager: `with hook.get_tunnel(...) as
-        tunnel:`.
+    *   Use `get_tunnel()` as context manager:
+        `with hook.get_tunnel(...) as tunnel:`.
 
 #### 3.2.2 HTTP Provider (HTTP 5.0.0 & 6.0.0)
 
@@ -211,6 +211,7 @@ migrating to Airflow 3).
     *   *Remediation:* Migrate to Google Cloud Batch operators
         (`BatchCreateJobOperator`).
 *   **Scan Command (ADLS to GCS):** `grep -rn "ADLSToGCSOperator" ./dags`
+
     *   *Remediation:* Ensure `file_system_name` is provided.
 
 --------------------------------------------------------------------------------
@@ -312,8 +313,8 @@ new files and for changes to reflect in these commands.*
 target environment (and after uploading).* Monitor Cloud Logging for the target
 environment to detect any runtime errors or import errors.
 
-Run the following query in the **GCP Cloud Logging Console** (or via `gcloud
-logging read`):
+Run the following query in the **GCP Cloud Logging Console** (or via
+`gcloud logging read`):
 
 ```query
 resource.type="cloud_composer_environment"

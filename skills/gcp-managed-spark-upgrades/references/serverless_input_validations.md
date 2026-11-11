@@ -22,13 +22,24 @@ gcloud dataproc batches describe <BATCH_ID> --region=<REGION> --project=<PROJECT
 ```
 
 Extract:
+
 - **Job type:** read it from the type-specific field (`pysparkBatch`, `sparkBatch`, `sparkSqlBatch`, `sparkRBatch`, …) and apply the scope gate in SKILL.md: continue only if the job type is supported.
-- **Code:** the main code, code dependencies, and arguments from the type-specific field. For PySpark (`pysparkBatch`): `mainPythonFileUri` and `pythonFileUris` (`.py`, `.zip`, `.egg`), plus `jarFileUris`, `fileUris`, `archiveUris` (archives may contain packed Python environments), and `args`; archives that contain compiled extensions must be rebuilt for the target Python (`pyspark_analysis.md`, section 4.2).
+-   **Code:** the main code, code dependencies, and arguments from the
+    type-specific field. For PySpark (`pysparkBatch`): `mainPythonFileUri` and
+    `pythonFileUris` (`.py`, `.zip`, `.egg`), plus `jarFileUris`, `fileUris`,
+    `archiveUris` (archives may contain packed Python environments), and `args`;
+    archives that contain compiled extensions must be rebuilt for the target
+    Python (`pyspark_analysis.md`, section 4.2). For Scala/Java (`sparkBatch`):
+    `mainJarFileUri` (or `mainClass` with `jarFileUris`), `jarFileUris`,
+    `fileUris`, `archiveUris`, and `args`; JARs compiled for incompatible Scala
+    binary versions (e.g. `_2.12` vs `_2.13`) or Java bytecode targets must be
+    rebuilt for the target runtime (`jvm_build_reference.md`, section 1).
 - **Runtime:** `runtimeConfig.version` (the source runtime), `runtimeConfig.containerImage` (a custom container, if any), and `runtimeConfig.properties` (carry them forward and re-check them against the target, including GPU properties).
 - **Environment:** `environmentConfig.executionConfig.subnetworkUri` or `networkUri`, `serviceAccount`, `networkTags`, and `kmsKey`.
 - **Status:** `state` and `stateMessage`, for context. A failed source batch doesn't block the analysis.
 
 **Deleted batch:** if `describe` returns `NOT_FOUND`, recover the original request from the Admin Activity audit log, and read the same fields under `protoPayload.request.batch`:
+
 ```bash
 gcloud logging read 'protoPayload.methodName="google.cloud.dataproc.v1.BatchController.CreateBatch" AND protoPayload.request.batchId="<BATCH_ID>"' --project=<PROJECT_ID> --limit=1 --format=json
 ```
@@ -47,6 +58,7 @@ Use `runtimeConfig.version`. If it is empty, the batch ran on whichever runtime 
 ## Runtime 3.x platform changes
 
 When upgrading from a 1.x/2.x runtime to 3.x, report these platform changes. They aren't code changes, but each can break a working job:
+
 - **Execution identity:** 3.x runs workloads with the submitting user's end-user credentials (EUC) by default; 1.x/2.x run as the Compute Engine default service account. Without `--service-account`, the upgraded job accesses data as the user, who may lack those permissions. To keep the previous identity, pass the source service account explicitly. Automated submitters (Cloud Composer, Cloud Scheduler, CI/CD) must always pass `--service-account` on 3.x, because there is no end user.
 - **Staging buckets:** not required on 3.x (managed internally).
 - **Log format:** 3.x writes structured JSON logs (`jsonPayload`) instead of plain text (`textPayload`). Update log-based metrics, alerts, and log parsers.
@@ -67,9 +79,10 @@ For a Shared VPC subnet (`projects/<HOST_PROJECT_ID>/regions/<REGION>/subnetwork
 1. **Existence:** the subnet exists in `<SUBNET_PROJECT_ID>` and `<REGION>`.
 2. **Private Google Access:** Serverless VMs have internal IP addresses only and rely on Private Google Access to reach GCS, BigQuery, and Artifact Registry. If `privateIpGoogleAccess` is `false`, warn the user.
 3. **Internal connectivity:** the subnet must allow ingress between its own VMs on all ports. Runtime 3.x creates this rule automatically. For 1.x/2.x targets, confirm that a matching ingress rule exists:
-   ```bash
-   gcloud compute firewall-rules list --project=<SUBNET_PROJECT_ID> --filter="network:<NETWORK_NAME> AND direction=INGRESS"
-   ```
+
+    ```bash
+    gcloud compute firewall-rules list --project=<SUBNET_PROJECT_ID> --filter="network:<NETWORK_NAME> AND direction=INGRESS"
+    ```
 4. **Internet egress:** if the job downloads packages or models at runtime, the subnet needs Cloud NAT.
 
 ### Service account
@@ -81,6 +94,7 @@ Reuse the source batch's `environmentConfig.executionConfig.serviceAccount`. If 
 When a Batch ID is provided and `runtimeConfig.containerImage` is empty, the source batch used the standard Serverless container—don't ask for a custom container image. When **no Batch ID** is provided, ask the user for the Custom container image (noting `NO` is acceptable if using the standard runtime container) alongside the other missing mandatory inputs (`Target Project ID`, `Target Region`, `Temporary GCS staging location`, `Target GCS bucket`, and `Subnet`).
 
 When a custom container image is used, an image built for the source runtime isn't automatically valid for the target, so ask for an image rebuilt for the target runtime, and review its configuration or Dockerfile when available:
+
 - It is hosted in Artifact Registry or Container Registry.
 - It contains no Spark and no JRE: the runtime mounts them.
 - For PySpark: it contains no installed `pyspark` package (an old `pyspark` in the image shadows the target version), and if it sets `PYSPARK_PYTHON` to its own environment, that Python (not the runtime's) runs the job, so it must meet the target Spark's Python requirement and its packages must be built for it.
@@ -89,6 +103,7 @@ When a custom container image is used, an image built for the source runtime isn
 ## GPU workloads
 
 If `runtimeConfig.properties` sets `spark.dataproc.executor.resource.accelerator.type`:
+
 - Serverless runtimes bundle the Spark RAPIDS library. If the batch supplies its own RAPIDS jar, check it against the target Spark and Scala versions ("GPU and RAPIDS Compatibility" in `spark_migration_reference.md`).
 - XGBoost is bundled only on 1.x runtimes. When moving to 2.x or 3.x, supply XGBoost through dependencies or a custom container.
 - The `spark.dataproc.driverEnv.LANG=C.UTF-8` and `spark.executorEnv.LANG=C.UTF-8` properties are required only on runtimes earlier than 2.2.
