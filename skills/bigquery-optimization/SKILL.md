@@ -2,7 +2,7 @@
 name: bigquery-optimization
 license: Apache-2.0
 metadata:
-  version: v1
+  version: v3
   publisher: google
 description: >-
   Provides workflows to optimize BigQuery environments (capacity planning,
@@ -11,8 +11,8 @@ description: >-
   migrations, rightsizing reservations, evaluating logical vs. physical storage,
   designing table partitioning/clustering, generating table DDL, migrating
   unpartitioned tables, managing partition expiration, optimizing individual SQL
-  queries, or evaluating acceleration structures (search indexes, materialized
-  views, BI Engine).
+  queries, including MERGE statements, or evaluating acceleration structures
+  (search indexes, materialized views, BI Engine).
 
   Do not use for raw usage reporting (use bigquery-observability), query
   execution plan analysis, error troubleshooting, or diagnosing why a specific
@@ -73,12 +73,11 @@ workflow:
         acceleration, diagnose `PARTIAL` or `DISABLED` BI Engine fallback
         reasons (`bi_engine_statistics`), and combine BI Engine with
         materialized views that pre-join or pre-aggregate the data.
--   **SQL Optimization:** Optimize individual SQL queries to reduce slot-time
-    and the amount of data read.
-    *   *Instructions:* Follow the instructions in
-        `references/sql_optimization.md` to provide recommendations to the user
-        on how to rewrite their SQL query to reduce slot-time and the amount of
-        data read.
+-   **SQL Optimization:** Optimize individual SQL queries, including `MERGE`
+    statements in incremental loads, to reduce slot-time and the amount of data
+    read.
+    *   *Instructions:* Follow `references/sql_optimization.md` to recommend how
+        to rewrite the user's SQL query or `MERGE` statement.
 
 ## Execution Guardrails
 
@@ -100,18 +99,18 @@ workflow:
         directly (e.g., `region=us`, `region=europe-west1`). In SQL queries
         against `INFORMATION_SCHEMA`, use the regional dataset qualifier (e.g.,
         `region-us`, `region-europe-west1`).
--   **Zero-Row Result Guard:** If querying `TABLE_STORAGE` with `WHERE
-    table_schema = '{dataset_id}'` returns 0 rows, do not proceed with an empty
-    or zero-usage evaluation. Treat this as an indicator that the dataset may
-    reside in a different region or have no native tables; stop and prompt the
-    user to confirm the dataset's regional location.
+-   **Zero-Row Result Guard:** If querying `TABLE_STORAGE` with
+    `WHERE table_schema = '{dataset_id}'` returns 0 rows, do not proceed with an
+    empty or zero-usage evaluation. Treat this as an indicator that the dataset
+    may reside in a different region or have no native tables; stop and prompt
+    the user to confirm the dataset's regional location.
 -   **Populate Concrete Parameters:** When generating URLs and SQL queries,
     always substitute known `project_id` and `region` values directly into the
     code and links. Never leave literal `{project_id}` or `{location}`
     placeholders for the user to manually edit.
 -   **No Autonomous Purchasing or Financial Mutations:** Never provide the user
-    with executable scripts (e.g., `gcloud` or `bq` shell commands like `bq
-    update --storage_billing_model=...`) designed to autonomously purchase
+    with executable scripts (e.g., `gcloud` or `bq` shell commands like
+    `bq update --storage_billing_model=...`) designed to autonomously purchase
     annual commitments, alter edition tier bindings, or mutate storage billing
     models. Always guide the user to execute commitment purchases, reservation
     changes, and storage billing model updates manually via the Cloud Console
