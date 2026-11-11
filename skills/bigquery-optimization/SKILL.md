@@ -2,7 +2,7 @@
 name: bigquery-optimization
 license: Apache-2.0
 metadata:
-  version: v2
+  version: v3
   publisher: google
 description: >-
   Provides workflows to optimize BigQuery environments (capacity planning,
@@ -11,8 +11,8 @@ description: >-
   migrations, rightsizing reservations, evaluating logical vs. physical storage,
   designing table partitioning/clustering, generating table DDL, migrating
   unpartitioned tables, managing partition expiration, optimizing individual SQL
-  queries, or evaluating acceleration structures (search indexes, materialized
-  views, BI Engine).
+  queries, including MERGE statements, or evaluating acceleration structures
+  (search indexes, materialized views, BI Engine).
 
   Do not use for raw usage reporting (use bigquery-observability), query
   execution plan analysis, error troubleshooting, or diagnosing why a specific
@@ -73,12 +73,11 @@ workflow:
         acceleration, diagnose `PARTIAL` or `DISABLED` BI Engine fallback
         reasons (`bi_engine_statistics`), and combine BI Engine with
         materialized views that pre-join or pre-aggregate the data.
--   **SQL Optimization:** Optimize individual SQL queries to reduce slot-time
-    and the amount of data read.
-    *   *Instructions:* Follow the instructions in
-        `references/sql_optimization.md` to provide recommendations to the user
-        on how to rewrite their SQL query to reduce slot-time and the amount of
-        data read.
+-   **SQL Optimization:** Optimize individual SQL queries, including `MERGE`
+    statements in incremental loads, to reduce slot-time and the amount of data
+    read.
+    *   *Instructions:* Follow `references/sql_optimization.md` to recommend how
+        to rewrite the user's SQL query or `MERGE` statement.
 
 ## Execution Guardrails
 
