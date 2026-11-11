@@ -1,13 +1,13 @@
 ---
 name: resolving-mcp-region-configs
 description: >-
-  Mandatory Step 0 pre-flight check for regional Google Cloud MCP servers (Composer dak-composer and Dataform dak-dataform) before using regional MCP tools or falling back to gcloud/bq CLI.
-  Use whenever a task involves Cloud Composer / Managed Airflow environments, DAGs, or tasks, or Dataform repositories, workspaces, compilations, or workflow invocations, and the expected mcp__*__composer__* or mcp__*__dataform__* tools are missing (ToolSearch/deferred tools) or fail on a malformed host.
-  Inspects the live Data Agent Kit plugin MCP config (mcp.json, .claude-plugin/mcp.json, mcp_config.json) across Claude Code, Codex CLI, and Antigravity CLI for unreplaced $GCP_REGION, ${region}, or ${REGION} placeholders, and delegates region configuration to @skill:dak-setup instead of editing the config by hand.
-  Do NOT use when the regional MCP endpoints already contain a valid region, when the regional MCP tools already work, or for non-regional services.
+  Mandatory Step 0 pre-flight check for regional Google Cloud MCP servers (Composer dak-composer, Dataform dak-dataform, and Dataflow dak-dataflow) before using regional MCP tools or falling back to gcloud/bq CLI.
+  Use whenever a task involves Cloud Composer / Managed Airflow environments, DAGs, or tasks; Dataform repositories, workspaces, compilations, or workflow invocations; or Dataflow jobs, pipelines, or templates, and the expected mcp__*__composer__*, mcp__*__dataform__*, or mcp__*__dataflow__* tools are missing (ToolSearch/deferred tools) or fail on a malformed host.
+  Inspects the live Data Agent Kit plugin MCP config (mcp.json, .claude-plugin/mcp.json, mcp_config.json) across Claude Code, Codex CLI, and Antigravity CLI for unreplaced $GCP_REGION, ${region}, or ${REGION} placeholders, and delegates configuration to @skill:dak-setup instead of editing by hand.
+  Do NOT use when regional MCP endpoints already have a valid region, when regional MCP tools work, or for non-regional services.
 license: Apache-2.0
 metadata:
-  version: v8
+  version: v9
   publisher: google
 ---
 
@@ -15,23 +15,26 @@ metadata:
 
 ## Mandatory Step 0 Pre-Flight Check
 
-> [!IMPORTANT] **Pre-Flight Check Before Using Composer / Dataform / Regional
-> Services or Falling Back to CLI**: Whenever a task involves a regional Google
-> Cloud service (e.g. Cloud Composer environments, DAGs, or Airflow tasks;
-> Dataform repositories, workspaces, or workflow invocations): 1. **Check for
-> MCP tools first**: Before executing any `gcloud composer`, `gcloud dataform`,
+> [!IMPORTANT] **Pre-Flight Check Before Using Composer / Dataform / Dataflow /
+> Regional Services or Falling Back to CLI**: Whenever a task involves a
+> regional Google Cloud service (e.g. Cloud Composer environments, DAGs, or
+> Airflow tasks; Dataform repositories, workspaces, or workflow invocations;
+> Dataflow jobs, pipelines, or templates): 1. **Check for MCP tools first**:
+> Before executing any `gcloud composer`, `gcloud dataform`, `gcloud dataflow`,
 > or other CLI commands, check whether the expected `mcp__*__<service>__*` tools
-> (e.g. `mcp__*__composer__*`, `mcp__*__dataform__*`) are registered in the
-> current environment (`ToolSearch` or deferred tools). 2. **If tools are
-> missing or calls fail/hang on a malformed host**: Do **NOT** immediately fall
-> back to `gcloud`/`bq` CLI. Inspect the live MCP configuration files (below)
-> for unreplaced `$GCP_REGION`, `${region}`, or `${REGION}` placeholders. 3.
-> **If the region placeholder is already replaced with a valid region (e.g.
-> `us-central1`)**: This skill does not apply — proceed normally with the task.
+> (e.g. `mcp__*__composer__*`, `mcp__*__dataform__*`, `mcp__*__dataflow__*`) are
+> registered in the current environment (`ToolSearch` or deferred tools). 2.
+> **If tools are missing or calls fail/hang on a malformed host**: Do **NOT**
+> immediately fall back to `gcloud`/`bq` CLI. Inspect the live MCP configuration
+> files (below) for unreplaced `$GCP_REGION`, `${region}`, or `${REGION}`
+> placeholders. 3. **If the region placeholder is already replaced with a valid
+> region (e.g. `us-central1`)**: This skill does not apply — proceed normally
+> with the task.
 
 Some Google Cloud MCP servers are region-scoped (e.g. Composer:
 `https://composer.$GCP_REGION.rep.googleapis.com/mcp`, Dataform:
-`https://dataform.$GCP_REGION.rep.googleapis.com/mcp`). If the Data Agent Kit
+`https://dataform.$GCP_REGION.rep.googleapis.com/mcp`, Dataflow:
+`https://dataflow.$GCP_REGION.rep.googleapis.com/mcp`). If the Data Agent Kit
 plugin has not been configured with a region, the server fails to connect
 **silently** — it registers zero tools, with no error and no placeholder string
 visible anywhere to notice. Treat a missing `mcp__*__<service>__*` tool as the
@@ -41,9 +44,10 @@ skipped in favor of a `gcloud`/`bq` fallback.
 ## When to use
 
 -   User asks to use a regional service (e.g. "list composer environments", "why
-    did my DAG fail", "list dataform repositories"), and the matching `mcp__*`
-    tools aren't present — check `ToolSearch` or the deferred-tools listing
-    first — or a call to one fails/hangs on a malformed host.
+    did my DAG fail", "list dataform repositories", "list dataflow jobs"), and
+    the matching `mcp__*` tools aren't present — check `ToolSearch` or the
+    deferred-tools listing first — or a call to one fails/hangs on a malformed
+    host.
 -   Then inspect the live config (below) for `$GCP_REGION`, `${region}`, or
     `${REGION}`. If found, run the procedure. If the region is already set, this
     skill doesn't apply — investigate normally instead.
@@ -56,6 +60,7 @@ Each regional MCP server in the config file is enabled through a service in
 -   **Cloud Composer / Airflow**: MCP server `dak-composer`, enabled by the
     `Apache Airflow` service.
 -   **Dataform**: MCP server `dak-dataform`, enabled by the `BigQuery` service.
+-   **Dataflow**: MCP server `dak-dataflow`, enabled by the `Dataflow` service.
 
 ## Locating the live config
 
@@ -91,8 +96,8 @@ The plugin's saved configuration (project, region, and services) is in
 1.  You MUST NOT call the regional MCP tools yet — they will not be available
     until configuration and restart complete.
 2.  You MUST inspect the live config file(s) above (read-only) for
-    `dak-composer` and `dak-dataform` URLs containing `$GCP_REGION`,
-    `${region}`, or `${REGION}`:
+    `dak-composer`, `dak-dataform`, and `dak-dataflow` URLs containing
+    `$GCP_REGION`, `${region}`, or `${REGION}`:
     -   **If all regional server URLs already contain a concrete region** (e.g.
         `us-central1`): stop using this skill and troubleshoot the task
         normally.
@@ -109,11 +114,12 @@ The plugin's saved configuration (project, region, and services) is in
     MCP config**, you MUST immediately invoke and follow `@skill:dak-setup` to
     configure the plugin:
     -   During `@skill:dak-setup`, ensure `Apache Airflow` (for Composer /
-        `dak-composer`) and/or `BigQuery` (for Dataform / `dak-dataform`) is
-        included in the enabled services without dropping any previously enabled
-        services (`@skill:dak-setup` replaces the service list rather than
-        merging it), and verify `@skill:dak-setup` reports that the plugin has
-        been configured.
+        `dak-composer`), `BigQuery` (for Dataform / `dak-dataform`), and/or
+        `Dataflow` (for Dataflow / `dak-dataflow`) is included in the enabled
+        services without dropping any previously enabled services
+        (`@skill:dak-setup` replaces the service list rather than merging it),
+        and verify `@skill:dak-setup` reports that the plugin has been
+        configured.
     -   **If direct execution of `@skill:dak-setup` is blocked** (for example,
         inside Codex CLI's default read-only sandbox), instruct the user to run
         the setup skill directly:
