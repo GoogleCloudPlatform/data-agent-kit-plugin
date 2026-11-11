@@ -10,7 +10,7 @@ description: >-
   existing databases, or troubleshooting active Database Migration Service (DMS) jobs.
 license: Apache-2.0
 metadata:
-  version: v1
+  version: v2
   publisher: google
   category: Databases
 ---
@@ -59,8 +59,8 @@ the optimal Google Cloud database recommendation.
 1.  **Consult Matrix & Formulate Recommendation (JiT):** Follow the Phase 2
     instructions in `references/onboarding_prompts.md` (or, when the user's
     prompt already specifies the source database and workload requirements, skip
-    reading `references/onboarding_prompts.md` and read only the matching
-    source section in `references/recommendation_matrix.txt` via `view_file`
+    reading `references/onboarding_prompts.md` and read only the matching source
+    section in `references/recommendation_matrix.txt` via `view_file`
     `StartLine`/`EndLine` — MySQL: `44-118`, PostgreSQL: `119-236`, SQL Server:
     `237-305`, Oracle: `306-463`, HBase/DynamoDB/Cassandra: `464-616`,
     Redis/Valkey/Memcached/Aerospike: `617-751`, MongoDB/DocumentDB/CosmosDB:

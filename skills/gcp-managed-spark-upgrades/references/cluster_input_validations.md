@@ -17,35 +17,55 @@ gcloud storage ls gs://<TARGET_BUCKET>/
 ## Discover the source (Job ID)
 
 1. Describe the job and keep the full JSON. The job payload sits in a type-specific field (`pysparkJob`, `sparkJob`, `sparkSqlJob`, …), so a narrower `--format` projection silently drops the code URIs, arguments, and properties.
-   ```bash
-   gcloud dataproc jobs describe <JOB_ID> --region=<REGION> --project=<PROJECT_ID> --format=json
-   ```
+
+    ```bash
+    gcloud dataproc jobs describe <JOB_ID> --region=<REGION> --project=<PROJECT_ID> --format=json
+    ```
 2. Read the job type from that field and apply the scope gate in SKILL.md: continue only if the job type is supported.
 3. From the job, extract:
-   - `placement.clusterName` and `placement.clusterUuid`;
-   - from the type-specific field: the main code, code dependencies, arguments, and properties. For PySpark (`pysparkJob`): `mainPythonFileUri`, `pythonFileUris`, and `archiveUris` (source code), `fileUris` (auxiliary files such as configs or helper scripts, passed with `--files` in Step 2), `jarFileUris` (JVM dependencies), `args`, and `properties`;
-   - `status.state`, for context (a failed source job doesn't block the analysis).
+    -   `placement.clusterName` and `placement.clusterUuid`;
+    -   from the type-specific field: the main code, code dependencies,
+        arguments, and properties. For PySpark (`pysparkJob`):
+        `mainPythonFileUri`, `pythonFileUris`, and `archiveUris` (source code),
+        `fileUris` (auxiliary files such as configs or helper scripts, passed
+        with `--files` in Step 2), `jarFileUris` (JVM dependencies), `args`, and
+        `properties`; for Scala/Java (`sparkJob`): `mainJarFileUri` (or
+        `mainClass` with `jarFileUris`), `jarFileUris`, `fileUris`,
+        `archiveUris`, `args`, and `properties`;
+    -   `status.state`, for context (a failed source job doesn't block the
+        analysis).
 4. Describe the source cluster:
-   ```bash
-   gcloud dataproc clusters describe <CLUSTER_NAME> --region=<REGION> --project=<PROJECT_ID> --format="json(config)"
-   ```
-   Extract:
-   - **Source image version:** `config.softwareConfig.imageVersion`.
-   - **Subnet:** `config.gceClusterConfig.subnetworkUri`. If only `networkUri` is set, ask the user for a subnet before Step 2.
-   - **Service account:** `config.gceClusterConfig.serviceAccount` (absent means the default Compute Engine service account).
-   - **Custom image:** a `config.masterConfig.imageUri` outside the `cloud-dataproc` project (`projects/<IMAGE_PROJECT>/global/images/<IMAGE_NAME>`). Inspect its base Managed Spark version with:
-     ```bash
-     gcloud compute images describe <IMAGE_NAME> --project=<IMAGE_PROJECT> --format="json(name,labels,family,description)"
-     ```
-     Read `labels.goog-dataproc-version` (and `family` / `description`) to identify the underlying source Managed Spark version, and tell the user that a custom image built for the target version is needed (or that a standard image can be used instead).
-   - **Hardware:** machine types, disk configuration, worker count, and accelerators in `config.masterConfig` and `config.workerConfig`, for the Step 2 cluster.
-   - **GPU/RAPIDS:** accelerators, GPU-driver or RAPIDS initialization actions, and RAPIDS properties (analyze them with "GPU and RAPIDS Compatibility" in `spark_migration_reference.md`).
-   - **Dependencies outside the code:** `config.initializationActions`, plus (for PySpark) the `dataproc:pip.packages` and `dataproc:conda.packages` properties in `config.softwareConfig.properties`. They feed the dependency build check.
+
+    ```bash
+    gcloud dataproc clusters describe <CLUSTER_NAME> --region=<REGION> --project=<PROJECT_ID> --format="json(config)"
+    ```
+    Extract:
+
+    - **Source image version:** `config.softwareConfig.imageVersion`.
+    - **Subnet:** `config.gceClusterConfig.subnetworkUri`. If only `networkUri` is set, ask the user for a subnet before Step 2.
+    - **Service account:** `config.gceClusterConfig.serviceAccount` (absent means the default Compute Engine service account).
+    - **Custom image:** a `config.masterConfig.imageUri` outside the `cloud-dataproc` project (`projects/<IMAGE_PROJECT>/global/images/<IMAGE_NAME>`). Inspect its base Managed Spark version with:
+
+        ```bash
+        gcloud compute images describe <IMAGE_NAME> --project=<IMAGE_PROJECT> --format="json(name,labels,family,description)"
+        ```
+        Read `labels.goog-dataproc-version` (and `family` / `description`) to identify the underlying source Managed Spark version, and tell the user that a custom image built for the target version is needed (or that a standard image can be used instead).
+    - **Hardware:** machine types, disk configuration, worker count, and accelerators in `config.masterConfig` and `config.workerConfig`, for the Step 2 cluster.
+    - **GPU/RAPIDS:** accelerators, GPU-driver or RAPIDS initialization actions, and RAPIDS properties (analyze them with "GPU and RAPIDS Compatibility" in `spark_migration_reference.md`).
+    -   **Dependencies outside the code:** `config.initializationActions`, plus
+        (for PySpark) the `dataproc:pip.packages` and `dataproc:conda.packages`
+        properties, or (for Scala/Java) the `spark:spark.jars` and
+        `spark:spark.jars.packages` properties, in
+        `config.softwareConfig.properties`. They feed the dependency build
+        check. For Scala/Java, also read the initialization actions for steps
+        that copy jars into Spark's directories (`jvm_build_reference.md`,
+        section 3).
 5. **Deleted (ephemeral) cluster:** if the cluster `describe` returns `NOT_FOUND`, recover the configuration from the Admin Activity audit log, using the cluster UUID (cluster names can be reused; UUIDs can't):
-   ```bash
-   gcloud logging read 'resource.type="cloud_dataproc_cluster" AND resource.labels.cluster_uuid="<CLUSTER_UUID>" AND protoPayload.methodName="google.cloud.dataproc.v1.ClusterController.CreateCluster"' --project=<PROJECT_ID> --limit=1 --format="json(protoPayload.request.cluster.config)"
-   ```
-   Read the same fields under `protoPayload.request.cluster.config`. If the audit logs have expired or are inaccessible, ask the user for the source image version (Step 1 needs it); ask for the Step 2 inputs only when Step 2 is about to run.
+
+    ```bash
+    gcloud logging read 'resource.type="cloud_dataproc_cluster" AND resource.labels.cluster_uuid="<CLUSTER_UUID>" AND protoPayload.methodName="google.cloud.dataproc.v1.ClusterController.CreateCluster"' --project=<PROJECT_ID> --limit=1 --format="json(protoPayload.request.cluster.config)"
+    ```
+    Read the same fields under `protoPayload.request.cluster.config`. If the audit logs have expired or are inaccessible, ask the user for the source image version (Step 1 needs it); ask for the Step 2 inputs only when Step 2 is about to run.
 
 ## Source image version
 
