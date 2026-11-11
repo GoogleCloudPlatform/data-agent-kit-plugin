@@ -1,5 +1,38 @@
 # Changelog
 
+## [1.3.0](https://github.com/GoogleCloudPlatform/data-agent-kit-plugin/compare/1.2.0...1.3.0) (2026-11-11)
+
+
+### Features
+
+* **gcp-managed-spark-upgrades:** Add Scala/Java upgrade support to the Spark upgrade skill. ([f1b64ce](https://github.com/GoogleCloudPlatform/data-agent-kit-plugin/commit/f1b64ce3c88d12e8a2b976d97b759c4e5ee07707))
+* **gcp-spark-troubleshooting:** add platform mechanics reference & methodology ([55f5597](https://github.com/GoogleCloudPlatform/data-agent-kit-plugin/commit/55f559721792b020438e2ea8fe2e4b8397c47e3e))
+* **gcp-spark-troubleshooting:** add read-only Spark environment inspector ([eff0c60](https://github.com/GoogleCloudPlatform/data-agent-kit-plugin/commit/eff0c60f6115a6e4a95916fb97de77543e6be3e6))
+* **mcp:** add Cloud Composer remote MCP server to Data Cloud Agent Kit ([95ba689](https://github.com/GoogleCloudPlatform/data-agent-kit-plugin/commit/95ba68993e76f57d7ded2c4103fab26cd7d7f70e))
+* **mcp:** add Dataform remote MCP server to Data Cloud Agent Kit ([f1e2a0c](https://github.com/GoogleCloudPlatform/data-agent-kit-plugin/commit/f1e2a0ca1c41c3b763832bef4c5c042a7dc514d1))
+* **skills:** add discover-assets skill for Data Agent Kit ([5422f53](https://github.com/GoogleCloudPlatform/data-agent-kit-plugin/commit/5422f53e4333fe7f6f382be9689a1369dd8198fe))
+* **skills:** add discover-assets skill to DAK telemetry and EvalBench ([dbc4600](https://github.com/GoogleCloudPlatform/data-agent-kit-plugin/commit/dbc46009ac7ae3067a4a6f9400d6939ddea0a7ff))
+* **skills:** add Knowledge Catalog curate-context skill to Data Agent Kit ([3729647](https://github.com/GoogleCloudPlatform/data-agent-kit-plugin/commit/372964786c87a26aae4f2b95fef478a1861c1541))
+* **skills:** add MERGE target partition pruning rules to bigquery-optimization ([bf0a1af](https://github.com/GoogleCloudPlatform/data-agent-kit-plugin/commit/bf0a1af737dbeb8ae07cdef133635f4d2c92e8e1))
+* **skills:** delegate resolving-mcp-region-configs to dak-setup ([8b7b086](https://github.com/GoogleCloudPlatform/data-agent-kit-plugin/commit/8b7b086429a194e74225841075a93f145a7c2fd9))
+* support AirflowTaskAction (airflowTask) in the gcp_pipeline_orchestration skill ([4e39bd6](https://github.com/GoogleCloudPlatform/data-agent-kit-plugin/commit/4e39bd6d8b3b555a392040e9f76aada6611035e4))
+* support retryPolicy and deprecate executionConfig in the gcp_pipeline_orchestration skill ([b3035b9](https://github.com/GoogleCloudPlatform/data-agent-kit-plugin/commit/b3035b99e2fb9187b76265159789f81783fe0277))
+
+
+### Bug Fixes
+
+* correct issue tracker URLs and broken documentation links ([b030611](https://github.com/GoogleCloudPlatform/data-agent-kit-plugin/commit/b0306116a4721e4c9d56e33a77e5f034b3e14430)), refs [#460](https://github.com/GoogleCloudPlatform/data-agent-kit-plugin/issues/460) [#461](https://github.com/GoogleCloudPlatform/data-agent-kit-plugin/issues/461)
+* **dak-setup:** rewrite MCP config when server entries change ([70e0714](https://github.com/GoogleCloudPlatform/data-agent-kit-plugin/commit/70e07140768ed0759681f9d46f9a9b7015ab3cc3))
+* **gcp-spark:** generate Spark Connect init code for google-cloud-spark-connect 2.x ([42ce776](https://github.com/GoogleCloudPlatform/data-agent-kit-plugin/commit/42ce776719bf3b1f2420b3efc33938ef2b03a805))
+* **gcp-spark:** refine skill routing, cluster creation, Spark SQL, and missing-input rules ([4124772](https://github.com/GoogleCloudPlatform/data-agent-kit-plugin/commit/4124772b9c5d207082e694d5aa0e5e8c1f6973a2))
+* **mcp-proxy:** Support new mcp server version 2026-07-28 ([142a775](https://github.com/GoogleCloudPlatform/data-agent-kit-plugin/commit/142a775708d5595f9d2c223eec9a356131e01560))
+* **skills:** harden curate-context MCP, IAM, and portability guidance ([e7ff374](https://github.com/GoogleCloudPlatform/data-agent-kit-plugin/commit/e7ff374420e708898735ec7ac8bd4504d22256bb))
+
+
+### Miscellaneous Chores
+
+* force release 1.3.0 ([5f11699](https://github.com/GoogleCloudPlatform/data-agent-kit-plugin/commit/5f11699b4a6b57a912ebe73888882628e37ae3a9))
+
 ## [1.2.0](https://github.com/GoogleCloudPlatform/data-agent-kit-plugin/compare/1.1.0...1.2.0) (2026-10-29)
 
 
