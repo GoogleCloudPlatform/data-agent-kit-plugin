@@ -7,34 +7,25 @@
 
 The Spanner connector JAR is not pre-installed and must be attached at session
 creation (`gs://` JAR URIs cannot be passed to `spark.jars.packages`, which only
-accepts Maven coordinates). Ensure the Spanner JAR's Spark version prefix
-(e.g., `spark-3.5-spanner-*` for Dataproc runtime `2.3` / Spark 3.5, or
-`spark-4.0-spanner-*` for Dataproc runtime `3.0` / Spark 4.0) matches the
+accepts Maven coordinates). Use the JAR whose Spark version prefix matches the
 Dataproc runtime version:
 
--   **Interactive Notebooks (`.ipynb`) & Spark Connect**: On a **Remote Spark**
-    kernel, `spark` is pre-initialized (with the Spanner JAR configured on the
-    session/cluster). On a **Local Python** kernel, attach the JAR via a
-    Session Template or `session_config.runtime_config.properties["spark.jars"]`
-    (and ensure `session_config.runtime_config.version` matches the JAR's Spark
-    version, as `ManagedSparkSession` defaults to runtime `3.0`):
+-   Runtime `3.0` (Spark 4.0; the `ManagedSparkSession` default and the only
+    runtime supported by `google-cloud-spark-connect` 2.x clients):
+    `gs://spark-lib/spanner/spark-4.0-spanner-1.5.0.jar`
+-   Runtime `2.2` / `2.3` (Spark 3.5):
+    `gs://spark-lib/spanner/spark-3.5-spanner-1.5.0.jar`
+
+-   **Interactive Notebooks (`.ipynb`) & Spark Connect**: Initialize the session
+    as described in `SKILL.md`, adding this builder call to the
+    `ManagedSparkSession.builder` chain before `.getOrCreate()`:
 
     ```python
-    from google.cloud.dataproc_v1 import Session
-    from google.cloud.managed_spark_connect import ManagedSparkSession
-
-    session_config = Session()
-    session_config.runtime_config.version = "2.3"
-    session_config.runtime_config.properties["spark.jars"] = (
-        "gs://spark-lib/spanner/spark-3.5-spanner-1.4.0.jar"
-    )
-    spark = (
-        ManagedSparkSession.builder.projectId("<PROJECT_ID>")
-        .location("<REGION>")
-        .dataprocSessionConfig(session_config)
-        .getOrCreate()
-    )
+    .config("spark.jars", "gs://spark-lib/spanner/spark-4.0-spanner-1.5.0.jar")
     ```
+
+    On a **Remote Spark** kernel (explicitly requested, or when running against
+    a cluster) the JAR must already be configured on the session or cluster.
 
 -   **Dataproc Batch & Cluster Jobs (`.py`)**: Pass
     `--jars=gs://spark-lib/spanner/spark-3.5-spanner-1.4.0.jar` on the `gcloud`
