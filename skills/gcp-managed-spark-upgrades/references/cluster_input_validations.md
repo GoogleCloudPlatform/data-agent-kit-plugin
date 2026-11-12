@@ -31,7 +31,9 @@ gcloud storage ls gs://<TARGET_BUCKET>/
         with `--files` in Step 2), `jarFileUris` (JVM dependencies), `args`, and
         `properties`; for Scala/Java (`sparkJob`): `mainJarFileUri` (or
         `mainClass` with `jarFileUris`), `jarFileUris`, `fileUris`,
-        `archiveUris`, `args`, and `properties`;
+        `archiveUris`, `args`, and `properties`; for Spark SQL (`sparkSqlJob`):
+        `queryFileUri` (or inline `queryList.queries`), `scriptVariables`,
+        `jarFileUris`, and `properties`;
     -   `status.state`, for context (a failed source job doesn't block the
         analysis).
 4. Describe the source cluster:

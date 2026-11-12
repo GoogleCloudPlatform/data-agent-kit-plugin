@@ -14,7 +14,7 @@ description: |
 
 license: Apache-2.0
 metadata:
-  version: v3
+  version: v4
   publisher: google
 ---
 
@@ -32,7 +32,8 @@ metadata:
     Scala/Java job uses for its jars, Java runtime, dependencies, packaging, and
     build checks.
 -   **Spark SQL**: Cluster job field `sparkSqlJob`, Serverless batch field
-    `sparkSqlBatch`. Status: Not yet supported.
+    `sparkSqlBatch`. Status: **Supported**. Analysis reference:
+    [spark_sql_analysis.md](references/spark_sql_analysis.md).
 -   **SparkR**: Cluster job field `sparkRJob`, Serverless batch field
     `sparkRBatch`. Status: Not yet supported.
 -   **PySpark notebook**: Cluster job field —, Serverless batch field
@@ -45,7 +46,7 @@ jobs. Non-Spark jobs (e.g. `hiveJob`, `pigJob`) are out of scope.
 Everything else in this skill applies to every supported job type. Checks that
 depend on the job type live in its analysis references and in the parts of the
 other references labeled with the job type (e.g. "For PySpark", "For
-Scala/Java").
+Scala/Java", "For Spark SQL").
 
 ## Terminology
 
@@ -58,18 +59,20 @@ Scala/Java").
 -   **Serverless**: A Managed Spark Serverless batch. Its version is a **runtime
     version**, `<major>.<minor>` only (e.g. `2.2`): every batch runs the newest
     sub-minor of its runtime, which can't be pinned.
--   **Job type**: The kind of Spark workload (e.g. PySpark, Scala/Java), read
-    from the job or batch's type-specific field. See the scope gate.
+-   **Job type**: The kind of Spark workload (e.g. PySpark, Scala/Java, Spark
+    SQL), read from the job or batch's type-specific field. See the scope gate.
 -   **Track**: The `<major>.<minor>` part of a version. The same track can run a
     different Spark version on clusters and on Serverless.
 -   **`<skill_dir>`**: The directory that contains this SKILL.md. Script paths
     below are relative to it.
 -   **`<app_id>`**: The sanitized job name used in temporary paths: the job's
     main code file name without its extension (the main `.py` file for PySpark;
-    for Scala/Java, the main JAR name, or the main class's simple name),
-    lowercased, with every character other than `a-z`, `0-9`, `_`, and `-`
-    replaced by `_` (e.g. `daily_orders` for `daily_orders.py`,
-    `order-metrics-app` for `order-metrics-app.jar`).
+    for Scala/Java, the main JAR name, or the main class's simple name; for
+    Spark SQL, the `.sql` script name, or the Job/Batch ID when queries are
+    inline), lowercased, with every character other than `a-z`, `0-9`, `_`, and
+    `-` replaced by `_` (e.g. `daily_orders` for `daily_orders.py`,
+    `order-metrics-app` for `order-metrics-app.jar`, `monthly_rollup` for
+    `monthly_rollup.sql`).
 -   **`<target_path>`**: The Target GCS path, `gs://<TARGET_BUCKET>/<prefix>`.
     It receives the final code and report; temporary verification artifacts are
     staged under it.
@@ -108,11 +111,12 @@ Scala/Java").
 4.  **Isolate verification output.** A verification run must never write to
     production destinations. Send every output to
     `<target_path>/test-output_<app_id>_temp/`: pass that path through job
-    arguments or Spark properties when the job accepts them; otherwise submit a
-    temporary copy of the job's code whose output paths are redirected, named
-    `<name>_<app_id>_temp` (for PySpark, `<script>_<app_id>_temp.py`; for
-    Scala/Java, `<jar_name>_<app_id>_temp.jar` compiled from a temporary copy
-    whose output paths are redirected). For an output that isn't a storage path
+    arguments, script/query variables, or Spark properties when the job accepts
+    them; otherwise submit a temporary copy of the job's code whose output paths
+    are redirected, named `<name>_<app_id>_temp` (for PySpark,
+    `<script>_<app_id>_temp.py`; for Scala/Java, `<jar_name>_<app_id>_temp.jar`
+    compiled from a temporary copy whose output paths are redirected; for Spark
+    SQL, `<script>_<app_id>_temp.sql`). For an output that isn't a storage path
     (e.g. a BigQuery or Hive table), ask the user for a test destination. Never
     put temporary paths into the working copy, so the final code keeps its
     production paths.
@@ -220,9 +224,9 @@ their options.
         audit logs are gone, ask for the source code location and source
         version.
     -   Without one: infer the job type from the file extension or path (e.g.
-        `.py` means PySpark; `.scala`, `.java`, or `.jar` means Scala/Java);
-        note that a Job/Batch ID is never required for static code analysis and
-        upgrade.
+        `.py` means PySpark; `.scala`, `.java`, or `.jar` means Scala/Java;
+        `.sql` or `.ql` means Spark SQL); note that a Job/Batch ID is never
+        required for static code analysis and upgrade.
     -   If it's unclear whether the workload runs on a cluster or on Serverless,
         ask: the same version number can mean a different Spark version on each.
     -   Apply the scope gate.
@@ -273,8 +277,11 @@ their options.
         auxiliary file the job references (for PySpark: `pythonFileUris`,
         `fileUris`, and `archiveUris`; for Scala/Java: `mainJarFileUri`,
         `jarFileUris`, `fileUris`, and `archiveUris`, or source files and build
-        manifests if inspecting/rebuilding source) into `src_<app_id>_temp/`
-        with `gcloud storage cp -r`, and carry `fileUris` forward to Step 2.
+        manifests if inspecting/rebuilding source; for Spark SQL:
+        `queryFileUri`—or save inline `queryList.queries` to
+        `src_<app_id>_temp/<app_id>.sql`—and `jarFileUris`) into
+        `src_<app_id>_temp/` with `gcloud storage cp -r`, and carry `fileUris`
+        forward to Step 2.
     -   **Git URL:** clone into `<repo_name>_<app_id>_temp`, check out the
         requested branch, tag, or commit, then create the working branch:
 
@@ -327,7 +334,9 @@ their options.
     -   Run the job type's build checks (for PySpark,
         [pyspark_analysis.md](references/pyspark_analysis.md#4-build-checks-against-the-target-version);
         for Scala/Java,
-        [jvm_build_reference.md](references/jvm_build_reference.md#5-build-checks-against-the-target-version))
+        [jvm_build_reference.md](references/jvm_build_reference.md#5-build-checks-against-the-target-version);
+        for Spark SQL,
+        [spark_sql_analysis.md](references/spark_sql_analysis.md#4-build-checks-against-the-target-version))
         on the original code; each failure is a finding.
     -   Note the job's output paths: Step 2 redirects them (rule 4).
     -   Present the assessment: version and component deltas, findings with
@@ -408,10 +417,11 @@ Step 1.6, or asked to automatically approve the full workflow (rule 5).
     build definition in their original layout plus, when the build checks
     passed, the rebuilt jar under its clean release name rather than
     `<jar_name>_<app_id>_temp.jar`—see
-    [jvm_build_reference.md](references/jvm_build_reference.md#6-verification-and-handover))
-    and the report. Delete `migration_notes_<app_id>_temp/` once the report is
-    written. Keep the local working copy (`src_<app_id>_temp/` or local files)
-    and the local report
+    [jvm_build_reference.md](references/jvm_build_reference.md#6-verification-and-handover);
+    for Spark SQL, the upgraded `.sql` script and any rebuilt custom UDF/SerDe
+    jars in their original layout) and the report. Delete
+    `migration_notes_<app_id>_temp/` once the report is written. Keep the local
+    working copy (`src_<app_id>_temp/` or local files) and the local report
     (`<app_id>_<source_version>_<target_version>_spark_upgrade_report.md`) in
     the local workspace after uploading—do not delete them unless the user asks.
     For an analysis-only request, upload only the report. For a Git source, also

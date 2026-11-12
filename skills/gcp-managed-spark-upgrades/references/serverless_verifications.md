@@ -15,17 +15,20 @@ How to run the optional verification (SKILL.md Step 2) for a Serverless workload
     properties, and dependency flags (for PySpark: `--py-files`, `--jars`,
     `--files`, `--archives`; for Scala/Java: `--jar=<MAIN_JAR>` if the source
     batch set `mainJarFileUri`, or `--class=<MAIN_CLASS>` with its jar in
-    `--jars` if it set `mainClass`, plus `--jars`, `--files`, `--archives`),
-    with the Step 1 changes applied.
+    `--jars` if it set `mainClass`, plus `--jars`, `--files`, `--archives`; for
+    Spark SQL: positional `<SQL_SCRIPT_URI>`, `--vars=<KEY=VALUE,...>`,
+    `--jars`, and `--metastore-service` if set), with the Step 1 changes
+    applied.
 - **Resources:** Serverless has no machine types: the source batch's [resource allocation properties](https://docs.cloud.google.com/managed-spark/docs/concepts/spark-properties-serverless#resource_allocation_properties), passed with `--properties`, set the hardware. Keep them as the source set them: driver and executor cores, memory, and memory overhead; disk size and tier; compute tier and `dataproc.tier`; `spark.executor.instances`; and the `spark.dynamicAllocation.*` limits. Anything the source didn't set uses the Serverless default (e.g. 4 cores per executor, autoscaling up to 1000 executors).
 -   **Staged code:** if the job's output paths are hardcoded in the script or
-    code (rather than passed via CLI arguments), create a separate temporary
-    file `<script>_<app_id>_temp.py` (or recompile a temporary JAR for
-    Scala/Java) in which every output path is redirected to
-    `<target_path>/test-output_<app_id>_temp/` (while keeping the original
-    production output path untouched in `<script>.py` or the release JAR).
-    Upload the verification artifact (`<script>_<app_id>_temp.py`,
-    `<script>.py`, or the JAR) and its dependencies to the temporary staging
+    code (rather than passed via CLI arguments or `--vars`), create a separate
+    temporary file `<script>_<app_id>_temp.py` or `<script>_<app_id>_temp.sql`
+    (or recompile a temporary JAR for Scala/Java) in which every output path is
+    redirected to `<target_path>/test-output_<app_id>_temp/` (while keeping the
+    original production output path untouched in `<script>.py`, `<script>.sql`,
+    or the release JAR). Upload the verification artifact
+    (`<script>_<app_id>_temp.py`, `<script>.py`, `<script>_<app_id>_temp.sql`,
+    `<script>.sql`, or the JAR) and its dependencies to the temporary staging
     location (or `<target_path>/upg-verify_<app_id>_temp/`).
 - **Output:** every output, redirected as SKILL.md rule 4 describes: list each job argument or property you changed, or the `_temp` copy of the code. Never submit the un-redirected script that writes to production output paths during Step 2 verification.
 
@@ -85,6 +88,28 @@ gcloud dataproc batches submit spark \
     `file:///usr/lib/...` URI if `mainClass` runs an image-provided jar per
     `jvm_build_reference.md`, section 1): the command takes exactly one of
     `--jar` and `--class`, and no positional jar.
+
+For Spark SQL (using the `_temp` SQL file copy if outputs were hardcoded in the
+script, or redirecting output path variables in `--vars`):
+
+```bash
+gcloud dataproc batches submit spark-sql <STAGED_VERIFY_SQL_GCS_URI> \
+    --batch=upg-verify-<unique-id> \
+    --project=<PROJECT_ID> \
+    --region=<REGION> \
+    --version=<MAJOR.MINOR> \
+    --subnet=<SUBNET> \
+    --ttl=<DURATION> \
+    --labels=purpose=upgrade-verification \
+    [--service-account=<SA_EMAIL>] \
+    [--tags=<TAGS>] [--kms-key=<KMS_KEY>] \
+    [--container-image=<TARGET_IMAGE_URI>] \
+    [--vars=<KEY=VALUE,...>] \
+    [--jars=<URIS>] \
+    [--metastore-service=<METASTORE_SERVICE>] \
+    [--properties=<KEY=VALUE,...>] \
+    [--staging-bucket=<TARGET_BUCKET_NAME>]
+```
 
 - `--ttl` (e.g. `2h`) unconditionally terminates a runaway batch. Set it to about 2–3 times the source batch's run time.
 - `--staging-bucket` takes a bucket name, not a `gs://` path. Use it on 1.x/2.x runtimes so that dependencies and driver output stay in your bucket; 3.x manages staging internally.

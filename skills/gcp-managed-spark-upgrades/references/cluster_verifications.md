@@ -20,16 +20,18 @@ How to run the optional verification (SKILL.md Step 2) for a cluster job: a temp
     dependency flags (for PySpark: `--py-files`, `--jars`, `--files`,
     `--archives`; for Scala/Java: `--jar=<MAIN_JAR>` if the source job set
     `mainJarFileUri`, or `--class=<MAIN_CLASS>` with its jar in `--jars` if it
-    set `mainClass`, plus `--jars`, `--files`, `--archives`), with the Step 1
-    changes applied.
+    set `mainClass`, plus `--jars`, `--files`, `--archives`; for Spark SQL:
+    `--file=<SQL_SCRIPT_URI>`, `--params=<KEY=VALUE,...>`, `--jars`), with the
+    Step 1 changes applied.
 -   **Staged code:** if the job's output paths are hardcoded in the script or
-    code (rather than passed via CLI arguments), create a separate temporary
-    file `<script>_<app_id>_temp.py` (or recompile a temporary JAR for
-    Scala/Java) in which every output path is redirected to
-    `<target_path>/test-output_<app_id>_temp/` (while keeping the original
-    production output path untouched in `<script>.py` or the release JAR).
-    Upload the verification artifact (`<script>_<app_id>_temp.py`,
-    `<script>.py`, or the JAR) and its dependencies to the temporary staging
+    code (rather than passed via CLI arguments or `--params`), create a separate
+    temporary file `<script>_<app_id>_temp.py` or `<script>_<app_id>_temp.sql`
+    (or recompile a temporary JAR for Scala/Java) in which every output path is
+    redirected to `<target_path>/test-output_<app_id>_temp/` (while keeping the
+    original production output path untouched in `<script>.py`, `<script>.sql`,
+    or the release JAR). Upload the verification artifact
+    (`<script>_<app_id>_temp.py`, `<script>.py`, `<script>_<app_id>_temp.sql`,
+    `<script>.sql`, or the JAR) and its dependencies to the temporary staging
     location (or `<target_path>/upg-verify_<app_id>_temp/`).
 - **Output:** every output, redirected as SKILL.md rule 4 describes: list each job argument or property you changed, or the `_temp` copy of the code. Never submit the un-redirected script that writes to production output paths during Step 2 verification.
 
@@ -91,6 +93,21 @@ gcloud dataproc jobs submit spark \
     `file:///usr/lib/...` URI if `mainClass` runs an image-provided jar per
     `jvm_build_reference.md`, section 1): the command takes exactly one of
     `--jar` and `--class`, and no positional jar.
+
+For Spark SQL (using the `_temp` SQL file copy if outputs were hardcoded in the
+script, or redirecting output path variables in `--params`):
+
+```bash
+gcloud dataproc jobs submit spark-sql \
+    --file=<STAGED_VERIFY_SQL_GCS_URI> \
+    --cluster=upg-verify-<unique-id> \
+    --project=<PROJECT_ID> \
+    --region=<REGION> \
+    --labels=purpose=upgrade-verification \
+    [--params=<KEY=VALUE,...>] \
+    [--jars=<URIS>] \
+    [--properties=<KEY=VALUE,...>]
+```
 
 - `<JOB_ARGS>`: the job arguments gathered in V1, in their original order and with output paths redirected; if there are none, leave out `--` as well. Write each argument as its own single-quoted shell token so the shell doesn't split or expand it (write a single quote inside an argument as `'\''`). For example, source `args` of `["--date=2026-10-01", "--output=gs://prod/curated/rollup"]` become `-- '--date=2026-10-01' '--output=<target_path>/test-output_<app_id>_temp/rollup'`.
 - The command prints the job ID and streams the driver output until the job finishes. If the stream is lost, run `gcloud dataproc jobs wait <JOB_ID> --project=<PROJECT_ID> --region=<REGION>`.
