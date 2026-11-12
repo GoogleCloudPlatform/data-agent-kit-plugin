@@ -19,8 +19,11 @@ import gzip
 import io
 import json
 import os
+import signal
+import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from unittest import mock
 
@@ -330,6 +333,154 @@ class SparkGcsLogReaderTest(unittest.TestCase):
     # Resolution only applies to GCS URIs; local paths pass through unchanged.
     reader = spark_gcs_log_reader.GcsStreamReader("/tmp/driveroutput")
     self.assertEqual(reader.resolve_uri(), "/tmp/driveroutput")
+
+  @unittest.skipUnless(os.name == "posix", "POSIX process group semantics")
+  def test_process_stream_early_close_does_not_hang_with_child_holding_stderr(
+      self,
+  ):
+    # Regression test: `gcloud storage cat` spawns worker descendants that
+    # inherit the stderr pipe FD. Stopping early (head/read_range/search) used
+    # to block forever in `proc.stderr.read()`.
+    child_script = (
+        "sleep 30 >/dev/null &\n"
+        'echo "GC_PID:$!"\n'
+        "i=0\n"
+        'while [ "$i" -lt 500 ]; do\n'
+        '  echo "line $i"\n'
+        "  i=$((i + 1))\n"
+        "done\n"
+        "sleep 30\n"
+    )
+    proc = subprocess.Popen(
+        ["/bin/sh", "-c", child_script],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        **spark_gcs_log_reader._popen_session_kwargs(),
+    )
+    stream = io.BufferedReader(
+        spark_gcs_log_reader._ProcessStream(proc, "'fake gcloud'")
+    )
+    grandchild_pid = None
+    lines = []
+    start = time.monotonic()
+    try:
+      for line in spark_gcs_log_reader.get_decompressed_line_generator(
+          stream, "gs://bucket/driveroutput.000000000"
+      ):
+        if line.startswith("GC_PID:"):
+          grandchild_pid = int(line.split(":", 1)[1].strip())
+          continue
+        lines.append(line.strip())
+        if len(lines) >= 5:
+          break
+    finally:
+      stream.close()
+    # Second close must be a harmless no-op.
+    stream.close()
+    elapsed = time.monotonic() - start
+
+    self.assertLess(elapsed, 3.0)
+    self.assertEqual(lines, ["line 0", "line 1", "line 2", "line 3", "line 4"])
+    self.assertIsNotNone(grandchild_pid)
+    deadline = time.monotonic() + 1.0
+    still_alive = True
+    while time.monotonic() < deadline:
+      try:
+        os.kill(grandchild_pid, 0)
+      except ProcessLookupError:
+        still_alive = False
+        break
+      time.sleep(0.05)
+    if still_alive:
+      try:
+        os.kill(grandchild_pid, 9)
+      except OSError:
+        pass
+    self.assertFalse(still_alive, "grandchild process was leaked on close")
+
+  @unittest.skipUnless(os.name == "posix", "POSIX process group semantics")
+  def test_process_stream_natural_failure_surfaces_stderr_without_hanging(self):
+    child_script = (
+        "sleep 30 >/dev/null &\necho 'ERROR: permission denied' >&2\nexit 1\n"
+    )
+    proc = subprocess.Popen(
+        ["/bin/sh", "-c", child_script],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        **spark_gcs_log_reader._popen_session_kwargs(),
+    )
+    stream = io.BufferedReader(
+        spark_gcs_log_reader._ProcessStream(proc, "'fake gcloud'")
+    )
+    start = time.monotonic()
+    with self.assertRaises(RuntimeError) as ctx:
+      try:
+        list(
+            spark_gcs_log_reader.get_decompressed_line_generator(
+                stream, "gs://bucket/driveroutput.000000000"
+            )
+        )
+      finally:
+        stream.close()
+    elapsed = time.monotonic() - start
+
+    self.assertLess(elapsed, 3.0)
+    self.assertIn("permission denied", str(ctx.exception))
+
+  def test_gcs_fallback_popen_uses_session_isolation_on_posix(self):
+    reader = spark_gcs_log_reader.GcsStreamReader("gs://bucket/logs/app.log")
+    fake_proc = mock.MagicMock()
+    fake_proc.pid = os.getpid()
+    fake_proc.stdout = io.BytesIO(b"log line\n")
+    fake_proc.stderr = io.BytesIO(b"")
+    fake_proc.poll.return_value = 0
+
+    with mock.patch.object(
+        spark_gcs_log_reader.subprocess,
+        "check_output",
+        side_effect=OSError("no gcloud token"),
+    ), mock.patch.object(
+        spark_gcs_log_reader.subprocess,
+        "Popen",
+        return_value=fake_proc,
+    ) as popen_mock:
+      range_stream = reader.open_range_stream(0, 8)
+      full_stream = reader.open_full_stream()
+      range_stream.close()
+      full_stream.close()
+
+    self.assertEqual(popen_mock.call_count, 2)
+    if os.name == "posix":
+      for _, kwargs in popen_mock.call_args_list:
+        self.assertTrue(kwargs.get("start_new_session"))
+
+  def test_process_stream_early_close_ignores_sigpipe_after_stdout_close(self):
+    # Reproduces the race where closing stdout triggers immediate child exit
+    # with -SIGPIPE before close() inspects the exit status.
+    sigpipe = getattr(signal, "SIGPIPE", 13)
+    state = {"returncode": None}
+
+    class _Stdout(io.BytesIO):
+
+      def close(self):
+        state["returncode"] = -sigpipe
+        super().close()
+
+    fake_proc = mock.MagicMock()
+    fake_proc.pid = os.getpid()
+    fake_proc.stdout = _Stdout(b"line 1\nline 2\n")
+    fake_proc.stderr = io.BytesIO(b"")
+    fake_proc.poll.side_effect = lambda: state["returncode"]
+    fake_proc.wait.side_effect = lambda timeout=None: state["returncode"]
+
+    stream = spark_gcs_log_reader._ProcessStream(fake_proc, "'fake gcloud'")
+    buf = bytearray(7)
+    self.assertEqual(stream.readinto(buf), 7)
+    # Zero-length read must not falsely mark EOF.
+    self.assertEqual(stream.readinto(bytearray(0)), 0)
+    # Must take the early-termination path and not raise RuntimeError(-13).
+    stream.close()
+    fake_proc.terminate.assert_called_once()
 
 
 if __name__ == "__main__":
