@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Unit tests for spark_applications."""
+"""Unit tests for spark_applications helper script."""
 
 import io
 import json
@@ -993,6 +993,1102 @@ class ActionsTest(unittest.TestCase):
     self.assertEqual(initial, {"SortMergeJoin": 1})
     self.assertEqual(final, initial)
 
+  def test_stages_surfaces_record_counts_and_stage_io_totals(self):
+    stages = {
+        "sparkApplicationStages": [
+            {
+                "stageId": "0",
+                "status": "STAGE_STATUS_COMPLETE",
+                "numTasks": 2,
+                "stageMetrics": {
+                    "stageInputMetrics": {
+                        "bytesRead": "0",
+                        "recordsRead": "12000",
+                    },
+                    "stageShuffleWriteMetrics": {
+                        "bytesWritten": "2048",
+                        "recordsWritten": "12000",
+                    },
+                },
+                "name": "scan bigquery",
+            },
+            {
+                "stageId": "1",
+                "status": "STAGE_STATUS_COMPLETE",
+                "numTasks": 4,
+                "stageMetrics": {
+                    "stageShuffleReadMetrics": {
+                        "bytesRead": "2048",
+                        "recordsRead": "12000",
+                    },
+                    "stageOutputMetrics": {
+                        "bytesWritten": "4096",
+                        "recordsWritten": "12000",
+                    },
+                },
+                "name": "parquet at Job.py:42",
+            },
+        ]
+    }
+    out, _ = self._run("stages", [(200, _APPS), (200, stages)])
+    self.assertIn(
+        "Stage I/O totals (2 completed)**: input 0 B (12,000 rows), output"
+        " 4.0 KiB (12,000 rows), shuffle read 2.0 KiB (12,000 rows), shuffle"
+        " write 2.0 KiB (12,000 rows)",
+        out,
+    )
+    self.assertIn("| 0.0 | COMPLETE | 2 (0/0) |", out)
+    self.assertIn("| 0 B (12,000 rows) | 0 B |", out)
+    self.assertIn("| 0 B | 4.0 KiB (12,000 rows) |", out)
+
+  def test_stages_excludes_failed_retry_attempts_from_completed_totals(self):
+    retried = {
+        "sparkApplicationStages": [
+            {
+                "stageId": "1",
+                "stageAttemptId": "0",
+                "status": "STAGE_STATUS_FAILED",
+                "numTasks": 4,
+                "numFailedTasks": 1,
+                "stageMetrics": {
+                    "stageInputMetrics": {
+                        "bytesRead": "512",
+                        "recordsRead": "500",
+                    }
+                },
+                "name": "scan attempt 0",
+            },
+            {
+                "stageId": "1",
+                "stageAttemptId": "1",
+                "status": "STAGE_STATUS_COMPLETE",
+                "numTasks": 4,
+                "stageMetrics": {
+                    "stageInputMetrics": {
+                        "bytesRead": "1024",
+                        "recordsRead": "1000",
+                    }
+                },
+                "name": "scan attempt 1",
+            },
+        ]
+    }
+    out, _ = self._run("stages", [(200, _APPS), (200, retried)])
+    self.assertIn(
+        "Stage I/O totals (1 completed)**: input 1.0 KiB (1,000 rows)", out
+    )
+    self.assertIn(
+        "Failed/active attempt I/O (1 non-completed, excluded above to avoid"
+        " retry double-counting)**: input 512 B (500 rows)",
+        out,
+    )
+
+    all_failed = {
+        "sparkApplicationStages": [{
+            "stageId": "0",
+            "stageAttemptId": "0",
+            "status": "STAGE_STATUS_FAILED",
+            "numTasks": 2,
+            "numFailedTasks": 1,
+            "stageMetrics": {
+                "stageInputMetrics": {
+                    "bytesRead": "2048",
+                    "recordsRead": "2000",
+                }
+            },
+            "name": "failed scan",
+        }]
+    }
+    failed_out, _ = self._run("stages", [(200, _APPS), (200, all_failed)])
+    self.assertIn(
+        "Partial stage I/O before failure (0 completed, 1 failed/active)**:"
+        " input 2.0 KiB (2,000 rows)",
+        failed_out,
+    )
+
+  def test_stage_renders_record_quantiles_and_io_summary(self):
+    stage = {
+        "stageData": {
+            "stageId": "1",
+            "status": "STAGE_STATUS_COMPLETE",
+            "numTasks": 4,
+            "stageMetrics": {
+                "stageInputMetrics": {"bytesRead": "1024", "recordsRead": "500"}
+            },
+            "taskQuantileMetrics": {
+                "inputMetrics": {
+                    "recordsRead": {
+                        "count": "4",
+                        "minimum": "50",
+                        "percentile25": "100",
+                        "percentile50": "125",
+                        "percentile75": "150",
+                        "maximum": "1250",
+                    }
+                }
+            },
+        }
+    }
+    out, _ = self._run("stage", [(200, _APPS), (200, stage)], stage_id=1)
+    self.assertIn("- Input: 1.0 KiB (500 rows), output: 0 B", out)
+    self.assertIn("| Input records | 50 | 100 | 125 | 150 | 1,250 |", out)
+
+  def test_sql_plan_surfaces_scan_filter_write_metrics_and_schemas(self):
+    plan = (
+        "== Physical Plan ==\n"
+        "Execute InsertIntoHadoopFsRelationCommand (3)\n"
+        "+- Filter (2)\n"
+        "   +- Scan csv (1)\n"
+        "\n"
+        "(1) Scan csv\n"
+        "Output [3]: [order_id#10, amount#11, meta#12]\n"
+        "ReadSchema:"
+        " struct<order_id:string,amount:double,meta:struct<a:int,b:string>>\n"
+        "Location: InMemoryFileIndex [gs://b/raw/orders]\n"
+        "\n"
+        "(3) Execute InsertIntoHadoopFsRelationCommand\n"
+        "Input [4]: [order_id#10, amount#11, meta#12, ingest_dt#15]\n"
+        "Arguments: gs://b/gold/orders, false, Parquet\n"
+    )
+    query = {
+        "executionData": {
+            "executionId": "1",
+            "physicalPlanDescription": plan,
+            "metricValues": {
+                "10": "12,500",
+                "11": "812.0 KiB",
+                "12": "2",
+                "20": "12,000",
+                "30": "12,000",
+                "31": "410.5 KiB",
+                "32": "4",
+                "99": "0 B",
+            },
+        }
+    }
+    graph = {
+        "sparkPlanGraph": {
+            "nodes": [
+                {
+                    "node": {
+                        "sparkPlanGraphNodeId": "3",
+                        "name": "Execute InsertIntoHadoopFsRelationCommand",
+                        "metrics": [
+                            {
+                                "name": "number of written rows",
+                                "accumulatorId": "30",
+                            },
+                            {"name": "written output", "accumulatorId": "31"},
+                            {
+                                "name": "number of written files",
+                                "accumulatorId": "32",
+                            },
+                        ],
+                    }
+                },
+                {
+                    "node": {
+                        "sparkPlanGraphNodeId": "2",
+                        "name": "Filter",
+                        "metrics": [
+                            {
+                                "name": "number of output rows",
+                                "accumulatorId": "20",
+                            },
+                            {"name": "spill size", "accumulatorId": "99"},
+                        ],
+                    }
+                },
+                {
+                    "node": {
+                        "sparkPlanGraphNodeId": "1",
+                        "name": "Scan csv",
+                        "metrics": [
+                            {
+                                "name": "number of output rows",
+                                "accumulatorId": "10",
+                            },
+                            {
+                                "name": "size of files read",
+                                "accumulatorId": "11",
+                            },
+                            {
+                                "name": "number of files read",
+                                "accumulatorId": "12",
+                            },
+                        ],
+                    }
+                },
+            ]
+        }
+    }
+    out, _ = self._run(
+        "sql",
+        [(200, _APPS), (200, query), (200, graph)],
+        execution_id=1,
+        format="json",
+    )
+    result = json.loads(out)
+    by_name = {n["name"]: n["metrics"] for n in result["nodes"]}
+    self.assertEqual(
+        by_name["Scan csv"],
+        {
+            "number of output rows": "12,500",
+            "size of files read": "812.0 KiB",
+            "number of files read": "2",
+        },
+    )
+    self.assertEqual(by_name["Filter"], {"number of output rows": "12,000"})
+    self.assertEqual(
+        by_name["Execute InsertIntoHadoopFsRelationCommand"],
+        {
+            "number of written rows": "12,000",
+            "written output": "410.5 KiB",
+            "number of written files": "4",
+        },
+    )
+    self.assertEqual(len(result["io_operators"]), 2)
+    self.assertEqual(result["io_operators"][0]["num_columns"], 3)
+    self.assertEqual(
+        result["io_operators"][0]["columns"], ["order_id", "amount", "meta"]
+    )
+    self.assertEqual(result["io_operators"][1]["num_columns"], 4)
+
+  def test_sql_plan_surfaces_unattached_datasource_command_metrics_and_tree_schemas(
+      self,
+  ):
+    plan = (
+        "== Physical Plan ==\n"
+        "Execute SaveIntoDataSourceCommand\n"
+        "   +- SaveIntoDataSourceCommand"
+        " com.google.cloud.spark.bigquery.v2.Spark35BigQueryTableProvider@1a,"
+        " Map(table -> p.ds.orders_silver, writemethod -> direct), Overwrite\n"
+        "         +- RepartitionByExpression [region#2], 4\n"
+        "            +- Project [order_id#0, region#2,"
+        " round((gross_amount#5 * 0.95), 2) AS net_amount#15]\n"
+        "               +- Relation [order_id#0,region#2,gross_amount#5] csv\n"
+    )
+    query = {
+        "executionData": {
+            "executionId": "0",
+            "physicalPlanDescription": plan,
+            "metrics": [
+                {"name": "size of files read", "accumulatorId": 33},
+                {"name": "number of files read", "accumulatorId": 30},
+                {"name": "number of output rows", "accumulatorId": 28},
+                {"name": "number of output rows", "accumulatorId": 29},
+                {"name": "shuffle bytes written", "accumulatorId": 21},
+                {"name": "number of partitions", "accumulatorId": 2},
+                {"name": "shuffle memory bytes spilled", "accumulatorId": 25},
+            ],
+            "metricValues": {
+                "33": "909.9 KiB",
+                "30": "4",
+                "28": "12,500",
+                "29": "12,000",
+                "21": "356.2 KiB",
+                "2": "4",
+                "25": "0.0 B",
+            },
+        }
+    }
+    graph = {
+        "sparkPlanGraph": {
+            "nodes": [{"node": {"name": "Execute SaveIntoDataSourceCommand"}}]
+        }
+    }
+    out, _ = self._run(
+        "sql",
+        [(200, _APPS), (200, query), (200, graph)],
+        execution_id=0,
+        format="json",
+    )
+    result = json.loads(out)
+    self.assertEqual(len(result["nodes"]), 1)
+    self.assertEqual(
+        result["nodes"][0]["name"], "Execute SaveIntoDataSourceCommand"
+    )
+    self.assertEqual(
+        result["nodes"][0]["metrics"],
+        {
+            "number of output rows": "12,500 / 12,000",
+            "size of files read": "909.9 KiB",
+            "number of files read": "4",
+            "shuffle bytes written": "356.2 KiB",
+            "number of partitions": "4",
+        },
+    )
+    self.assertEqual(len(result["io_operators"]), 2)
+    self.assertEqual(
+        result["io_operators"][0]["operator"], "SaveIntoDataSourceCommand"
+    )
+    self.assertEqual(
+        result["io_operators"][0]["columns"],
+        ["order_id", "region", "net_amount"],
+    )
+    self.assertIn("p.ds.orders_silver", result["io_operators"][0]["details"])
+    self.assertEqual(result["io_operators"][1]["operator"], "Relation csv")
+    self.assertEqual(
+        result["io_operators"][1]["columns"],
+        ["order_id", "region", "gross_amount"],
+    )
+
+  def test_extract_plan_schemas_parses_extended_tree_scans_and_hadoop_insert(
+      self,
+  ):
+    plan = (
+        "== Physical Plan ==\n"
+        "Execute InsertIntoHadoopFsRelationCommand gs://b/gold, false,"
+        " [region#78], Parquet, [path=gs://b/gold/], Overwrite,"
+        " [order_id, tier, usd_rate, region]\n"
+        "+- WriteFiles\n"
+        "   +- *(3) SortMergeJoin [region#2], [region#26], Inner\n"
+        "      :- BatchScan orders_silver[order_id#0, region#2] Reading table"
+        " [p.ds.orders_silver], Read session Id : s1\n"
+        "      +- FileScan csv [region#26,usd_rate#28] Format: CSV, Location:"
+        " InMemoryFileIndex(1 paths)[gs://b/fx/rates.csv], PartitionFilters:"
+        " [], ReadSchema: struct<region:string,usd_rate:double>\n"
+    )
+    ops = spark_applications.extract_plan_schemas(plan)
+    self.assertEqual(
+        [(o["operator"], o["num_columns"], o["columns"]) for o in ops],
+        [
+            (
+                "Execute InsertIntoHadoopFsRelationCommand",
+                4,
+                ["order_id", "tier", "usd_rate", "region"],
+            ),
+            ("BatchScan orders_silver", 2, ["order_id", "region"]),
+            ("FileScan csv", 2, ["region", "usd_rate"]),
+        ],
+    )
+    self.assertEqual(ops[1]["details"], "Reading table [p.ds.orders_silver]")
+    self.assertIn("gs://b/fx/rates.csv", ops[2]["details"])
+
+  def test_extract_plan_schemas_handles_truncated_fields_v2_writes_and_parens(
+      self,
+  ):
+    wide_numbered = (
+        "== Physical Plan ==\n"
+        "Scan csv (1)\n\n"
+        "(1) Scan csv\n"
+        "Output [40]: [c1#1, c2#2, ... 38 more fields]\n"
+    )
+    wide_ops = spark_applications.extract_plan_schemas(wide_numbered)
+    self.assertEqual(len(wide_ops), 1)
+    self.assertEqual(wide_ops[0]["num_columns"], 40)
+    self.assertEqual(wide_ops[0]["columns"], ["c1", "c2"])
+    self.assertTrue(wide_ops[0]["columns_truncated"])
+
+    v2_tree = (
+        "== Physical Plan ==\n"
+        "AppendData RelationV2[order_id#1L, region#2, ... 5 more fields]"
+        " spark_catalog.lakehouse.fact_orders\n"
+        "+- Filter\n"
+        "(isnotnull(order_id#1L) AND (order_id#1L > 0))\n"
+        "   +- BatchScan raw_orders[order_id#1L, region#2, ... 5 more fields]"
+        " Reading table [p.ds.raw_orders], Read session Id : s9\n"
+    )
+    v2_ops = spark_applications.extract_plan_schemas(v2_tree)
+    self.assertEqual(len(v2_ops), 2)
+    self.assertEqual(
+        v2_ops[0]["operator"], "AppendData spark_catalog.lakehouse.fact_orders"
+    )
+    self.assertEqual(v2_ops[0]["num_columns"], 7)
+    self.assertEqual(v2_ops[0]["columns"], ["order_id", "region"])
+    self.assertTrue(v2_ops[0]["columns_truncated"])
+    self.assertEqual(v2_ops[1]["operator"], "BatchScan raw_orders")
+    self.assertEqual(v2_ops[1]["num_columns"], 7)
+
+  def test_stages_deduplicates_completed_stage_resubmission(self):
+    resubmitted = {
+        "sparkApplicationStages": [
+            {
+                "stageId": "0",
+                "stageAttemptId": "0",
+                "status": "STAGE_STATUS_COMPLETE",
+                "numTasks": 4,
+                "stageMetrics": {
+                    "stageInputMetrics": {
+                        "bytesRead": "1024",
+                        "recordsRead": "1000",
+                    }
+                },
+                "name": "map stage attempt 0",
+            },
+            {
+                "stageId": "0",
+                "stageAttemptId": "1",
+                "status": "STAGE_STATUS_COMPLETE",
+                "numTasks": 4,
+                "stageMetrics": {
+                    "stageInputMetrics": {
+                        "bytesRead": "1024",
+                        "recordsRead": "1000",
+                    }
+                },
+                "name": "map stage attempt 1 after FetchFailed",
+            },
+        ]
+    }
+    out, _ = self._run("stages", [(200, _APPS), (200, resubmitted)])
+    self.assertIn(
+        "Stage I/O totals (1 completed)**: input 1.0 KiB (1,000 rows)", out
+    )
+    self.assertIn(
+        "Superseded completed attempt I/O (1 earlier attempt(s), excluded"
+        " above to avoid resubmission double-counting)**: input 1.0 KiB"
+        " (1,000 rows)",
+        out,
+    )
+
+  def test_extract_plan_schemas_skips_superseded_aqe_initial_plan_blocks(self):
+    aqe_plan = (
+        "== Physical Plan ==\n"
+        "AdaptiveSparkPlan (7)\n"
+        "+- == Final Plan ==\n"
+        "   Execute InsertIntoHadoopFsRelationCommand (4)\n"
+        "   +- Scan parquet default.orders (1)\n"
+        "+- == Initial Plan ==\n"
+        "   Execute InsertIntoHadoopFsRelationCommand (6)\n"
+        "   +- Scan parquet default.orders (5)\n"
+        "\n"
+        "(1) Scan parquet default.orders\n"
+        "Output [2]: [order_id#1L, region#2]\n"
+        "ReadSchema: struct<order_id:bigint,region:string>\n"
+        "\n"
+        "(4) Execute InsertIntoHadoopFsRelationCommand\n"
+        "Input [2]: [order_id#1L, region#2]\n"
+        "Arguments: gs://b/out, false, Parquet, [path=gs://b/out],"
+        " Overwrite, [order_id, region]\n"
+        "\n"
+        "(5) Scan parquet default.orders\n"
+        "Output [2]: [order_id#1L, region#2]\n"
+        "ReadSchema: struct<order_id:bigint,region:string>\n"
+        "\n"
+        "(6) Execute InsertIntoHadoopFsRelationCommand\n"
+        "Input [2]: [order_id#1L, region#2]\n"
+        "Arguments: gs://b/out, false, Parquet, [path=gs://b/out],"
+        " Overwrite, [order_id, region]\n"
+    )
+    ops = spark_applications.extract_plan_schemas(aqe_plan)
+    self.assertEqual(
+        [(o["node_id"], o["operator"]) for o in ops],
+        [
+            (1, "Scan parquet default.orders"),
+            (4, "Execute InsertIntoHadoopFsRelationCommand"),
+        ],
+    )
+
+  def test_sql_plan_ignores_cluster_accumulators_and_keeps_wide_metrics(self):
+    long_stat = (
+        "total (min, med, max (stageId: taskId)) 1.2 MiB (300.0 KiB, 300.0"
+        " KiB, 300.0 KiB (stage 0.0: task 3))"
+    )
+    query = {
+        "executionData": {
+            "executionId": "0",
+            "physicalPlanDescription": "== Physical Plan ==\nScan csv (1)\n",
+            "metrics": [
+                {"name": "duration", "accumulatorId": "99"},
+                {"name": "number of output rows", "accumulatorId": "10"},
+                {"name": "size of files read", "accumulatorId": "11"},
+                {"name": "metadata time", "accumulatorId": "12"},
+                {"name": "scan time", "accumulatorId": "13"},
+                {"name": "number of files read", "accumulatorId": "14"},
+                {"name": "number of partitions", "accumulatorId": "15"},
+            ],
+            "metricValues": {
+                "99": "total (min, med, max) 450 ms",
+                "10": "42,000",
+                "11": long_stat,
+                "12": long_stat,
+                "13": long_stat,
+                "14": long_stat,
+                "15": "4",
+            },
+        }
+    }
+    graph = {
+        "sparkPlanGraph": {
+            "nodes": [{
+                "cluster": {
+                    "sparkPlanGraphNodeId": "2",
+                    "name": "WholeStageCodegen (1)",
+                    "metrics": [{"name": "duration", "accumulatorId": "99"}],
+                    "nodes": [{
+                        "node": {
+                            "sparkPlanGraphNodeId": "1",
+                            "name": "Scan csv",
+                            "metrics": [
+                                {
+                                    "name": "number of output rows",
+                                    "accumulatorId": "10",
+                                },
+                                {
+                                    "name": "size of files read",
+                                    "accumulatorId": "11",
+                                },
+                                {
+                                    "name": "metadata time",
+                                    "accumulatorId": "12",
+                                },
+                                {"name": "scan time", "accumulatorId": "13"},
+                                {
+                                    "name": "number of files read",
+                                    "accumulatorId": "14",
+                                },
+                                {
+                                    "name": "number of partitions",
+                                    "accumulatorId": "15",
+                                },
+                            ],
+                        }
+                    }],
+                }
+            }]
+        }
+    }
+    out, _ = self._run(
+        "sql", [(200, _APPS), (200, query), (200, graph)], execution_id=0
+    )
+    self.assertNotIn("Execution-level metrics", out)
+    self.assertIn("number of partitions: 4", out)
+
+  def test_extract_plan_schemas_keeps_active_subquery_scans_and_v2_delta_writes(
+      self,
+  ):
+    dpp_plan = (
+        "== Physical Plan ==\n"
+        "AdaptiveSparkPlan (12)\n"
+        "+- == Final Plan ==\n"
+        "   WriteDelta (4)\n"
+        "   +- Scan parquet db.fact (1)\n"
+        "+- == Initial Plan ==\n"
+        "   WriteDelta (11)\n"
+        "   +- Scan parquet db.superseded_fact (5)\n"
+        "\n"
+        "(1) Scan parquet db.fact\n"
+        "Output [2]: [id#1L, dt#2]\n"
+        "ReadSchema: struct<id:bigint,dt:string>\n"
+        "\n"
+        "(4) WriteDelta\n"
+        "Input [2]: [id#1L, dt#2]\n"
+        "Arguments: RelationV2[id#1L, dt#2] ice.db.target\n"
+        "\n"
+        "(5) Scan parquet db.superseded_fact\n"
+        "Output [2]: [id#1L, dt#2]\n"
+        "\n"
+        "===== Subqueries =====\n"
+        "\n"
+        "Subquery:1 Hosting operator id = 1 Hosting Expression = dt#2 IN"
+        " dynamicpruning#99\n"
+        "AdaptiveSparkPlan (9)\n"
+        "+- == Final Plan ==\n"
+        "   BroadcastExchange (8)\n"
+        "   +- Scan parquet db.active_dim (6)\n"
+        "+- == Initial Plan ==\n"
+        "   BroadcastExchange (8)\n"
+        "   +- Scan parquet db.superseded_dim (7)\n"
+        "\n"
+        "Subquery:2 Hosting operator id = 1 Hosting Expression = region#3\n"
+        "BroadcastExchange (13)\n"
+        "+- Scan parquet db.countries (10)\n"
+        "\n"
+        "(6) Scan parquet db.active_dim\n"
+        "Output [1]: [dt#20]\n"
+        "ReadSchema: struct<dt:string>\n"
+        "\n"
+        "(7) Scan parquet db.superseded_dim\n"
+        "Output [1]: [dt#21]\n"
+        "\n"
+        "(10) Scan parquet db.countries\n"
+        "Output [1]: [code#30]\n"
+        "ReadSchema: struct<code:string>\n"
+    )
+    ops = spark_applications.extract_plan_schemas(dpp_plan)
+    self.assertEqual(
+        [(o["node_id"], o["operator"], o["columns"]) for o in ops],
+        [
+            (1, "Scan parquet db.fact", ["id", "dt"]),
+            (4, "WriteDelta", ["id", "dt"]),
+            (6, "Scan parquet db.active_dim", ["dt"]),
+            (10, "Scan parquet db.countries", ["code"]),
+        ],
+    )
+
+    tree_delta = (
+        "== Physical Plan ==\n"
+        "DeleteFromTable RelationV2[id#1L, ts#2] ice.db.audit\n"
+    )
+    tree_ops = spark_applications.extract_plan_schemas(tree_delta)
+    self.assertEqual(
+        [(o["operator"], o["columns"]) for o in tree_ops],
+        [("DeleteFromTable ice.db.audit", ["id", "ts"])],
+    )
+
+  def test_sql_plan_preserves_distinct_unattached_accumulators_with_equal_vals(
+      self,
+  ):
+    query = {
+        "executionData": {
+            "executionId": "2",
+            "physicalPlanDescription": (
+                "== Physical Plan ==\nExecute SaveIntoDataSourceCommand (1)\n"
+            ),
+            "metrics": [
+                {"name": "number of files read", "accumulatorId": "30"},
+                {"name": "number of files read", "accumulatorId": "30"},
+                {"name": "number of files read", "accumulatorId": "31"},
+                {"name": "number of output rows", "accumulatorId": "32"},
+                {"name": "number of output rows", "accumulatorId": "33"},
+            ],
+            "metricValues": {
+                "30": "4",
+                "31": "4",
+                "32": "1,000",
+                "33": "1,000",
+            },
+        }
+    }
+    graph = {
+        "sparkPlanGraph": {
+            "nodes": [{
+                "node": {
+                    "sparkPlanGraphNodeId": "0",
+                    "name": "Execute SaveIntoDataSourceCommand",
+                    "metrics": [],
+                }
+            }]
+        }
+    }
+    out, _ = self._run(
+        "sql",
+        [(200, _APPS), (200, query), (200, graph)],
+        execution_id=2,
+        format="json",
+    )
+    payload = json.loads(out)
+    self.assertEqual(
+        payload["nodes"][0]["metrics"],
+        {
+            "number of output rows": "1,000 / 1,000",
+            "number of files read": "4 / 4",
+        },
+    )
+
+  def test_sql_plan_filters_compound_zero_metrics_and_guards_join_tree_schema(
+      self,
+  ):
+    join_tree_without_root_project = (
+        "== Physical Plan ==\n"
+        "Execute SaveIntoDataSourceCommand\n"
+        "   +- SaveIntoDataSourceCommand"
+        " com.google.cloud.spark.bigquery.v2.Spark35BigQueryTableProvider@1a,"
+        " Map(table -> p.ds.joined_sink, writemethod -> direct), Overwrite\n"
+        "      +- *(3) SortMergeJoin [cid#1], [dim_cid#10], Inner\n"
+        "         :- *(1) Project [oid#0, cid#1]\n"
+        "         :  +- FileScan csv [oid#0,cid#1] Format: CSV, Location:"
+        " InMemoryFileIndex(1 paths)[gs://b/orders.csv], PartitionFilters:"
+        " [], ReadSchema: struct<oid:string,cid:string>\n"
+        "         +- *(2) Project [dim_cid#10, tier#11]\n"
+        "            +- BatchScan dim[dim_cid#10, tier#11] Reading table"
+        " [p.ds.dim], Read session Id : s2\n"
+    )
+    query = {
+        "executionData": {
+            "executionId": "3",
+            "physicalPlanDescription": join_tree_without_root_project,
+            "metricValues": {
+                "10": "12,000",
+                "11": (
+                    "total (min, med, max (stageId: taskId)) 0.0 B (0.0 B,"
+                    " 0.0 B, 0.0 B (stage 4.0: task 16))"
+                ),
+                "12": (
+                    "total (min, med, max (stageId: taskId)) 0 ms (0 ms, 0 ms,"
+                    " 0 ms (stage 4.0: task 12))"
+                ),
+                "13": "97.0 B",
+            },
+        }
+    }
+    graph = {
+        "sparkPlanGraph": {
+            "nodes": [
+                {
+                    "node": {
+                        "sparkPlanGraphNodeId": "5",
+                        "name": "SortMergeJoin",
+                        "metrics": [
+                            {
+                                "name": "number of output rows",
+                                "accumulatorId": "10",
+                            },
+                            {"name": "spill size", "accumulatorId": "11"},
+                        ],
+                    }
+                },
+                {
+                    "node": {
+                        "sparkPlanGraphNodeId": "31",
+                        "name": "Scan csv ",
+                        "metrics": [
+                            {
+                                "name": "size of files read",
+                                "accumulatorId": "13",
+                            },
+                            {"name": "fetch wait time", "accumulatorId": "12"},
+                        ],
+                    }
+                },
+            ]
+        }
+    }
+    out, _ = self._run(
+        "sql",
+        [(200, _APPS), (200, query), (200, graph)],
+        execution_id=3,
+        format="json",
+    )
+    payload = json.loads(out)
+    by_name = {n["name"]: n["metrics"] for n in payload["nodes"]}
+    self.assertEqual(
+        by_name["SortMergeJoin"], {"number of output rows": "12,000"}
+    )
+    self.assertEqual(by_name["Scan csv"], {"size of files read": "97.0 B"})
+    # Sink above an unprojected Join must NOT inherit only the left branch's 2
+    # columns ([oid, cid]).
+    self.assertEqual(
+        payload["io_operators"][0]["operator"], "SaveIntoDataSourceCommand"
+    )
+    self.assertEqual(payload["io_operators"][0]["num_columns"], 0)
+    self.assertEqual(payload["io_operators"][0]["columns"], [])
+
+  def test_numbered_plan_v2_inline_relation_and_pre_join_project_fallback(self):
+    numbered_delete = (
+        "== Physical Plan ==\n"
+        "DeleteFromTable (1)\n\n"
+        "(1) DeleteFromTable\n"
+        "Arguments: RelationV2[id#1L, ts#2] ice.db.audit, [EqualTo(id, 42)]\n"
+    )
+    del_ops = spark_applications.extract_plan_schemas(numbered_delete)
+    self.assertEqual(
+        [(o["node_id"], o["operator"], o["columns"]) for o in del_ops],
+        [(1, "DeleteFromTable", ["id", "ts"])],
+    )
+
+    numbered_aqe_sink_with_root_project = (
+        "== Physical Plan ==\n"
+        "AdaptiveSparkPlan (6)\n"
+        "+- == Final Plan ==\n"
+        "   Execute SaveIntoDataSourceCommand (5)\n"
+        "   +- WriteFiles (4)\n"
+        "      +- * Project (3)\n"
+        "         +- * BroadcastHashJoin Inner BuildRight (2)\n"
+        "            :- * Scan parquet db.orders (1)\n"
+        "            +- BroadcastExchange (7)\n"
+        "               +- * Scan parquet db.dim (8)\n"
+        "+- == Initial Plan ==\n"
+        "   Execute SaveIntoDataSourceCommand (5)\n"
+        "   +- * SortMergeJoin Inner (9)\n\n"
+        "(1) Scan parquet db.orders\n"
+        "Output [2]: [oid#1L, cid#2L]\n"
+        "ReadSchema: struct<oid:bigint,cid:bigint>\n\n"
+        "(3) Project [codegen id : 2]\n"
+        "Output [3]: [oid#1L, cid#2L, tier#11]\n"
+        "Input [4]: [oid#1L, cid#2L, dim_cid#10L, tier#11]\n\n"
+        "(4) WriteFiles\n"
+        "Input [3]: [oid#1L, cid#2L, tier#11]\n\n"
+        "(5) Execute SaveIntoDataSourceCommand\n"
+        "Arguments: Provider@1a, Map(table -> p.ds.gold, writemethod ->"
+        " direct), Overwrite\n\n"
+        "(8) Scan parquet db.dim\n"
+        "Output [2]: [dim_cid#10L, tier#11]\n"
+        "ReadSchema: struct<dim_cid:bigint,tier:string>\n"
+    )
+    proj_ops = spark_applications.extract_plan_schemas(
+        numbered_aqe_sink_with_root_project
+    )
+    self.assertEqual(
+        [(o["node_id"], o["operator"], o["columns"]) for o in proj_ops],
+        [
+            (1, "Scan parquet db.orders", ["oid", "cid"]),
+            (
+                5,
+                "Execute SaveIntoDataSourceCommand",
+                ["oid", "cid", "tier"],
+            ),
+            (8, "Scan parquet db.dim", ["dim_cid", "tier"]),
+        ],
+    )
+
+    numbered_sink_over_unprojected_join = (
+        "== Physical Plan ==\n"
+        "Execute SaveIntoDataSourceCommand (4)\n"
+        "+- * SortMergeJoin Inner (3)\n"
+        "   :- * Project (1)\n"
+        "   +- * Project (2)\n\n"
+        "(1) Project [codegen id : 1]\n"
+        "Output [2]: [oid#1L, cid#2L]\n\n"
+        "(2) Project [codegen id : 2]\n"
+        "Output [2]: [dim_cid#10L, tier#11]\n\n"
+        "(4) Execute SaveIntoDataSourceCommand\n"
+        "Arguments: Provider@1a, Map(table -> p.ds.gold), Overwrite\n"
+    )
+    unproj_ops = spark_applications.extract_plan_schemas(
+        numbered_sink_over_unprojected_join
+    )
+    self.assertEqual(unproj_ops[0]["columns"], [])
+    self.assertEqual(unproj_ops[0]["num_columns"], 0)
+
+    # Markdown SQL table preserves ~1,000-char unattached metric maps intact.
+    long_metrics = [
+        {"name": f"metric_{i}", "accumulatorId": str(i)} for i in range(1, 16)
+    ]
+    long_values = {
+        str(i): (
+            "total (min, med, max (stageId: taskId)) 356.2 KiB (84.2 KiB,"
+            f" 84.3 KiB, 187.6 KiB (stage 2.0: task {i}))"
+        )
+        for i in range(1, 15)
+    }
+    long_values["15"] = "172 ms"
+    md_out, _ = self._run(
+        "sql",
+        [
+            (200, _APPS),
+            (
+                200,
+                {
+                    "executionData": {
+                        "executionId": "4",
+                        "physicalPlanDescription": "== Physical Plan ==\n",
+                        "metrics": long_metrics,
+                        "metricValues": long_values,
+                    }
+                },
+            ),
+            (
+                200,
+                {
+                    "sparkPlanGraph": {
+                        "nodes": [{
+                            "node": {
+                                "sparkPlanGraphNodeId": "0",
+                                "name": "Execute SaveIntoDataSourceCommand",
+                                "metrics": [],
+                            }
+                        }]
+                    }
+                },
+            ),
+        ],
+        execution_id=4,
+    )
+    self.assertIn("metric_15: 172 ms", md_out)
+    self.assertNotIn("...[truncated]", md_out)
+
+  def test_human_nanos_and_compute_stage_skew_score(self):
+    self.assertEqual(spark_applications.human_nanos(None), "n/a")
+    self.assertEqual(spark_applications.human_nanos(-1), "n/a")
+    self.assertEqual(spark_applications.human_nanos(973_674_258), "974 ms")
+    self.assertEqual(spark_applications.human_nanos(3_800_000_000), "3.8 s")
+    self.assertEqual(
+        spark_applications.compute_stage_skew_score(1071, 5456), 0.02
+    )
+    self.assertEqual(
+        spark_applications.compute_stage_skew_score(100, 1000), 1.0
+    )
+    self.assertEqual(spark_applications.compute_stage_skew_score(0, 0), 0.0)
+    self.assertEqual(spark_applications.compute_stage_skew_score(0, 10), 1.0)
+    self.assertIsNone(spark_applications.compute_stage_skew_score(-1, 10))
+
+  def test_stages_quantiles_renders_skew_table_and_job_skew_score(self):
+    stages = {
+        "sparkApplicationStages": [
+            {
+                "stageId": "0",
+                "stageAttemptId": "0",
+                "status": "STAGE_STATUS_COMPLETE",
+                "numTasks": 4,
+                "submissionTime": "2026-10-28T21:20:00.000Z",
+                "completionTime": "2026-10-28T21:20:02.000Z",
+                "taskQuantileMetrics": {
+                    "durationMillis": {
+                        "count": "4",
+                        "percentile50": "500",
+                        "maximum": "2000",
+                    },
+                    "inputMetrics": {
+                        "recordsRead": {
+                            "count": "4",
+                            "percentile50": "250",
+                            "maximum": "250",
+                        }
+                    },
+                },
+                "name": "scan stage",
+            },
+            {
+                "stageId": "1",
+                "stageAttemptId": "0",
+                "status": "STAGE_STATUS_FAILED",
+                "numTasks": 8,
+                "submissionTime": "2026-10-28T21:20:02.000Z",
+                "completionTime": "2026-10-28T21:20:22.000Z",
+                "taskQuantileMetrics": {
+                    "durationMillis": {
+                        "count": "8",
+                        "percentile50": "10",
+                        "maximum": "99000",
+                    }
+                },
+                "name": "failed attempt excluded from job_skew_score",
+            },
+            {
+                "stageId": "1",
+                "stageAttemptId": "1",
+                "status": "STAGE_STATUS_COMPLETE",
+                "numTasks": 8,
+                "submissionTime": "2026-10-28T21:20:22.000Z",
+                "completionTime": "2026-10-28T21:20:30.000Z",
+                "taskQuantileMetrics": {
+                    "durationMillis": {
+                        "count": "8",
+                        "percentile50": "100",
+                        "maximum": "1000",
+                    },
+                    "shuffleReadMetrics": {
+                        "readRecords": {
+                            "count": "8",
+                            "maximum": "3001",
+                        }
+                    },
+                },
+                "name": "skewed join write",
+            },
+        ]
+    }
+    out, _ = self._run(
+        "stages", [(200, _APPS), (200, stages)], quantiles=True
+    )
+    self.assertIn("## Stage Task Skew (--quantiles)", out)
+    self.assertIn(
+        "| 0.0 | COMPLETE | 500 ms / 2.0 s | 4.0x | 0.00 | 250 / 250 (1.0x) |",
+        out,
+    )
+    self.assertIn(
+        "| 1.1 | COMPLETE | 100 ms / 1.0 s | 10.0x | 1.00 | 0 / 3,001"
+        " (skewed) |",
+        out,
+    )
+    # Weighted over completed stages: (2000*0.0 + 8000*1.0) / 10000 = 0.80.
+    self.assertIn("- **Duration-weighted job_skew_score**: `0.80`", out)
+
+  def test_stage_executors_and_summary_surface_cpu_fetch_wait_and_peak_memory(
+      self,
+  ):
+    stage = {
+        "stageData": {
+            "stageId": "4",
+            "status": "STAGE_STATUS_COMPLETE",
+            "numTasks": 8,
+            "taskQuantileMetrics": {
+                "durationMillis": {
+                    "count": "8",
+                    "minimum": "100",
+                    "percentile25": "100",
+                    "percentile50": "100",
+                    "percentile75": "500",
+                    "maximum": "1000",
+                },
+                "executorCpuTimeNanos": {
+                    "count": "8",
+                    "minimum": "50000000",
+                    "percentile25": "100000000",
+                    "percentile50": "200000000",
+                    "percentile75": "750000000",
+                    "maximum": "950000000",
+                },
+                "shuffleReadMetrics": {
+                    "fetchWaitTimeMillis": {
+                        "count": "8",
+                        "minimum": "0",
+                        "percentile25": "5",
+                        "percentile50": "12",
+                        "percentile75": "40",
+                        "maximum": "180",
+                    }
+                },
+            },
+        }
+    }
+    stage_out, _ = self._run(
+        "stage", [(200, _APPS), (200, stage)], stage_id=4
+    )
+    self.assertIn(
+        "- Task duration skew: median 100 ms, max 1.0 s (10.0x,"
+        " stage_skew_score: 1.00)",
+        stage_out,
+    )
+    self.assertIn(
+        "| Executor CPU time | 50 ms | 100 ms | 200 ms | 750 ms | 950 ms |",
+        stage_out,
+    )
+    self.assertIn(
+        "| Shuffle fetch wait | 0 ms | 5 ms | 12 ms | 40 ms | 180 ms |",
+        stage_out,
+    )
+
+    executors = {
+        "sparkApplicationExecutors": [{
+            "executorId": "0",
+            "hostPort": "10.0.0.2:34431",
+            "isActive": True,
+            "totalCores": 4,
+            "maxTasks": 4,
+            "totalTasks": "13",
+            "failedTasks": 0,
+            "totalDurationMillis": "30700",
+            "totalGcTimeMillis": "447",
+            "peakMemoryMetrics": {
+                "metrics": {
+                    "JVMHeapMemory": "698980624",
+                    "JVMOffHeapMemory": "113493960",
+                    "ProcessTreePythonRSSMemory": "67108864",
+                }
+            },
+        }]
+    }
+    exec_out, _ = self._run(
+        "executors", [(200, _APPS), (200, executors)]
+    )
+    self.assertIn("| 4 (4) |", exec_out)
+    self.assertIn("666.6 MiB / 108.2 MiB (PyRSS: 64.0 MiB)", exec_out)
+
+    sum_out, _ = self._run(
+        "summary",
+        [
+            (200, _APPS),
+            (200, {"jobsSummary": {"completedJobs": 1}}),
+            (200, {"stagesSummary": {"numCompletedStages": 2}}),
+            (
+                200,
+                {
+                    "totalExecutorSummary": {
+                        "count": 2,
+                        "totalCores": 8,
+                        "maxTasks": 8,
+                    }
+                },
+            ),
+        ],
+    )
+    self.assertIn(
+        "- Executors: 2 total, 0 dead; cores: 8, max tasks: 8", sum_out
+    )
+
 
 class MainTest(unittest.TestCase):
 
@@ -1013,6 +2109,33 @@ class MainTest(unittest.TestCase):
       code = spark_applications.main(["--batch_id", "b", "--project", "p"])
     self.assertEqual(code, 1)
     self.assertIn("Error: boom", err.getvalue())
+
+  def test_accepts_kebab_case_and_project_id_flag_aliases(self):
+    captured = {}
+
+    def record(client, args):
+      captured["parent"] = client.parent
+      captured["execution_id"] = args.execution_id
+      captured["stage_id"] = args.stage_id
+      captured["max_fetch"] = args.max_fetch
+
+    with mock.patch.dict(spark_applications.ACTIONS, {"sql": record}):
+      code = spark_applications.main([
+          "--project-id=my-proj",
+          "--batch-id=my-batch",
+          "--action=sql",
+          "--execution-id=7",
+          "--stage-id=2",
+          "--max-fetch=500",
+      ])
+    self.assertEqual(code, 0)
+    self.assertEqual(
+        captured["parent"],
+        "projects/my-proj/locations/us-central1/batches/my-batch",
+    )
+    self.assertEqual(captured["execution_id"], 7)
+    self.assertEqual(captured["stage_id"], 2)
+    self.assertEqual(captured["max_fetch"], 500)
 
 
 if __name__ == "__main__":

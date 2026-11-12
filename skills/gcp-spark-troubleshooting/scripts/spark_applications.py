@@ -50,7 +50,7 @@ import ssl
 import subprocess
 import sys
 import time
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -324,6 +324,58 @@ def human_millis(ms: Any) -> str:
   return f"{value / 60_000:.1f} min"
 
 
+def human_nanos(ns: Any) -> str:
+  """Formats nanoseconds via human_millis; None or negative render as n/a."""
+  if ns is None:
+    return "n/a"
+  try:
+    value = float(ns)
+  except (TypeError, ValueError):
+    return str(ns)
+  if value < 0:
+    return "n/a"
+  return human_millis(value / 1_000_000.0)
+
+
+def compute_stage_skew_score(median_ms: Any, max_ms: Any) -> Optional[float]:
+  """Computes normalized stage_skew_score = max(0, T_max / (5 * max(T_med, 1)) - 1)."""
+  try:
+    t_max = float(max_ms)
+    t_med = float(median_ms or 0)
+  except (TypeError, ValueError):
+    return None
+  if t_max < 0 or t_med < 0:
+    return None
+  if t_max == 0:
+    return 0.0
+  return round(max(0.0, t_max / (5.0 * max(t_med, 1.0)) - 1.0), 2)
+
+
+def human_count(num: Any) -> str:
+  """Formats a record/row count; None or negative values render as n/a."""
+  if num is None:
+    return "n/a"
+  try:
+    value = float(num)
+  except (TypeError, ValueError):
+    return str(num)
+  if value < 0:
+    return "n/a"
+  return f"{int(round(value)):,}"
+
+
+def human_io(bytes_val: Any, records_val: Any = 0) -> str:
+  """Formats byte volume with optional positive row count."""
+  b_str = human_bytes(bytes_val)
+  try:
+    rec = int(records_val or 0)
+  except (TypeError, ValueError):
+    rec = 0
+  if rec > 0:
+    return f"{b_str} ({rec:,} rows)"
+  return b_str
+
+
 def truncate(text: Any, limit: int = _TEXT_LIMIT) -> str:
   text = str(text or "")
   return text if len(text) <= limit else text[:limit] + " ...[truncated]"
@@ -477,7 +529,7 @@ _CERTIFICATE_HINT = (
 )
 
 
-@functools.lru_cache(maxsize=None)
+@functools.lru_cache(maxsize=None)  # pylint: disable=g-use-functools-cache
 def ssl_context() -> ssl.SSLContext:
   """Returns a certificate-verifying TLS context that needs no extra packages.
 
@@ -853,12 +905,22 @@ def stage_row(stage: Dict[str, Any]) -> Dict[str, Any]:
       "executorRunTimeMillis": field(metrics, "executor_run_time_millis"),
       "jvmGcTimeMillis": field(metrics, "jvm_gc_time_millis"),
       "inputBytes": field(metrics, "stage_input_metrics", "bytes_read"),
+      "inputRecords": field(metrics, "stage_input_metrics", "records_read"),
       "outputBytes": field(metrics, "stage_output_metrics", "bytes_written"),
+      "outputRecords": field(
+          metrics, "stage_output_metrics", "records_written"
+      ),
       "shuffleReadBytes": field(
           metrics, "stage_shuffle_read_metrics", "bytes_read"
       ),
+      "shuffleReadRecords": field(
+          metrics, "stage_shuffle_read_metrics", "records_read"
+      ),
       "shuffleWriteBytes": field(
           metrics, "stage_shuffle_write_metrics", "bytes_written"
+      ),
+      "shuffleWriteRecords": field(
+          metrics, "stage_shuffle_write_metrics", "records_written"
       ),
       "memoryBytesSpilled": field(metrics, "memory_bytes_spilled"),
       "diskBytesSpilled": field(metrics, "disk_bytes_spilled"),
@@ -867,6 +929,19 @@ def stage_row(stage: Dict[str, Any]) -> Dict[str, Any]:
   if reason:
     row["failureReason"] = summarize_error(reason)
   return row
+
+
+def _nonneg_sum(rows: List[Dict[str, Any]], key: str) -> int:
+  total = 0
+  for r in rows:
+    val = r.get(key, 0)
+    try:
+      ival = int(val or 0)
+    except (TypeError, ValueError):
+      ival = 0
+    if ival > 0:
+      total += ival
+  return total
 
 
 # ------------------------------------------------------------------------------
@@ -962,6 +1037,16 @@ def action_summary(client: SparkApplicationsClient, args) -> None:
         f"> Quantile data status is `{info.get('quantileDataStatus')}`;"
         " task quantile metrics may be incomplete.\n"
     )
+  attempts = info.get("attempts") or []
+  if attempts:
+    print("## Application")
+    for attempt in attempts:
+      print(
+          f"- Spark {attempt.get('appSparkVersion', '?')}, started"
+          f" {attempt.get('startTime', '?')}, duration"
+          f" {human_millis(attempt.get('durationMillis'))}, completed:"
+          f" {bool(attempt.get('completed'))}"
+      )
   print("## Jobs")
   print(
       f"- Completed: {field(jobs, 'completed_jobs')}, failed:"
@@ -976,9 +1061,11 @@ def action_summary(client: SparkApplicationsClient, args) -> None:
       f" {field(stages, 'num_skipped_stages')}"
   )
   print("## Executors")
+  max_tasks = field(total, "max_tasks")
+  max_tasks_suffix = f", max tasks: {max_tasks}" if max_tasks > 0 else ""
   print(
       f"- Executors: {field(total, 'count')} total, {field(dead, 'count')}"
-      f" dead; cores: {field(total, 'total_cores')}"
+      f" dead; cores: {field(total, 'total_cores')}{max_tasks_suffix}"
   )
   print(
       f"- Tasks: {field(total, 'total_tasks')} total,"
@@ -995,6 +1082,11 @@ def action_summary(client: SparkApplicationsClient, args) -> None:
       f"- Input: {human_bytes(field(total, 'total_input_bytes'))}, shuffle"
       f" read: {human_bytes(field(total, 'total_shuffle_read'))}, shuffle"
       f" write: {human_bytes(field(total, 'total_shuffle_write'))}"
+  )
+  print(
+      "- Stage/SQL I/O note: executor summary omits record counts, stage"
+      " output bytes, and DataSourceV2 connector metrics; run --action=stages"
+      " and --action=sql for row, byte, and schema details"
   )
   print(
       f"- Dead-executor share: {indicators['executorMortalityRate']}%, storage"
@@ -1046,20 +1138,102 @@ def action_stages(client: SparkApplicationsClient, args) -> None:
   if args.format == "json":
     _print_json(stages)
     return
-  rows = [stage_row(s) for s in stages]
+  paired = [(s, stage_row(s)) for s in stages]
   if args.sort == "duration":
-    rows.sort(key=lambda r: r["durationMillis"] or 0, reverse=True)
+    paired.sort(key=lambda sr: sr[1]["durationMillis"] or 0, reverse=True)
   elif args.sort == "run_time":
-    rows.sort(key=lambda r: r["executorRunTimeMillis"] or 0, reverse=True)
+    paired.sort(
+        key=lambda sr: sr[1]["executorRunTimeMillis"] or 0, reverse=True
+    )
+  rows = [r for _, r in paired]
   print(f"# Stages of `{app_id}` ({len(rows)} shown)\n")
   if not rows:
     print("No stages matched.")
     return
+  latest_complete_by_stage: Dict[Any, Dict[str, Any]] = {}
+  for r in rows:
+    if r["status"] != "COMPLETE":
+      continue
+    sid = r["stageId"]
+    prev = latest_complete_by_stage.get(sid)
+    if prev is None or (r.get("attempt") or 0) >= (prev.get("attempt") or 0):
+      latest_complete_by_stage[sid] = r
+  completed_rows = [
+      r
+      for r in rows
+      if r["status"] == "COMPLETE"
+      and latest_complete_by_stage.get(r["stageId"]) is r
+  ]
+  superseded_complete_rows = [
+      r
+      for r in rows
+      if r["status"] == "COMPLETE"
+      and latest_complete_by_stage.get(r["stageId"]) is not r
+  ]
+  other_rows = [r for r in rows if r["status"] != "COMPLETE"]
+  io_keys = (
+      "inputBytes",
+      "inputRecords",
+      "outputBytes",
+      "outputRecords",
+      "shuffleReadBytes",
+      "shuffleReadRecords",
+      "shuffleWriteBytes",
+      "shuffleWriteRecords",
+  )
+
+  def _fmt_stage_totals(subset: List[Dict[str, Any]]) -> str:
+    in_b = _nonneg_sum(subset, "inputBytes")
+    in_r = _nonneg_sum(subset, "inputRecords")
+    out_b = _nonneg_sum(subset, "outputBytes")
+    out_r = _nonneg_sum(subset, "outputRecords")
+    sr_b = _nonneg_sum(subset, "shuffleReadBytes")
+    sr_r = _nonneg_sum(subset, "shuffleReadRecords")
+    sw_b = _nonneg_sum(subset, "shuffleWriteBytes")
+    sw_r = _nonneg_sum(subset, "shuffleWriteRecords")
+    return (
+        f"input {human_io(in_b, in_r)}, output {human_io(out_b, out_r)},"
+        f" shuffle read {human_io(sr_b, sr_r)}, shuffle write"
+        f" {human_io(sw_b, sw_r)}"
+    )
+
+  has_other_io = any(
+      any((r.get(k) or 0) > 0 for k in io_keys) for r in other_rows
+  )
+  has_superseded_io = any(
+      any((r.get(k) or 0) > 0 for k in io_keys)
+      for r in superseded_complete_rows
+  )
+  if completed_rows:
+    print(
+        f"- **Stage I/O totals ({len(completed_rows)} completed)**:"
+        f" {_fmt_stage_totals(completed_rows)}"
+    )
+    if has_superseded_io:
+      print(
+          "- **Superseded completed attempt I/O"
+          f" ({len(superseded_complete_rows)} earlier attempt(s), excluded"
+          " above to avoid resubmission double-counting)**:"
+          f" {_fmt_stage_totals(superseded_complete_rows)}"
+      )
+    if has_other_io:
+      print(
+          f"- **Failed/active attempt I/O ({len(other_rows)} non-completed,"
+          " excluded above to avoid retry double-counting)**:"
+          f" {_fmt_stage_totals(other_rows)}"
+      )
+    print()
+  else:
+    print(
+        f"- **Partial stage I/O before failure (0 completed,"
+        f" {len(other_rows)} failed/active)**:"
+        f" {_fmt_stage_totals(other_rows)}\n"
+    )
   print(
       "| Stage | Status | Tasks (failed/killed) | Duration | GC / run |"
-      " Input | Shuffle R/W | Spill mem/disk | Name |"
+      " Input | Output | Shuffle R/W | Spill mem/disk | Name |"
   )
-  print("|---|---|---|---|---|---|---|---|---|")
+  print("|---|---|---|---|---|---|---|---|---|---|")
   for r in rows:
     print(
         f"| {r['stageId']}.{r['attempt']} | {r['status']} |"
@@ -1067,9 +1241,10 @@ def action_stages(client: SparkApplicationsClient, args) -> None:
         f" {human_millis(r['durationMillis'])} |"
         f" {human_millis(r['jvmGcTimeMillis'])} /"
         f" {human_millis(r['executorRunTimeMillis'])} |"
-        f" {human_bytes(r['inputBytes'])} |"
-        f" {human_bytes(r['shuffleReadBytes'])} /"
-        f" {human_bytes(r['shuffleWriteBytes'])} |"
+        f" {human_io(r['inputBytes'], r['inputRecords'])} |"
+        f" {human_io(r['outputBytes'], r['outputRecords'])} |"
+        f" {human_io(r['shuffleReadBytes'], r['shuffleReadRecords'])} /"
+        f" {human_io(r['shuffleWriteBytes'], r['shuffleWriteRecords'])} |"
         f" {human_bytes(r['memoryBytesSpilled'])} /"
         f" {human_bytes(r['diskBytesSpilled'])} | {r['name']} |"
     )
@@ -1079,20 +1254,104 @@ def action_stages(client: SparkApplicationsClient, args) -> None:
           f"\n**Stage {r['stageId']}.{r['attempt']} failure reason:**"
           f" `{r['failureReason']}`"
       )
+  if args.quantiles:
+    q_entries = []
+    for s, r in paired:
+      tqm = field(s, "task_quantile_metrics", default=None)
+      if not isinstance(tqm, dict) or not tqm:
+        continue
+      dur_q = field(tqm, "duration_millis", default=None)
+      if not isinstance(dur_q, dict) or not field(dur_q, "count"):
+        continue
+      med_ms = field(dur_q, "percentile_50")
+      max_ms = field(dur_q, "maximum")
+      ratio_str = f"{max_ms / med_ms:.1f}x" if med_ms > 0 else "n/a"
+      score = compute_stage_skew_score(med_ms, max_ms)
+      score_str = f"{score:.2f}" if score is not None else "n/a"
+      rec_q = None
+      for rpath in (
+          ("input_metrics", "records_read"),
+          ("shuffle_read_metrics", "read_records"),
+          ("output_metrics", "records_written"),
+          ("shuffle_write_metrics", "write_records"),
+      ):
+        cand = field(tqm, *rpath, default=None)
+        if (
+            isinstance(cand, dict)
+            and field(cand, "count")
+            and field(cand, "maximum") > 0
+        ):
+          rec_q = cand
+          break
+      if rec_q is not None:
+        r_med = field(rec_q, "percentile_50")
+        r_max = field(rec_q, "maximum")
+        r_ratio = f"{r_max / r_med:.1f}x" if r_med > 0 else "skewed"
+        rec_str = f"{human_count(r_med)} / {human_count(r_max)} ({r_ratio})"
+      else:
+        rec_str = "n/a"
+      q_entries.append(
+          (r, med_ms, max_ms, ratio_str, score, score_str, rec_str)
+      )
+    if q_entries:
+      print("\n## Stage Task Skew (--quantiles)\n")
+      print(
+          "| Stage | Status | Task Duration (med / max) | Skew Ratio |"
+          " Skew Score | Partition Rows (med / max) |"
+      )
+      print("|---|---|---|---|---|---|")
+      weighted_sum = 0.0
+      weight_total = 0.0
+      completed_ids = {id(cr) for cr in completed_rows}
+      for r, med_ms, max_ms, ratio_str, score, score_str, rec_str in q_entries:
+        print(
+            f"| {r['stageId']}.{r['attempt']} | {r['status']} |"
+            f" {human_millis(med_ms)} / {human_millis(max_ms)} |"
+            f" {ratio_str} | {score_str} | {rec_str} |"
+        )
+        if (
+            id(r) in completed_ids
+            and score is not None
+            and (r.get("durationMillis") or 0) > 0
+        ):
+          dur_w = float(r["durationMillis"])
+          weighted_sum += dur_w * score
+          weight_total += dur_w
+      if weight_total > 0:
+        job_skew = round(weighted_sum / weight_total, 2)
+        print(f"\n- **Duration-weighted job_skew_score**: `{job_skew:.2f}`")
 
 
 _QUANTILE_ROWS = (
     ("Task duration", ("duration_millis",), human_millis),
     ("Executor run time", ("executor_run_time_millis",), human_millis),
+    ("Executor CPU time", ("executor_cpu_time_nanos",), human_nanos),
     ("GC time", ("jvm_gc_time_millis",), human_millis),
     ("Scheduler delay", ("scheduler_delay_millis",), human_millis),
     ("Input bytes", ("input_metrics", "bytes_read"), human_bytes),
+    ("Input records", ("input_metrics", "records_read"), human_count),
     ("Output bytes", ("output_metrics", "bytes_written"), human_bytes),
+    ("Output records", ("output_metrics", "records_written"), human_count),
     ("Shuffle read bytes", ("shuffle_read_metrics", "read_bytes"), human_bytes),
+    (
+        "Shuffle read records",
+        ("shuffle_read_metrics", "read_records"),
+        human_count,
+    ),
+    (
+        "Shuffle fetch wait",
+        ("shuffle_read_metrics", "fetch_wait_time_millis"),
+        human_millis,
+    ),
     (
         "Shuffle write bytes",
         ("shuffle_write_metrics", "write_bytes"),
         human_bytes,
+    ),
+    (
+        "Shuffle write records",
+        ("shuffle_write_metrics", "write_records"),
+        human_count,
     ),
     ("Memory spilled", ("memory_bytes_spilled",), human_bytes),
     ("Disk spilled", ("disk_bytes_spilled",), human_bytes),
@@ -1126,12 +1385,37 @@ def action_stage(client: SparkApplicationsClient, args) -> None:
       f" {row['numFailedTasks']} failed, {row['numKilledTasks']} killed"
   )
   print(f"- Duration: {human_millis(row['durationMillis'])}")
+  print(
+      f"- Input: {human_io(row['inputBytes'], row['inputRecords'])}, output:"
+      f" {human_io(row['outputBytes'], row['outputRecords'])}"
+  )
+  print(
+      f"- Shuffle read:"
+      f" {human_io(row['shuffleReadBytes'], row['shuffleReadRecords'])},"
+      f" shuffle write:"
+      f" {human_io(row['shuffleWriteBytes'], row['shuffleWriteRecords'])}"
+  )
+  print(
+      f"- Spill: memory {human_bytes(row['memoryBytesSpilled'])}, disk"
+      f" {human_bytes(row['diskBytesSpilled'])}"
+  )
   if row.get("failureReason"):
     print(f"- Failure reason: `{row['failureReason']}`")
   quantiles = field(stage, "task_quantile_metrics", default={})
   if not quantiles:
     print("\nNo task quantile metrics were returned for this stage.")
     return
+  dur_q = field(quantiles, "duration_millis", default=None)
+  if isinstance(dur_q, dict) and field(dur_q, "count"):
+    med_ms = field(dur_q, "percentile_50")
+    max_ms = field(dur_q, "maximum")
+    ratio = f"{max_ms / med_ms:.1f}x" if med_ms > 0 else "n/a"
+    score = compute_stage_skew_score(med_ms, max_ms)
+    score_txt = f"{score:.2f}" if score is not None else "n/a"
+    print(
+        f"- Task duration skew: median {human_millis(med_ms)}, max"
+        f" {human_millis(max_ms)} ({ratio}, stage_skew_score: {score_txt})"
+    )
   print("\n## Task quantiles\n")
   print("| Metric | Min | p25 | Median | p75 | Max |")
   print("|---|---|---|---|---|---|")
@@ -1241,18 +1525,34 @@ def action_executors(client: SparkApplicationsClient, args) -> None:
     print("No executors matched.")
     return
   print(
-      "| Executor | Host | Active | Tasks (failed) | Task time | GC |"
-      " Input | Shuffle R/W | Removed | Remove reason |"
+      "| Executor | Host | Active | Cores (maxTasks) | Tasks (failed) |"
+      " Task time | GC | Peak Heap / Off-Heap | Input | Shuffle R/W |"
+      " Removed | Remove reason |"
   )
-  print("|---|---|---|---|---|---|---|---|---|---|")
+  print("|---|---|---|---|---|---|---|---|---|---|---|---|")
   for e in executors:
     removed = parse_timestamp(e.get("removeTime"))
+    pm = field(e, "peak_memory_metrics", "metrics", default={})
+    if isinstance(pm, dict) and (
+        pm.get("JVMHeapMemory") or pm.get("JVMOffHeapMemory")
+    ):
+      peak_mem_str = (
+          f"{human_bytes(pm.get('JVMHeapMemory', 0))} /"
+          f" {human_bytes(pm.get('JVMOffHeapMemory', 0))}"
+      )
+      py_rss = pm.get("ProcessTreePythonRSSMemory", 0) or 0
+      if py_rss > 0:
+        peak_mem_str += f" (PyRSS: {human_bytes(py_rss)})"
+    else:
+      peak_mem_str = "n/a"
     print(
         f"| {e.get('executorId', '')} | {e.get('hostPort', '')} |"
-        f" {bool(e.get('isActive'))} | {field(e, 'total_tasks')}"
-        f" ({field(e, 'failed_tasks')}) |"
+        f" {bool(e.get('isActive'))} |"
+        f" {field(e, 'total_cores')} ({field(e, 'max_tasks')}) |"
+        f" {field(e, 'total_tasks')} ({field(e, 'failed_tasks')}) |"
         f" {human_millis(field(e, 'total_duration_millis'))} |"
         f" {human_millis(field(e, 'total_gc_time_millis'))} |"
+        f" {peak_mem_str} |"
         f" {human_bytes(field(e, 'total_input_bytes'))} |"
         f" {human_bytes(field(e, 'total_shuffle_read'))} /"
         f" {human_bytes(field(e, 'total_shuffle_write'))} |"
@@ -1334,10 +1634,518 @@ _JOIN_OPERATOR = re.compile(
 _KEY_PLAN_METRICS = (
     "data size",
     "number of output rows",
+    "number of written rows",
+    "written output",
+    "number of BQ rows read",
+    "number of BQ bytes read",
+    "size of files read",
+    "number of files read",
+    "number of written files",
+    "number of dynamic part",
+    "records read",
     "spill size",
     "shuffle bytes written",
+    "shuffle records written",
+    "number of partitions",
 )
-_ZERO_METRIC = re.compile(r"0(\.0)?( (B|ms))?\Z")
+_ZERO_METRIC = re.compile(
+    r"(?:total\s*\([^)]*(?:\([^)]*\)[^)]*)?\)\s*)?"
+    r"0(?:\.0)?(?:\s*(?:B|ms))?"
+    r"(?:\s*\(\s*0(?:\.0)?(?:\s*(?:B|ms))?\s*,"
+    r"\s*0(?:\.0)?(?:\s*(?:B|ms))?\s*,"
+    r"\s*0(?:\.0)?(?:\s*(?:B|ms))?(?:\s*\([^)]*\))?\s*\))?\Z"
+)
+_PLAN_SECTION_HEADER = re.compile(r"^\((\d+)\)\s+(.+)$")
+_IO_OPERATOR_NAME = re.compile(
+    r"\b(Scan|BatchScan|FileScan|InsertInto\w*|SaveIntoDataSource\w*"
+    r"|AppendData\w*|OverwriteByExpression\w*|OverwritePartitionsDynamic\w*"
+    r"|ReplaceData\w*|WriteDelta\w*|DeleteFromTable\w*"
+    r"|CreateTableAsSelect\w*|ReplaceTableAsSelect\w*"
+    r"|WriteToDataSourceV2\w*)\b"
+)
+_OUTPUT_COLS_LINE = re.compile(r"^(Output|Input)(?:\s*\[(\d+)\])?:\s*\[(.*)\]$")
+_MORE_FIELDS_RE = re.compile(
+    r"^\.\.\.\s*(\d+)\s+more\s+fields?$", re.IGNORECASE
+)
+_TREE_PREFIX = re.compile(r"^[\s:|+-]+(?:\*\(\d+\)\s+|\*\s+)?")
+_BATCH_SCAN_LINE = re.compile(r"^BatchScan\s+([^\[\s]+)\s*\[([^\]]*)\]\s*(.*)$")
+_FILE_SCAN_LINE = re.compile(
+    r"^FileScan\s+(\S+)(?:\s+([^\[\s]+))?\s*\[([^\]]*)\]\s*(.*)$"
+)
+_RELATION_LINE = re.compile(r"^Relation(?:V2)?\s*\[([^\]]*)\]\s*(.*)$")
+_V2_WRITE_LINE = re.compile(
+    r"^(?:Execute\s+)?(AppendData|OverwriteByExpression"
+    r"|OverwritePartitionsDynamic|ReplaceData|WriteDelta|DeleteFromTable"
+    r"|CreateTableAsSelect|ReplaceTableAsSelect"
+    r"|WriteToDataSourceV2)\b\s*(.*)$"
+)
+_INLINE_REL_COLS = re.compile(r"\bRelation(?:V2)?\s*\[([^\]]*)\]\s*([^\s,]*)")
+_PROJECT_LINE = re.compile(r"^Project\s+\[(.*)\]$")
+_READ_SCHEMA_RE = re.compile(r"ReadSchema:\s*struct<(.+)>\s*$")
+_LOCATION_RE = re.compile(
+    r"Location:\s*(.+?)(?:,\s*(?:PartitionFilters|PushedFilters|ReadSchema):|$)"
+)
+
+
+def _split_top_level_csv(text: str) -> List[str]:
+  """Splits a comma-separated list while ignoring commas nested in <>/()/."""
+  parts: List[str] = []
+  depth = 0
+  current: List[str] = []
+  for ch in text:
+    if ch in "<([":
+      depth += 1
+      current.append(ch)
+    elif ch in ">)]":
+      depth = max(0, depth - 1)
+      current.append(ch)
+    elif ch == "," and depth == 0:
+      item = "".join(current).strip()
+      if item:
+        parts.append(item)
+      current = []
+    else:
+      current.append(ch)
+  tail = "".join(current).strip()
+  if tail:
+    parts.append(tail)
+  return parts
+
+
+def _clean_col_name(expr: str) -> str:
+  alias = re.split(r"\s+[Aa][Ss]\s+", expr.strip())[-1]
+  cleaned = re.sub(r"#\d+L?\b", "", alias).strip().strip("`")
+  return cleaned
+
+
+def _parse_col_items(
+    items: List[str],
+    *,
+    clean_expr: bool = True,
+    explicit_count: Optional[int] = None,
+) -> Tuple[List[str], int, bool]:
+  """Parses column items while handling Spark `... N more fields` truncation."""
+  cols: List[str] = []
+  extra_count = 0
+  truncated = False
+  for raw_item in items:
+    stripped = raw_item.strip()
+    if not stripped:
+      continue
+    more_match = _MORE_FIELDS_RE.match(stripped)
+    if more_match:
+      extra_count += int(more_match.group(1))
+      truncated = True
+      continue
+    col_name = (
+        _clean_col_name(stripped)
+        if clean_expr
+        else stripped.split(":", 1)[0].strip()
+    )
+    if col_name:
+      cols.append(col_name)
+  inferred_total = len(cols) + extra_count
+  total = (
+      explicit_count
+      if explicit_count is not None and explicit_count >= inferred_total
+      else inferred_total
+  )
+  if total > len(cols):
+    truncated = True
+  return cols, total, truncated
+
+
+def _build_schema_entry(
+    node_id: int,
+    operator: str,
+    cols: List[str],
+    num_columns: int,
+    truncated: bool = False,
+    details: str = "",
+) -> Dict[str, Any]:
+  """Builds a normalized source/sink operator schema summary dict."""
+  entry: Dict[str, Any] = {
+      "node_id": node_id,
+      "operator": operator,
+      "num_columns": num_columns,
+      "columns": cols[:50],
+  }
+  if truncated or len(cols) > 50 or num_columns > len(entry["columns"]):
+    entry["columns_truncated"] = True
+  if details:
+    entry["details"] = details
+  return entry
+
+
+def _cols_from_trailing_bracket_arg(
+    arg_text: str,
+) -> Tuple[List[str], int, bool]:
+  """Extracts trailing `[col1, col2, ...]` column list from command args."""
+  if not arg_text:
+    return [], 0, False
+  parts = _split_top_level_csv(arg_text)
+  if not parts:
+    return [], 0, False
+  last = parts[-1].strip()
+  if last.startswith("[") and last.endswith("]") and "=" not in last:
+    raw = _split_top_level_csv(last[1:-1])
+    return _parse_col_items(raw, clean_expr=True)
+  return [], 0, False
+
+
+_SUBQUERY_BOUNDARY_RE = re.compile(
+    r"\n(?=^\s*(?:=+\s*Subqueries\s*=+\s*$|Subquery:\d+\b))", re.MULTILINE
+)
+_TREE_NODE_ID_RE = re.compile(r"\((\d+)\)\s*$", re.MULTILINE)
+
+
+def _extract_tree_plan_schemas(plan_text: str) -> List[Dict[str, Any]]:
+  """Extracts source/sink schemas from tree-formatted `== Physical Plan ==`."""
+  section = plan_text
+  if "== Physical Plan ==" in section:
+    section = section.split("== Physical Plan ==", 1)[1]
+  active_chunks = []
+  for chunk in _SUBQUERY_BOUNDARY_RE.split(section):
+    if "== Final Plan ==" in chunk and "== Initial Plan ==" in chunk:
+      chunk = chunk.split("== Final Plan ==", 1)[1].split(
+          "== Initial Plan ==", 1
+      )[0]
+    active_chunks.append(chunk)
+  section = "\n".join(active_chunks)
+
+  stripped_lines = []
+  first_project_info: Tuple[List[str], int, bool] = ([], 0, False)
+  first_relation_info: Tuple[List[str], int, bool] = ([], 0, False)
+  crossed_branch = False
+  for raw_ln in section.splitlines():
+    s = _TREE_PREFIX.sub("", raw_ln).strip()
+    if not s or s.startswith("==") or s.startswith("Subquery:"):
+      continue
+    stripped_lines.append(s)
+    if _JOIN_OPERATOR.search(s) or s.startswith("Union"):
+      crossed_branch = True
+    if not crossed_branch:
+      if not first_project_info[0] and not first_project_info[1]:
+        pm = _PROJECT_LINE.match(s)
+        if pm:
+          first_project_info = _parse_col_items(
+              _split_top_level_csv(pm.group(1)), clean_expr=True
+          )
+      if not first_relation_info[0] and not first_relation_info[1]:
+        rm = _RELATION_LINE.match(s)
+        if rm:
+          first_relation_info = _parse_col_items(
+              _split_top_level_csv(rm.group(1)), clean_expr=True
+          )
+
+  results: List[Dict[str, Any]] = []
+  next_id = 0
+  for s in stripped_lines:
+    if s == "Execute SaveIntoDataSourceCommand":
+      continue
+    if s.startswith(
+        "Execute InsertIntoHadoopFsRelationCommand "
+    ) or s.startswith("InsertIntoHadoopFsRelationCommand "):
+      prefix = (
+          "Execute InsertIntoHadoopFsRelationCommand "
+          if s.startswith("Execute ")
+          else "InsertIntoHadoopFsRelationCommand "
+      )
+      rest = s[len(prefix) :].strip()
+      arg_cols, arg_num, arg_trunc = _cols_from_trailing_bracket_arg(rest)
+      if arg_cols or arg_num:
+        cols, num_cols, trunc = arg_cols, arg_num, arg_trunc
+      else:
+        cols, num_cols, trunc = first_project_info
+      arg_parts = _split_top_level_csv(rest)
+      details = truncate(", ".join(arg_parts[:4]), 240)
+      results.append(
+          _build_schema_entry(
+              next_id, prefix.strip(), cols, num_cols, trunc, details
+          )
+      )
+      next_id += 1
+      continue
+
+    if s.startswith("SaveIntoDataSourceCommand "):
+      rest = s[len("SaveIntoDataSourceCommand ") :].strip()
+      cols, num_cols, trunc = (
+          first_project_info
+          if (first_project_info[0] or first_project_info[1])
+          else first_relation_info
+      )
+      map_idx = rest.find("Map(")
+      details = truncate(rest[map_idx:] if map_idx >= 0 else rest, 240)
+      results.append(
+          _build_schema_entry(
+              next_id,
+              "SaveIntoDataSourceCommand",
+              cols,
+              num_cols,
+              trunc,
+              details,
+          )
+      )
+      next_id += 1
+      continue
+
+    vm = _V2_WRITE_LINE.match(s)
+    if vm:
+      op_kind, rest = vm.group(1), vm.group(2).strip()
+      irm = _INLINE_REL_COLS.search(rest)
+      if irm:
+        cols, num_cols, trunc = _parse_col_items(
+            _split_top_level_csv(irm.group(1)), clean_expr=True
+        )
+        tbl_target = irm.group(2).strip()
+        op_name = f"{op_kind} {tbl_target}".strip()
+      else:
+        cols, num_cols, trunc = (
+            first_project_info
+            if (first_project_info[0] or first_project_info[1])
+            else first_relation_info
+        )
+        op_name = op_kind
+      details = truncate(rest, 240)
+      results.append(
+          _build_schema_entry(next_id, op_name, cols, num_cols, trunc, details)
+      )
+      next_id += 1
+      continue
+
+    bm = _BATCH_SCAN_LINE.match(s)
+    if bm:
+      tbl_alias, raw_cols, rest = bm.group(1), bm.group(2), bm.group(3)
+      cols, num_cols, trunc = _parse_col_items(
+          _split_top_level_csv(raw_cols), clean_expr=True
+      )
+      details = truncate(rest.split(", Read session Id")[0].strip(), 240)
+      results.append(
+          _build_schema_entry(
+              next_id,
+              f"BatchScan {tbl_alias}",
+              cols,
+              num_cols,
+              trunc,
+              details,
+          )
+      )
+      next_id += 1
+      continue
+
+    fm = _FILE_SCAN_LINE.match(s)
+    if fm:
+      fmt, tbl, raw_cols, rest = (
+          fm.group(1),
+          fm.group(2),
+          fm.group(3),
+          fm.group(4),
+      )
+      rsm = _READ_SCHEMA_RE.search(rest)
+      if rsm:
+        cols, num_cols, trunc = _parse_col_items(
+            _split_top_level_csv(rsm.group(1)), clean_expr=False
+        )
+      else:
+        cols, num_cols, trunc = _parse_col_items(
+            _split_top_level_csv(raw_cols), clean_expr=True
+        )
+      loc_m = _LOCATION_RE.search(rest)
+      details = truncate(loc_m.group(1).strip(), 240) if loc_m else ""
+      op_name = f"FileScan {fmt}" + (f" {tbl}" if tbl else "")
+      results.append(
+          _build_schema_entry(next_id, op_name, cols, num_cols, trunc, details)
+      )
+      next_id += 1
+      continue
+
+    rm = _RELATION_LINE.match(s)
+    if rm:
+      raw_cols, rest = rm.group(1), rm.group(2).strip()
+      cols, num_cols, trunc = _parse_col_items(
+          _split_top_level_csv(raw_cols), clean_expr=True
+      )
+      op_name = f"Relation {rest}".strip()
+      results.append(
+          _build_schema_entry(next_id, op_name, cols, num_cols, trunc)
+      )
+      next_id += 1
+  return results
+
+
+_CODEGEN_SUFFIX_RE = re.compile(r"\s*\[codegen id\s*:\s*\d+\]\s*$")
+
+
+def _parse_numbered_block_cols(
+    lines: List[str],
+) -> Tuple[
+    Tuple[List[str], int, bool],
+    Tuple[List[str], int, bool],
+    str,
+    str,
+]:
+  """Extracts Output/Input cols, ReadSchema cols, Arguments, and Location."""
+  out_info: Tuple[List[str], int, bool] = ([], 0, False)
+  rs_info: Tuple[List[str], int, bool] = ([], 0, False)
+  raw_arguments = ""
+  location = ""
+  for ln in lines[1:]:
+    col_match = _OUTPUT_COLS_LINE.match(ln)
+    if col_match and not out_info[0] and not out_info[1]:
+      explicit_n = int(col_match.group(2)) if col_match.group(2) else None
+      raw_cols = _split_top_level_csv(col_match.group(3))
+      out_info = _parse_col_items(
+          raw_cols, clean_expr=True, explicit_count=explicit_n
+      )
+    elif ln.startswith("ReadSchema: struct<") and ln.endswith(">"):
+      inner = ln[len("ReadSchema: struct<") : -1]
+      fields = _split_top_level_csv(inner)
+      rs_info = _parse_col_items(fields, clean_expr=False)
+    elif ln.startswith("Location:") and not location:
+      location = truncate(ln[len("Location:") :].strip(), 240)
+    elif ln.startswith("Arguments:"):
+      raw_arguments = ln[len("Arguments:") :].strip()
+      if not location:
+        location = truncate(raw_arguments, 240)
+  return out_info, rs_info, raw_arguments, location
+
+
+def extract_plan_schemas(plan_text: str) -> List[Dict[str, Any]]:
+  """Extracts source/sink column schemas and locations from plan details."""
+  if not plan_text:
+    return []
+  active_node_ids: Set[int] = set()
+  pre_branch_ids: List[int] = []
+  has_aqe = False
+  blocks: List[str] = []
+  for chunk_idx, piece in enumerate(_SUBQUERY_BOUNDARY_RE.split(plan_text)):
+    stripped_piece = piece.lstrip()
+    if not stripped_piece:
+      continue
+    if _PLAN_SECTION_HEADER.match(stripped_piece):
+      tree_part, details_part = "", stripped_piece
+    else:
+      numbered_split = re.split(r"\n(?=\(\d+\)\s+)", piece, maxsplit=1)
+      tree_part = numbered_split[0]
+      details_part = numbered_split[1] if len(numbered_split) > 1 else ""
+    if tree_part:
+      if "== Final Plan ==" in tree_part and "== Initial Plan ==" in tree_part:
+        has_aqe = True
+        active_tree = tree_part.split("== Initial Plan ==", 1)[0]
+      else:
+        active_tree = tree_part
+      active_node_ids.update(
+          int(n) for n in _TREE_NODE_ID_RE.findall(active_tree)
+      )
+      if chunk_idx == 0:
+        for raw_ln in active_tree.splitlines():
+          s = _TREE_PREFIX.sub("", raw_ln).strip()
+          if not s or s.startswith("==") or s.startswith("Subquery:"):
+            continue
+          if _JOIN_OPERATOR.search(s) or re.search(r"^(?:\*\s*)?Union\b", s):
+            break
+          nm = _TREE_NODE_ID_RE.search(s)
+          if nm:
+            pre_branch_ids.append(int(nm.group(1)))
+    if details_part:
+      blocks.extend(re.split(r"\n(?=\(\d+\)\s+)", details_part.strip()))
+  if not blocks:
+    return _extract_tree_plan_schemas(plan_text)
+
+  parsed_blocks: List[Tuple[int, str, List[str]]] = []
+  block_by_id: Dict[int, Tuple[str, List[str]]] = {}
+  seen_node_ids: Set[int] = set()
+  for block in blocks:
+    lines = [ln.strip() for ln in block.splitlines() if ln.strip()]
+    if not lines:
+      continue
+    m = _PLAN_SECTION_HEADER.match(lines[0])
+    if not m:
+      continue
+    node_id = int(m.group(1))
+    if has_aqe and node_id not in active_node_ids:
+      continue
+    if node_id in seen_node_ids:
+      continue
+    seen_node_ids.add(node_id)
+    operator = m.group(2).strip()
+    parsed_blocks.append((node_id, operator, lines))
+    block_by_id[node_id] = (operator, lines)
+
+  first_project_info: Tuple[List[str], int, bool] = ([], 0, False)
+  first_relation_info: Tuple[List[str], int, bool] = ([], 0, False)
+  for nid in pre_branch_ids:
+    if nid not in block_by_id:
+      continue
+    b_op, b_lines = block_by_id[nid]
+    b_op_clean = _CODEGEN_SUFFIX_RE.sub("", b_op).strip()
+    b_out, b_rs, _, _ = _parse_numbered_block_cols(b_lines)
+    if (
+        b_op_clean == "Project"
+        and not first_project_info[0]
+        and not first_project_info[1]
+    ):
+      first_project_info = b_out
+    elif (
+        b_op_clean.startswith(("Scan ", "BatchScan ", "FileScan ", "Relation"))
+        and not first_relation_info[0]
+        and not first_relation_info[1]
+    ):
+      first_relation_info = (
+          b_rs if (b_rs[0] and len(b_rs[0]) >= len(b_out[0])) else b_out
+      )
+
+  results: List[Dict[str, Any]] = []
+  for node_id, operator, lines in parsed_blocks:
+    if not _IO_OPERATOR_NAME.search(operator):
+      continue
+    op_clean = _CODEGEN_SUFFIX_RE.sub("", operator).strip()
+    out_info, rs_info, raw_arguments, location = _parse_numbered_block_cols(
+        lines
+    )
+    rel_info: Tuple[List[str], int, bool] = ([], 0, False)
+    if _V2_WRITE_LINE.match(op_clean) and raw_arguments:
+      irm = _INLINE_REL_COLS.search(raw_arguments)
+      if irm:
+        rel_info = _parse_col_items(
+            _split_top_level_csv(irm.group(1)), clean_expr=True
+        )
+    arg_info = _cols_from_trailing_bracket_arg(raw_arguments)
+    is_sink = bool(
+        op_clean.startswith((
+            "Execute SaveIntoDataSourceCommand",
+            "SaveIntoDataSourceCommand",
+            "Execute InsertInto",
+            "InsertInto",
+        ))
+        or _V2_WRITE_LINE.match(op_clean)
+    )
+    if rs_info[0] and len(rs_info[0]) >= len(out_info[0]):
+      chosen_cols, num_cols, trunc = (
+          rs_info[0],
+          max(rs_info[1], out_info[1]),
+          rs_info[2],
+      )
+    elif out_info[0] or out_info[1]:
+      chosen_cols, num_cols, trunc = out_info
+    elif rel_info[0] or rel_info[1]:
+      chosen_cols, num_cols, trunc = rel_info
+    elif arg_info[0] or arg_info[1]:
+      chosen_cols, num_cols, trunc = arg_info
+    elif is_sink:
+      chosen_cols, num_cols, trunc = (
+          first_project_info
+          if (first_project_info[0] or first_project_info[1])
+          else first_relation_info
+      )
+    else:
+      chosen_cols, num_cols, trunc = ([], 0, False)
+    results.append(
+        _build_schema_entry(
+            node_id, operator, chosen_cols, num_cols, trunc, location
+        )
+    )
+  return results
 
 
 def count_joins(plan_text: str) -> Tuple[Dict[str, int], Dict[str, int]]:
@@ -1353,7 +2161,7 @@ def count_joins(plan_text: str) -> Tuple[Dict[str, int], Dict[str, int]]:
   Returns:
     (initial plan counts, final plan counts) keyed by operator name.
   """
-  tree = (plan_text or "").split("\n\n(", 1)[0]
+  tree = re.split(r"\n\n(?=\(\d+\)\s+)", plan_text or "", maxsplit=1)[0]
   final, initial = tree, tree
   if "== Final Plan ==" in tree and "== Initial Plan ==" in tree:
     after_final = tree.split("== Final Plan ==", 1)[1]
@@ -1381,8 +2189,34 @@ def plan_nodes(graph: Dict[str, Any]) -> List[Dict[str, Any]]:
   return nodes
 
 
+def _graph_accumulator_ids(graph: Dict[str, Any]) -> Set[str]:
+  """Collects accumulator IDs attached to SparkPlanGraph nodes or clusters."""
+  acc_ids: Set[str] = set()
+  pending = list(graph.get("nodes") or [])
+  while pending:
+    wrapper = pending.pop(0)
+    if "cluster" in wrapper:
+      cluster = wrapper["cluster"] or {}
+      for m in cluster.get("metrics") or []:
+        if m.get("accumulatorId") is not None:
+          acc_ids.add(str(m.get("accumulatorId")))
+      pending.extend(cluster.get("nodes") or [])
+    elif "node" in wrapper:
+      node = wrapper["node"] or {}
+      for m in node.get("metrics") or []:
+        if m.get("accumulatorId") is not None:
+          acc_ids.add(str(m.get("accumulatorId")))
+  return acc_ids
+
+
+def _order_plan_metrics(kept: Dict[str, str]) -> Dict[str, str]:
+  ordered = {k: kept[k] for k in _KEY_PLAN_METRICS if k in kept}
+  ordered.update(kept)
+  return ordered
+
+
 def action_sql_plan(client: SparkApplicationsClient, args) -> None:
-  """Summarizes the joins and exchanges of one SQL execution's query plan."""
+  """Summarizes operators, I/O metrics, joins, and schemas of one SQL plan."""
   app_id, _, _ = client.resolve_application(args.application_id)
   execution = (
       client.call(
@@ -1398,13 +2232,15 @@ def action_sql_plan(client: SparkApplicationsClient, args) -> None:
       ).get("sparkPlanGraph")
       or {}
   )
-  initial, final = count_joins(execution.get("physicalPlanDescription", ""))
+  plan_text = execution.get("physicalPlanDescription", "")
+  initial, final = count_joins(plan_text)
+  io_operators = extract_plan_schemas(plan_text)
   values = execution.get("metricValues") or {}
+  all_nodes = plan_nodes(graph)
+  attached_acc_ids = _graph_accumulator_ids(graph)
   rows = []
-  for node in plan_nodes(graph):
-    name = node.get("name", "")
-    if "Join" not in name and "Exchange" not in name:
-      continue
+  for node in all_nodes:
+    name = (node.get("name") or "").strip()
     metrics = {
         m.get("name", ""): " ".join(
             str(values.get(str(m.get("accumulatorId")), "")).split()
@@ -1417,13 +2253,50 @@ def action_sql_plan(client: SparkApplicationsClient, args) -> None:
         for k, v in metrics.items()
         if v and not _ZERO_METRIC.match(v)
     }
-    ordered = {k: kept[k] for k in _KEY_PLAN_METRICS if k in kept}
-    ordered.update(kept)
+    if "Join" not in name and "Exchange" not in name and not kept:
+      continue
     rows.append({
         "node_id": field(node, "spark_plan_graph_node_id"),
         "name": name,
-        "metrics": ordered,
+        "metrics": _order_plan_metrics(kept),
     })
+
+  # Commands like SaveIntoDataSourceCommand (spark-bigquery-connector Direct V2)
+  # attach inner scan/shuffle accumulators to executionData.metrics rather than
+  # sparkPlanGraph nodes. Surface any unattached non-zero metrics instead of
+  # dropping them.
+  unattached_lists: Dict[str, List[str]] = {}
+  seen_unattached_aids: Set[str] = set()
+  for m in execution.get("metrics") or []:
+    aid = m.get("accumulatorId")
+    mname = m.get("name", "")
+    if aid is None or not mname:
+      continue
+    aid_str = str(aid)
+    if aid_str in attached_acc_ids or aid_str in seen_unattached_aids:
+      continue
+    seen_unattached_aids.add(aid_str)
+    val_str = " ".join(str(values.get(aid_str, "")).split())
+    if not val_str or _ZERO_METRIC.match(val_str):
+      continue
+    unattached_lists.setdefault(mname, []).append(val_str)
+  if unattached_lists:
+    unattached_kept = {
+        k: " / ".join(vs) for k, vs in unattached_lists.items()
+    }
+    ordered_unattached = _order_plan_metrics(unattached_kept)
+    if not rows and len(all_nodes) == 1:
+      rows.append({
+          "node_id": field(all_nodes[0], "spark_plan_graph_node_id"),
+          "name": (all_nodes[0].get("name") or "Execute Command").strip(),
+          "metrics": ordered_unattached,
+      })
+    else:
+      rows.append({
+          "node_id": -1,
+          "name": "Execution-level metrics",
+          "metrics": ordered_unattached,
+      })
   converted = max(
       0, initial.get("SortMergeJoin", 0) - final.get("SortMergeJoin", 0)
   )
@@ -1434,6 +2307,7 @@ def action_sql_plan(client: SparkApplicationsClient, args) -> None:
         "final_joins": final,
         "sort_merge_joins_converted_by_aqe": converted,
         "nodes": rows,
+        "io_operators": io_operators,
     })
     return
   print(f"# Query plan of SQL execution {args.execution_id} (`{app_id}`)\n")
@@ -1455,7 +2329,22 @@ def action_sql_plan(client: SparkApplicationsClient, args) -> None:
   print("|---|---|---|")
   for r in rows:
     metrics = "; ".join(f"{k}: {v}" for k, v in r["metrics"].items())
-    print(f"| {r['node_id']} | {r['name']} | {truncate(metrics, 400)} |")
+    print(f"| {r['node_id']} | {r['name']} | {truncate(metrics, 4000)} |")
+  if io_operators:
+    print("\n## Source & Sink Operator Schemas\n")
+    for op in io_operators:
+      cols_preview = ", ".join(op["columns"][:15])
+      if len(op["columns"]) > 15 or op.get("columns_truncated"):
+        cols_preview += ", ..."
+      line = (
+          f"- **Node {op['node_id']} `{op['operator']}`**:"
+          f" {op['num_columns']} columns"
+      )
+      if cols_preview:
+        line += f" (`{cols_preview}`)"
+      if op.get("details"):
+        line += f" -- {op['details']}"
+      print(line)
 
 
 def action_sql(client: SparkApplicationsClient, args) -> None:
@@ -1528,14 +2417,30 @@ def default_project() -> Optional[str]:
 def add_workload_arguments(parser: argparse.ArgumentParser) -> None:
   """Adds the flags that identify a batch or session; shared with siblings."""
   target = parser.add_mutually_exclusive_group()
-  target.add_argument("--batch_id", help="Dataproc Serverless batch ID")
-  target.add_argument("--session_id", help="Dataproc interactive session ID")
+  target.add_argument(
+      "--batch_id",
+      "--batch-id",
+      dest="batch_id",
+      help="Dataproc Serverless batch ID",
+  )
+  target.add_argument(
+      "--session_id",
+      "--session-id",
+      dest="session_id",
+      help="Dataproc interactive session ID",
+  )
   parser.add_argument(
-      "--project", help="GCP project ID (default: active gcloud project)"
+      "--project",
+      "--project_id",
+      "--project-id",
+      dest="project",
+      help="GCP project ID (default: active gcloud project)",
   )
   parser.add_argument("--region", default=DEFAULT_REGION, help="GCP region")
   parser.add_argument(
       "--application_id",
+      "--application-id",
+      dest="application_id",
       help="Spark application ID (default: the first one the workload has)",
   )
   parser.add_argument(
@@ -1573,35 +2478,55 @@ def main(argv: Optional[List[str]] = None) -> int:
   parser.add_argument(
       "--format", choices=["markdown", "json"], default="markdown"
   )
-  parser.add_argument("--stage_id", type=int, help="Stage ID (stage, tasks)")
+  parser.add_argument(
+      "--stage_id",
+      "--stage-id",
+      dest="stage_id",
+      type=int,
+      help="Stage ID (stage, tasks)",
+  )
   parser.add_argument(
       "--execution_id",
+      "--execution-id",
+      dest="execution_id",
       type=int,
-      help="SQL execution ID: summarize its joins and exchanges (sql)",
+      help=(
+          "SQL execution ID: summarize its operators, metrics, and joins (sql)"
+      ),
   )
   parser.add_argument(
       "--stage_attempt_id",
+      "--stage-attempt-id",
+      dest="stage_attempt_id",
       type=int,
       default=0,
       help="Stage attempt ID (default: 0)",
   )
   parser.add_argument(
       "--stage_status",
+      "--stage-status",
+      dest="stage_status",
       choices=STAGE_STATUSES,
       help="Only stages in this state (stages)",
   )
   parser.add_argument(
       "--task_status",
+      "--task-status",
+      dest="task_status",
       choices=TASK_STATUSES,
       help="Only tasks in this state (tasks; filtered locally)",
   )
   parser.add_argument(
       "--job_status",
+      "--job-status",
+      dest="job_status",
       choices=JOB_STATUSES,
       help="Only jobs in this state (jobs)",
   )
   parser.add_argument(
       "--executor_status",
+      "--executor-status",
+      dest="executor_status",
       choices=EXECUTOR_STATUSES,
       help="Only active or dead executors (executors)",
   )
@@ -1627,6 +2552,8 @@ def main(argv: Optional[List[str]] = None) -> int:
   )
   parser.add_argument(
       "--max_fetch",
+      "--max-fetch",
+      dest="max_fetch",
       type=int,
       default=2000,
       help="Maximum tasks to scan for --action=tasks (default: %(default)s)",
