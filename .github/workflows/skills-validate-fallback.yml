@@ -19,10 +19,7 @@ on:
     paths-ignore:
       - "skills/**"
   pull_request:
-    paths-ignore:
-      - "skills/**"
-  pull_request_target:
-    types: [labeled]
+    types: [opened, synchronize, reopened, labeled]
     paths-ignore:
       - "skills/**"
   workflow_dispatch:

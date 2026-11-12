@@ -19,12 +19,12 @@ on:
     paths:
       - "skills/**"
   pull_request:
+    types: [opened, synchronize, reopened, labeled]
     paths:
       - "skills/**"
-  pull_request_target:
-    types: [labeled]
-    paths:
-      - "skills/**"
+
+permissions:
+  contents: read
 
 jobs:
   skills-validate:
