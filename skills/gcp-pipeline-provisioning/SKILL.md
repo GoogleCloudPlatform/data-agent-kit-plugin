@@ -1,5 +1,5 @@
 ---
-name: gcp-pipeline-resource-provisioning
+name: gcp-pipeline-provisioning
 description: |
   Automates declarative resource creation and provisioning for data pipelines, supporting BigQuery, Dataform, Dataproc, BigQuery Data Transfer Service (DTS), and other resources. It manages environment-specific configurations (dev, staging, prod) through a deployment.yaml file.
   Use when:
@@ -56,8 +56,8 @@ list of supported resource types, run the following command:
 gcloud beta orchestration-pipelines resource-types list
 ```
 
-Refer to: references/gcp-pipeline-resource-provisioning_spec.md to understand
-the template for `deployment.yaml`.
+Refer to: references/gcp_pipeline_provisioning_spec.md to understand the
+template for `deployment.yaml`.
 
 ### Step 2: Discover Environment Parameters
 
@@ -112,9 +112,9 @@ configurations and resources.
 > [!TIP]
 >
 > **Use the Reference Spec**: The agent can use the
-> **`references/gcp_pipeline_resource_provisioning_spec.md`** file as a
-> template. It includes sample definitions for select supported resource types.
-> Copy and adapt the required resource blocks into the `deployment.yaml`. Use
+> **`references/gcp_pipeline_provisioning_spec.md`** file as a template. It
+> includes sample definitions for select supported resource types. Copy and
+> adapt the required resource blocks into the `deployment.yaml`. Use
 > `gcloud beta orchestration-pipelines resource-types list` when needed.
 
 > [!IMPORTANT]

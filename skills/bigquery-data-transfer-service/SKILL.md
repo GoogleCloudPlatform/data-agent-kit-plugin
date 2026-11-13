@@ -7,7 +7,7 @@ description: Discovers and inspects BigQuery Data Transfer Service (DTS) configu
   data that may already be managed by a DTS transfer.
 license: Apache-2.0
 metadata:
-  version: v2
+  version: v3
   publisher: google
 ---
 
@@ -18,8 +18,8 @@ metadata:
 > [!IMPORTANT]
 >
 > All new BigQuery Data Transfer Service (DTS) configurations **MUST** be
-> provisioned through the **gcp pipeline resource provisioning** framework,
-> which includes generating a `deployment.yaml`.
+> provisioned through the **gcp pipeline provisioning** framework, which
+> includes generating a `deployment.yaml`.
 >
 > -   **Do NOT** use imperative CLI commands (e.g., `bq mk` or `gcloud`) to
 >     create or update configurations.
@@ -185,7 +185,7 @@ of the tasks.
 ## Definition of Done
 
 -   A BigQuery DTS transfer configuration has been discovered or provisioned
-    declaratively (via **gcp pipeline resource provisioning** with a generated
+    declaratively (via **gcp pipeline provisioning** with a generated
     `deployment.yaml`).
 -   Mandatory datasource parameters have been identified and confirmed with the
     user.
