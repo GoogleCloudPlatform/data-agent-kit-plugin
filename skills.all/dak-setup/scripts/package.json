@@ -1,0 +1,9 @@
+{
+  "name": "dak-setup",
+  "version": "0.1.0",
+  "description": "Data Agent Kit setup CLI.",
+  "type": "module",
+  "engines": {
+    "node": ">=22.6"
+  }
+}
