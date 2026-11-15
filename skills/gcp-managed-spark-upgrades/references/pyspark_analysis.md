@@ -3,15 +3,21 @@
 PySpark-specific checks: the Python runtime, Python language changes, Python
 dependencies, Conda and Pixi, and build checks. Use it with
 `spark_migration_reference.md`, which covers what every job type shares (version
-mapping, component versions, connectors, GPU/RAPIDS, and the Spark migration
-notes, including PySpark's).
+mapping, component versions, the Java runtime, connectors, GPU/RAPIDS, and the
+Spark migration notes, including PySpark's).
 
 ## Procedure
 
 1. Take the target's Python version and preinstalled Python libraries from its component page ("Component Versions" in `spark_migration_reference.md`).
 2.  Scan every `.py` file and configuration script as sections 1–3 below
     describe, and check the Spark migration notes, PySpark's included, as "Spark
-    Migration Notes" in `spark_migration_reference.md` describes.
+    Migration Notes" in `spark_migration_reference.md` describes. If the job
+    executes inline SQL (`spark.sql(...)`, `sqlContext.sql(...)`,
+    `selectExpr(...)`, `expr(...)`), sets `spark.sql.*` properties, or loads
+    `.sql` files, also check those queries and properties with
+    `spark_sql_analysis.md` (sections 1–2) and run its Catalyst parser check
+    (`spark_sql_analysis.md`, section 4.1) alongside the Python build checks in
+    section 4.
 3. Check the dependencies (sections 2 and 3) and run the build checks (section 4).
 4. Record each finding with its `file:line`, why it breaks on the target, and the fix. The report format is in SKILL.md Step 3.
 

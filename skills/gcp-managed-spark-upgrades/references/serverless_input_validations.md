@@ -33,7 +33,10 @@ Extract:
     `mainJarFileUri` (or `mainClass` with `jarFileUris`), `jarFileUris`,
     `fileUris`, `archiveUris`, and `args`; JARs compiled for incompatible Scala
     binary versions (e.g. `_2.12` vs `_2.13`) or Java bytecode targets must be
-    rebuilt for the target runtime (`jvm_build_reference.md`, section 1).
+    rebuilt for the target runtime (`jvm_build_reference.md`, section 1). For
+    Spark SQL (`sparkSqlBatch`): `queryFileUri`, `queryVariables`, and
+    `jarFileUris` (plus `environmentConfig.peripheralsConfig.metastoreService`
+    if set).
 - **Runtime:** `runtimeConfig.version` (the source runtime), `runtimeConfig.containerImage` (a custom container, if any), and `runtimeConfig.properties` (carry them forward and re-check them against the target, including GPU properties).
 - **Environment:** `environmentConfig.executionConfig.subnetworkUri` or `networkUri`, `serviceAccount`, `networkTags`, and `kmsKey`.
 - **Status:** `state` and `stateMessage`, for context. A failed source batch doesn't block the analysis.

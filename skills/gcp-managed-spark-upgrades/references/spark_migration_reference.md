@@ -76,14 +76,14 @@ For the source, use the column of the source version; if you know only its track
 
 ## Java Runtime
 
-Every job runs on the target's Java, PySpark jobs included: Spark's driver and
-executors are JVMs. Take the source's and the target's Java versions from the
-list for their deployment in "Version to Spark Mapping" (confirm them on the
-component pages, where those still exist); `fetch_migration_notes.py` also
-prints the Java versions that each Spark version supports. A job or cluster can
-override the image's Java through `JAVA_HOME` (e.g.
-`spark.executorEnv.JAVA_HOME` and `spark.yarn.appMasterEnv.JAVA_HOME`, or an
-initialization action that installs another JDK): then the source ran on that
+Every job runs on the target's Java, PySpark and Spark SQL jobs included:
+Spark's driver and executors are JVMs. Take the source's and the target's Java
+versions from the list for their deployment in "Version to Spark Mapping"
+(confirm them on the component pages, where those still exist);
+`fetch_migration_notes.py` also prints the Java versions that each Spark version
+supports. A job or cluster can override the image's Java through `JAVA_HOME`
+(e.g. `spark.executorEnv.JAVA_HOME` and `spark.yarn.appMasterEnv.JAVA_HOME`, or
+an initialization action that installs another JDK): then the source ran on that
 Java, and the report says whether the target still needs the override. If the
 Java version changes:
 
@@ -101,8 +101,9 @@ Java version changes:
     option that the target rejects or ignores, and report the change.
 -   **Code and libraries.** The JDK Migration Guide ("Official sources") lists
     the significant changes and removed APIs of each release: the releases after
-    the source's Java version apply. For Scala/Java jobs,
-    `jvm_build_reference.md` checks the job's code and jars against them.
+    the source's Java version apply. For Scala/Java jobs (and Spark SQL jobs
+    that attach custom UDF/SerDe jars), `jvm_build_reference.md` checks the
+    job's code and jars against them.
 
 ## Connectors
 
@@ -120,11 +121,11 @@ these platform defaults first:
     connector is used: the Maven artifacts
     `com.google.cloud.bigdataoss:gcs-connector` and
     `com.google.cloud.spark:spark-bigquery*` or `spark-<x.y>-bigquery`, or their
-    jars, in `jarFileUris` or `--jars`, `spark.jars`, `spark.jars.packages`,
-    initialization actions, a custom image, or the build dependencies. Never
-    supply a second copy of a preinstalled connector: it collides with the
-    platform's (e.g. `Multiple sources found for bigquery`), relocated or not.
-    For Scala/Java jobs that compile against a connector,
+    jars, in `jarFileUris` or `--jars`, `ADD JAR`, `spark.jars`,
+    `spark.jars.packages`, initialization actions, a custom image, or the build
+    dependencies. Never supply a second copy of a preinstalled connector: it
+    collides with the platform's (e.g. `Multiple sources found for bigquery`),
+    relocated or not. For Scala/Java jobs that compile against a connector,
     `jvm_build_reference.md` describes how to do that without bundling it.
 3.  Keep or set another connector version only when the workload needs a fix or
     feature that the preinstalled version lacks, and record why in the report.

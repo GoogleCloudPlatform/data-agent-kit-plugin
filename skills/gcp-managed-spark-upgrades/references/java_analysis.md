@@ -28,7 +28,13 @@ section 2), and the target's compiler and JDK tools find the affected code.
     -   for the Java runtime, the build changes, and the dependencies
         (`jvm_build_reference.md`, sections 2–4);
     -   for the Java release and compiler plugins (section 1), and for code that
-        uses Spark's Scala API (section 2).
+        uses Spark's Scala API (section 2);
+    -   if the code executes inline SQL (`spark.sql(...)`,
+        `sqlContext.sql(...)`, `selectExpr(...)`, `expr(...)`), sets
+        `spark.sql.*` properties, or loads `.sql` resource files, check those
+        queries and properties with `spark_sql_analysis.md` (sections 1–2) and
+        run its Catalyst parser check (`spark_sql_analysis.md`, section 4.1) in
+        step 4 (`javac` does not validate SQL strings).
 4.  Run the build checks (`jvm_build_reference.md`, section 5) with the compiler
     options in section 1.
 5.  Record each finding with its `file:line`, why it breaks on the target, and
