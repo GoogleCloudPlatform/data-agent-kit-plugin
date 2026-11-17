@@ -17,7 +17,7 @@ description: |
   - Troubleshooting failed Spark jobs or Dataproc batches (use @skill:gcp-spark-troubleshooting).
 license: Apache-2.0
 metadata:
-  version: v35
+  version: v36
   publisher: google
 ---
 
@@ -112,6 +112,13 @@ metadata:
     Do NOT proceed with code generation, do NOT add fallback logic to code, and
     do NOT automatically substitute any alternative table (even if its schema
     seems to match) without explicit user permission.
+
+    *VAGUE OBJECTIVE RULE*: If the request only says to "analyze" (or "explore",
+    "look at") a dataset without any question, metric, analysis type, or output
+    (e.g. "Analyze all transactions", "Now analyze the bronze table"), then
+    after the source is resolved, inspect its schema and metadata, summarize
+    them, propose 3–5 concrete analyses grounded in the columns, ask the user
+    which to perform, and STOP before creating or executing the notebook.
 3.  **Verify source accessibility**: For Google Cloud Storage (`gs://`) paths,
     verify access/existence using `gcloud storage ls gs://<path-to-dataset>`
     (skip `gcloud storage ls` for external cloud URIs such as `s3a://`,
