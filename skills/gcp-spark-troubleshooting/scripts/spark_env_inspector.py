@@ -23,7 +23,9 @@ Collects factual Google Cloud environment metadata across three planes:
   * `network`: VPC/subnet URIs, CIDR capacity, Private Google Access, Cloud
     NAT coverage, VPC peerings, VPC firewall rules that apply to the workload
     (with optional `--target_port` matching), effective hierarchical, network,
-    and system firewall policy rules, and Cloud DNS private zone bindings.
+    and system firewall policy rules, Cloud DNS private zone bindings, and,
+    with `--target_port`, a first-match firewall verdict for one connection
+    that reports `INDETERMINATE` when a rule cannot be evaluated.
   * `classpath`: Dataproc runtime/image version, mapped Spark and Scala binary
     versions, attached JARs/packages with detected Scala (`_2.12` / `_2.13`)
     and Spark (`spark-3.5`, `-3.5_2.13`) versions compared with the runtime,
@@ -40,12 +42,14 @@ Written against the Python standard library only.
 
 import argparse
 import ipaddress
+import itertools
 import json
+import math
 import re
 import shutil
 import subprocess
 import sys
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
 DEFAULT_REGION = "us-central1"
 _GCLOUD_TIMEOUT_SECONDS = 60
@@ -87,6 +91,27 @@ _SPARK_MINOR_RES = (
 _MAX_FIREWALL_RULES = 100
 _MAX_POLICY_RULES = 80
 _MAX_RANGES_SHOWN = 5
+# First-match firewall verdict for one connection (`--target_port`).
+_VERDICT_ALLOWED = "ALLOWED"
+_VERDICT_DENIED = "DENIED"
+_VERDICT_INDETERMINATE = "INDETERMINATE"
+# Terminal outcome of a matching rule whose effect the inspector cannot
+# evaluate, such as `apply_security_profile_group` (L7 inspection decides).
+_OUTCOME_UNEVALUATED = "UNEVALUATED"
+# Per-rule match states for the connection.
+_MATCH = "match"
+_NO_MATCH = "no_match"
+_UNKNOWN = "unknown"
+_IMPLIED_RULE_PRIORITY = 65535
+# Upper bound on the policy orders evaluated when the API does not report the
+# order (several hierarchical or system policies, unknown enforcement order).
+_MAX_FIREWALL_ORDERINGS = 720
+_MAX_UNEVALUATED_RULES_SHOWN = 10
+_PROTOCOL_NUMBERS = {"tcp": "6", "udp": "17"}
+_HIERARCHY_POLICY_TYPES = ("HIERARCHY",)
+_SYSTEM_POLICY_TYPES = ("SYSTEM", "SYSTEM_GLOBAL", "SYSTEM_REGIONAL")
+_GLOBAL_NETWORK_POLICY_TYPES = ("NETWORK",)
+_REGIONAL_NETWORK_POLICY_TYPES = ("NETWORK_REGIONAL",)
 _SENSITIVE_KEY_RE = re.compile(
     r"(password|passwd|pwd|passphrase|secret|token|credential|authorization|"
     r"private[_.-]?key|access[_.-]?key|account[_.-]?key|client[_.-]?secret|"
@@ -763,25 +788,27 @@ def _cidr_usable_hosts(cidr: str) -> Optional[int]:
 
 
 def _port_matches_specs(
-    specs: List[Dict[str, Any]], target_port: int
+    specs: List[Dict[str, Any]], target_port: int, protocol: str = "tcp"
 ) -> bool:
-  """Checks whether firewall rule protocol/port specs cover a TCP port.
+  """Checks whether firewall rule protocol/port specs cover a port.
 
   Accepts VPC firewall rule specs (`IPProtocol`/`ports`) and firewall policy
   `layer4Configs` entries (`ipProtocol`/`ports`).
 
   Args:
     specs: Protocol and port specs of one rule.
-    target_port: TCP port to match.
+    target_port: Port to match.
+    protocol: Protocol of the connection (`tcp` or `udp`).
 
   Returns:
-    Whether any spec covers TCP `target_port`.
+    Whether any spec covers `protocol` traffic to `target_port`.
   """
+  wanted = {"all", protocol, _PROTOCOL_NUMBERS.get(protocol, protocol)}
   for spec in specs:
     proto = _str_field(
         spec, "IPProtocol", _str_field(spec, "ipProtocol")
     ).lower()
-    if proto not in ("all", "tcp", "6"):
+    if proto not in wanted:
       continue
     ports = _list_field(spec, "ports")
     if not ports:
@@ -838,8 +865,8 @@ def _inspect_vpc_network(
     host_project: str,
     runner: CommandRunner,
     warnings: List[str],
-) -> Tuple[List[Dict[str, Any]], str]:
-  """Returns (VPC peerings, firewall policy enforcement order) of a network."""
+) -> Tuple[List[Dict[str, Any]], Optional[str]]:
+  """Returns (peerings, policy enforcement order or None when unreadable)."""
   raw_net = _run_gcloud_json(
       runner,
       [
@@ -868,8 +895,10 @@ def _inspect_vpc_network(
         "import_custom_routes": bool(peer.get("importCustomRoutes", False)),
         "export_custom_routes": bool(peer.get("exportCustomRoutes", False)),
     })
-  enforcement_order = _str_field(
-      raw_net, "networkFirewallPolicyEnforcementOrder"
+  enforcement_order = (
+      _str_field(raw_net, "networkFirewallPolicyEnforcementOrder")
+      if isinstance(raw_net, dict) and raw_net
+      else None
   )
   return peerings, enforcement_order
 
@@ -883,8 +912,24 @@ def _inspect_firewall_policies(
     network_tags: List[Any],
     workload_sa: str,
     target_port: Optional[int],
-) -> List[Dict[str, Any]]:
-  """Summarizes effective hierarchical, network, and system policy rules."""
+    target_protocol: str = "tcp",
+) -> Tuple[List[Dict[str, Any]], Optional[List[Dict[str, Any]]]]:
+  """Summarizes effective hierarchical, network, and system policy rules.
+
+  Args:
+    network_name: VPC network of the workload.
+    host_project: Project that owns the network.
+    region: Region of the workload subnet.
+    runner: gcloud command runner.
+    warnings: Partial-visibility warnings to append to.
+    network_tags: Network tags on the workload VMs.
+    workload_sa: Service account of the workload VMs ("" when unknown).
+    target_port: Optional port to mark matching rules for.
+    target_protocol: Protocol for `target_port`.
+
+  Returns:
+    (policy summaries, raw effective policies or None when unreadable).
+  """
   raw = _run_gcloud_json(
       runner,
       [
@@ -898,12 +943,17 @@ def _inspect_firewall_policies(
       warnings,
       f"compute network-firewall-policies get-effective-firewalls ({region})",
   )
+  raw_policies = (
+      None
+      if raw is None
+      else [
+          p for p in _list_field(raw, "firewallPolicys") if isinstance(p, dict)
+      ]
+  )
   policies: List[Dict[str, Any]] = []
   total_rules = 0
   truncated = False
-  for policy in _list_field(raw, "firewallPolicys"):
-    if not isinstance(policy, dict):
-      continue
+  for policy in raw_policies or []:
     rules: List[Dict[str, Any]] = []
     raw_rules = [r for r in _list_field(policy, "rules") if isinstance(r, dict)]
     raw_rules.sort(key=lambda r: int(r.get("priority", 0)))
@@ -943,19 +993,14 @@ def _inspect_firewall_policies(
           "target_secure_tags": secure_tags,
           "applies_to_workload": applies,
           "matches_target_port": (
-              _port_matches_specs(layer4, target_port)
+              _port_matches_specs(layer4, target_port, target_protocol)
               if target_port is not None
               else None
           ),
       })
       total_rules += 1
-    policy_name = (
-        _str_field(policy, "displayName")
-        or _str_field(policy, "shortName")
-        or _str_field(policy, "name")
-    )
     policies.append({
-        "name": policy_name,
+        "name": _policy_display_name(policy),
         "type": _str_field(policy, "type"),
         "rules": rules,
     })
@@ -964,7 +1009,636 @@ def _inspect_firewall_policies(
         f"firewall policies: only the first {_MAX_POLICY_RULES} rules are"
         " listed"
     )
-  return policies
+  return policies, raw_policies
+
+
+def _rule_priority(rule: Dict[str, Any], default: int) -> int:
+  try:
+    return int(rule.get("priority", default))
+  except (TypeError, ValueError):
+    return default
+
+
+def _policy_display_name(policy: Dict[str, Any]) -> str:
+  return (
+      _str_field(policy, "displayName")
+      or _str_field(policy, "shortName")
+      or _str_field(policy, "name")
+  )
+
+
+def _parse_ip_networks(ranges: List[Any]) -> Tuple[List[Any], bool]:
+  """Parses IP ranges into networks and reports unparseable entries."""
+  nets: List[Any] = []
+  unparseable = False
+  for item in ranges:
+    try:
+      nets.append(ipaddress.ip_network(str(item).strip(), strict=False))
+    except ValueError:
+      unparseable = True
+  return nets, unparseable
+
+
+def _remote_ranges_state(
+    ranges: List[Any], remote_ip: Optional[Any], ip_version: Optional[int]
+) -> str:
+  """Matches the remote end of the connection against a rule's IP ranges.
+
+  Args:
+    ranges: IP ranges for the remote end (destination for egress, source for
+      ingress).
+    remote_ip: Remote address, or None when `--target_ip` is not given.
+    ip_version: IP version of the connection, or None when unknown.
+
+  Returns:
+    _MATCH, _NO_MATCH, or _UNKNOWN.
+  """
+  nets, unparseable = _parse_ip_networks(ranges)
+  if remote_ip is not None:
+    if any(remote_ip in n for n in nets):
+      return _MATCH
+    return _UNKNOWN if unparseable else _NO_MATCH
+  if ip_version is None:
+    if {n.version for n in nets if n.prefixlen == 0} == {4, 6}:
+      return _MATCH
+    return _UNKNOWN if nets or unparseable else _NO_MATCH
+  same_version = [n for n in nets if n.version == ip_version]
+  if any(n.prefixlen == 0 for n in same_version):
+    return _MATCH
+  return _UNKNOWN if same_version or unparseable else _NO_MATCH
+
+
+def _local_ranges_state(ranges: List[Any], local_nets: List[Any]) -> str:
+  """Matches the workload end of the connection against a rule's IP ranges.
+
+  The workload end can be any address of the workload subnet, so the rule
+  matches only if its ranges cover the subnet and misses only if they do not
+  overlap it.
+
+  Args:
+    ranges: IP ranges for the workload end (source for egress, destination for
+      ingress).
+    local_nets: Workload subnet ranges of the connection's IP version.
+
+  Returns:
+    _MATCH, _NO_MATCH, or _UNKNOWN.
+  """
+  if not local_nets:
+    return _UNKNOWN
+  nets, unparseable = _parse_ip_networks(ranges)
+  if all(
+      any(ln.version == n.version and ln.subnet_of(n) for n in nets)
+      for ln in local_nets
+  ):
+    return _MATCH
+  overlaps = any(ln.overlaps(n) for ln in local_nets for n in nets)
+  return _UNKNOWN if overlaps or unparseable else _NO_MATCH
+
+
+def _combine_states(states: List[str]) -> str:
+  if _NO_MATCH in states:
+    return _NO_MATCH
+  if _UNKNOWN in states:
+    return _UNKNOWN
+  return _MATCH
+
+
+def _new_rule_record(name: str, priority: int, action: str) -> Dict[str, Any]:
+  return {
+      "rule": name,
+      "priority": priority,
+      "action": action,
+      "state": _NO_MATCH,
+      "remote_ranges": [],
+      "reasons": [],
+  }
+
+
+def _finish_rule_record(
+    record: Dict[str, Any], states: List[str], reasons: List[str]
+) -> Dict[str, Any]:
+  record["state"] = _combine_states(states)
+  record["reasons"] = reasons if record["state"] == _UNKNOWN else []
+  return record
+
+
+def _remote_range_reason(conn: Dict[str, Any]) -> str:
+  end = "destination" if conn["direction"] == "EGRESS" else "source"
+  if conn["remote_ip"] is None:
+    return f"matches only some {end} addresses; pass --target_ip to evaluate it"
+  return f"has {end} ranges that could not be parsed"
+
+
+def _local_range_reason(conn: Dict[str, Any]) -> str:
+  if not conn["local_nets"]:
+    return "limits workload addresses, and the workload subnet range is unknown"
+  return "limits workload addresses to ranges that partly cover the subnet"
+
+
+def _evaluate_vpc_rule(
+    fw: Dict[str, Any], conn: Dict[str, Any]
+) -> Dict[str, Any]:
+  """Matches one VPC firewall rule against the connection."""
+  denied = _list_field(fw, "denied")
+  specs = denied or _list_field(fw, "allowed")
+  record = _new_rule_record(
+      _str_field(fw, "name"),
+      _rule_priority(fw, 1000),
+      "deny" if denied else "allow",
+  )
+  direction = _str_field(fw, "direction", "INGRESS").upper()
+  if direction != conn["direction"] or not _port_matches_specs(
+      specs, conn["port"], conn["protocol"]
+  ):
+    return record
+  states: List[str] = []
+  reasons: List[str] = []
+  applies = _target_applies(
+      _list_field(fw, "targetTags"),
+      _list_field(fw, "targetServiceAccounts"),
+      conn["network_tags"],
+      conn["workload_sa"],
+  )
+  if applies is None:
+    states.append(_UNKNOWN)
+    reasons.append(
+        "targets service accounts, and the workload service account is unknown"
+    )
+  elif not applies:
+    return record
+  if direction == "EGRESS":
+    # Egress rules without destination ranges apply to 0.0.0.0/0.
+    remote = _list_field(fw, "destinationRanges") or ["0.0.0.0/0"]
+    remote_other: List[str] = []
+    local = _list_field(fw, "sourceRanges")
+  else:
+    remote = _list_field(fw, "sourceRanges")
+    remote_other = [
+        label
+        for label, key in (
+            ("source tags", "sourceTags"),
+            ("source service accounts", "sourceServiceAccounts"),
+        )
+        if _list_field(fw, key)
+    ]
+    # Ingress rules without any source apply to 0.0.0.0/0.
+    if not remote and not remote_other:
+      remote = ["0.0.0.0/0"]
+    local = _list_field(fw, "destinationRanges")
+  record["remote_ranges"] = _summarize_ranges(remote)
+  remote_state = (
+      _remote_ranges_state(remote, conn["remote_ip"], conn["ip_version"])
+      if remote
+      else _NO_MATCH
+  )
+  if remote_state == _UNKNOWN:
+    reasons.append(_remote_range_reason(conn))
+  if remote_state != _MATCH and remote_other:
+    # A VPC rule matches a source range OR a source tag or service account.
+    remote_state = _UNKNOWN
+    reasons.append(
+        f"matches {' and '.join(remote_other)}, which are not resolved"
+    )
+  states.append(remote_state)
+  if local:
+    local_state = _local_ranges_state(local, conn["local_nets"])
+    if local_state == _UNKNOWN:
+      reasons.append(_local_range_reason(conn))
+    states.append(local_state)
+  return _finish_rule_record(record, states, reasons)
+
+
+def _policy_target_state(
+    rule: Dict[str, Any], conn: Dict[str, Any], reasons: List[str]
+) -> str:
+  """Returns whether a firewall policy rule targets the workload VMs."""
+  states: List[str] = []
+  resources = _list_field(rule, "targetResources")
+  if resources:
+    in_scope = any(
+        _parse_network_uri(str(r), conn["network"][0]) == conn["network"]
+        for r in resources
+    )
+    states.append(_MATCH if in_scope else _NO_MATCH)
+  target_sas = _list_field(rule, "targetServiceAccounts")
+  if target_sas:
+    if not conn["workload_sa"]:
+      states.append(_UNKNOWN)
+      reasons.append(
+          "targets service accounts, and the workload service account is"
+          " unknown"
+      )
+    else:
+      states.append(_MATCH if conn["workload_sa"] in target_sas else _NO_MATCH)
+  if _list_field(rule, "targetSecureTags"):
+    states.append(_UNKNOWN)
+    reasons.append("targets secure tags, which are not resolved")
+  return _combine_states(states)
+
+
+def _evaluate_policy_rule(
+    rule: Dict[str, Any], conn: Dict[str, Any]
+) -> Dict[str, Any]:
+  """Matches one firewall policy rule against the connection."""
+  record = _new_rule_record(
+      _str_field(rule, "ruleName"),
+      _rule_priority(rule, 0),
+      _str_field(rule, "action").lower(),
+  )
+  direction = _str_field(rule, "direction", "INGRESS").upper()
+  match = _dict_field(rule, "match")
+  layer4 = _list_field(match, "layer4Configs")
+  if (
+      rule.get("disabled")
+      or direction != conn["direction"]
+      or (
+          layer4
+          and not _port_matches_specs(layer4, conn["port"], conn["protocol"])
+      )
+  ):
+    return record
+  reasons: List[str] = []
+  states = [_policy_target_state(rule, conn, reasons)]
+  remote_key, local_key = (
+      ("destIpRanges", "srcIpRanges")
+      if direction == "EGRESS"
+      else ("srcIpRanges", "destIpRanges")
+  )
+  remote_ranges = _list_field(match, remote_key)
+  record["remote_ranges"] = _summarize_ranges(remote_ranges)
+  # Selectors other than IP ranges (secure tags, address groups, FQDNs,
+  # geolocations, threat intelligence lists, network context) are not
+  # resolved, so a rule that uses one is indeterminate.
+  selectors = sorted(
+      key
+      for key, value in match.items()
+      if value and key not in ("layer4Configs", "srcIpRanges", "destIpRanges")
+  )
+  if selectors:
+    states.append(_UNKNOWN)
+    reasons.append(f"uses {', '.join(selectors)}, which are not resolved")
+  else:
+    if remote_ranges:
+      remote_state = _remote_ranges_state(
+          remote_ranges, conn["remote_ip"], conn["ip_version"]
+      )
+      if remote_state == _UNKNOWN:
+        reasons.append(_remote_range_reason(conn))
+      states.append(remote_state)
+    local_ranges = _list_field(match, local_key)
+    if local_ranges:
+      local_state = _local_ranges_state(local_ranges, conn["local_nets"])
+      if local_state == _UNKNOWN:
+        reasons.append(_local_range_reason(conn))
+      states.append(local_state)
+  return _finish_rule_record(record, states, reasons)
+
+
+def _implied_rule_record(direction: str) -> Dict[str, Any]:
+  egress = direction == "EGRESS"
+  record = _new_rule_record(
+      "implied allow egress" if egress else "implied deny ingress",
+      _IMPLIED_RULE_PRIORITY,
+      "allow" if egress else "deny",
+  )
+  record["state"] = _MATCH
+  return record
+
+
+def _verdict_stage(
+    name: str, records: Optional[List[Dict[str, Any]]]
+) -> Dict[str, Any]:
+  """Builds an evaluation stage; `records=None` marks it unreadable."""
+  return {"name": name, "readable": records is not None, "records": records}
+
+
+def _firewall_orderings(
+    hierarchy: List[Dict[str, Any]],
+    system: List[Dict[str, Any]],
+    vpc_stage: Dict[str, Any],
+    network: List[Dict[str, Any]],
+    implied: Dict[str, Any],
+    enforcement_order: Optional[str],
+) -> Optional[List[List[Dict[str, Any]]]]:
+  """Lists every stage order consistent with what the API reports.
+
+  The API does not report the relative order of several hierarchical (or
+  system) policies, and the enforcement order is unknown when the network
+  cannot be read, so every consistent order is evaluated.
+
+  Args:
+    hierarchy: Hierarchical policy stages.
+    system: System policy stages.
+    vpc_stage: VPC firewall rules stage.
+    network: Global, then regional, network policy stages.
+    implied: Implied rules stage.
+    enforcement_order: The network's firewall policy enforcement order, or None
+      when the network could not be read.
+
+  Returns:
+    The candidate orders, or None when there are too many to evaluate.
+  """
+  after = [vpc_stage, *network]
+  before = [*network, vpc_stage]
+  if enforcement_order is None:
+    tails = [after, before] if network else [after]
+  elif enforcement_order == "BEFORE_CLASSIC_FIREWALL":
+    tails = [before]
+  else:
+    tails = [after]
+  count = (
+      math.factorial(len(hierarchy)) * math.factorial(len(system)) * len(tails)
+  )
+  if count > _MAX_FIREWALL_ORDERINGS:
+    return None
+  return [
+      [*h, *s, *t, implied]
+      for h in itertools.permutations(hierarchy)
+      for s in itertools.permutations(system)
+      for t in tails
+  ]
+
+
+def _ordering_outcomes(
+    stages: List[Dict[str, Any]],
+) -> Set[Tuple[str, Tuple[Any, ...]]]:
+  """Returns every (outcome, deciding rule) that one stage order can produce.
+
+  Walks the stages backward: a matching rule decides (or, for `goto_next`,
+  passes to the next stage), and an indeterminate rule contributes the
+  outcomes of both matching and not matching.
+
+  Args:
+    stages: Stages in evaluation order, ending with the implied rules.
+
+  Returns:
+    Pairs of outcome and deciding rule key.
+  """
+  entry: Set[Tuple[str, Tuple[Any, ...]]] = set()
+  for stage in reversed(stages):
+    passed = entry
+    if not stage["readable"]:
+      key = (stage["name"], None, "", "")
+      entry = {(_VERDICT_ALLOWED, key), (_VERDICT_DENIED, key)} | passed
+      continue
+    acc = passed
+    for rec in reversed(stage["records"]):
+      if rec["state"] == _NO_MATCH:
+        continue
+      key = (stage["name"], rec["priority"], rec["rule"], rec["action"])
+      if rec["action"] == "allow":
+        matched = {(_VERDICT_ALLOWED, key)}
+      elif rec["action"] == "deny":
+        matched = {(_VERDICT_DENIED, key)}
+      elif rec["action"] == "goto_next":
+        matched = passed
+      else:
+        matched = {(_OUTCOME_UNEVALUATED, key)}
+      acc = matched if rec["state"] == _MATCH else matched | acc
+    entry = acc
+  return entry
+
+
+def _firewall_connection(
+    direction: str,
+    protocol: str,
+    port: int,
+    target_ip: Optional[str],
+    subnet: Optional[Dict[str, Any]],
+    network: Tuple[str, str],
+    network_tags: List[Any],
+    workload_sa: str,
+) -> Dict[str, Any]:
+  """Describes the connection that the firewall verdict evaluates."""
+  remote_ip = ipaddress.ip_address(target_ip) if target_ip else None
+  stack = _str_field(subnet, "stack_type").upper()
+  if remote_ip is not None:
+    ip_version = remote_ip.version
+  elif not subnet or stack not in ("", "IPV4_ONLY", "IPV6_ONLY"):
+    ip_version = None
+  else:
+    ip_version = 6 if stack == "IPV6_ONLY" else 4
+  nets, _ = _parse_ip_networks([_str_field(subnet, "ip_cidr_range")])
+  local_nets = [n for n in nets if n.version == ip_version]
+  return {
+      "direction": direction,
+      "protocol": protocol,
+      "port": port,
+      "remote_ip": remote_ip,
+      "ip_version": ip_version,
+      "subnet_stack_type": stack if subnet else None,
+      "local_nets": local_nets,
+      "network": network,
+      "network_tags": network_tags,
+      "workload_sa": workload_sa,
+  }
+
+
+def _verdict_rule_view(rec: Dict[str, Any]) -> Dict[str, Any]:
+  return {
+      "rule": rec["rule"],
+      "priority": rec["priority"],
+      "action": rec["action"],
+      "match": "match" if rec["state"] == _MATCH else "indeterminate",
+      "remote_ranges": rec["remote_ranges"],
+      "reasons": rec["reasons"],
+  }
+
+
+def _firewall_verdict(
+    conn: Dict[str, Any],
+    policies: Optional[List[Dict[str, Any]]],
+    vpc_rules: Optional[List[Dict[str, Any]]],
+    enforcement_order: Optional[str],
+) -> Dict[str, Any]:
+  """Evaluates one connection through the Cloud NGFW first-match order.
+
+  Args:
+    conn: The connection (see `_firewall_connection`).
+    policies: Raw effective firewall policies, or None when unreadable.
+    vpc_rules: Enabled VPC firewall rules of the network, or None when
+      unreadable.
+    enforcement_order: The network's firewall policy enforcement order, or None
+      when the network could not be read.
+
+  Returns:
+    The verdict, the deciding rule, the first match of each policy, the rules
+    that could not be evaluated, and notes on assumptions.
+  """
+  notes: List[str] = []
+  hierarchy: List[Dict[str, Any]] = []
+  system: List[Dict[str, Any]] = []
+  network: List[Dict[str, Any]] = []
+  regional: List[Dict[str, Any]] = []
+  unplaced: List[Dict[str, Any]] = []
+  if policies is None:
+    hierarchy.append(_verdict_stage("firewall policies", None))
+  for policy in policies or []:
+    records = sorted(
+        (
+            _evaluate_policy_rule(r, conn)
+            for r in _list_field(policy, "rules")
+            if isinstance(r, dict)
+        ),
+        key=lambda r: r["priority"],
+    )
+    name = _policy_display_name(policy)
+    policy_type = _str_field(policy, "type").upper()
+    if policy_type in _HIERARCHY_POLICY_TYPES:
+      hierarchy.append(_verdict_stage(f"hierarchical policy `{name}`", records))
+    elif policy_type in _SYSTEM_POLICY_TYPES:
+      system.append(_verdict_stage(f"system policy `{name}`", records))
+    elif policy_type in _GLOBAL_NETWORK_POLICY_TYPES:
+      network.append(_verdict_stage(f"global network policy `{name}`", records))
+    elif policy_type in _REGIONAL_NETWORK_POLICY_TYPES:
+      regional.append(
+          _verdict_stage(f"regional network policy `{name}`", records)
+      )
+    else:
+      unplaced.append(
+          _verdict_stage(
+              f"policy `{name}` ({policy_type or 'no type'})", records
+          )
+      )
+  vpc_records = None
+  if vpc_rules is not None:
+    # Lower priority numbers win; at equal priority a deny beats an allow.
+    vpc_records = sorted(
+        (_evaluate_vpc_rule(fw, conn) for fw in vpc_rules),
+        key=lambda r: (r["priority"], r["action"] != "deny", r["rule"]),
+    )
+  vpc_stage = _verdict_stage("VPC firewall rules", vpc_records)
+  implied = _verdict_stage(
+      "implied rules", [_implied_rule_record(conn["direction"])]
+  )
+  network.extend(regional)
+  orderings = _firewall_orderings(
+      hierarchy,
+      system,
+      vpc_stage,
+      network,
+      implied,
+      enforcement_order,
+  )
+
+  if len(hierarchy) > 1:
+    notes.append(
+        f"The API does not report the order of the {len(hierarchy)}"
+        " hierarchical policies, so every order was evaluated."
+    )
+  if len(system) > 1:
+    notes.append(
+        f"The API does not report the order of the {len(system)} system"
+        " policies, so every order was evaluated."
+    )
+  if enforcement_order is None and network:
+    notes.append(
+        "The network could not be read, so both network firewall policy"
+        " enforcement orders were evaluated."
+    )
+  if conn["ip_version"] is None:
+    notes.append(
+        "The connection's IP version is unknown (dual-stack or unreadable"
+        " subnet); pass --target_ip."
+    )
+  elif conn["subnet_stack_type"] in (
+      "",
+      "IPV4_ONLY",
+      "IPV6_ONLY",
+  ):
+    subnet_version = 6 if conn["subnet_stack_type"] == "IPV6_ONLY" else 4
+    if subnet_version != conn["ip_version"]:
+      notes.append(
+          f"The workload subnet is IPv{subnet_version}-only, so the workload"
+          f" cannot use IPv{conn['ip_version']}."
+      )
+
+  outcomes: Set[Tuple[str, Tuple[Any, ...]]] = set()
+  per_ordering: List[Set[str]] = []
+  if orderings is None:
+    outcomes.add((_OUTCOME_UNEVALUATED, ("policy order", None, "", "")))
+    notes.append("Too many unordered policies to evaluate every order.")
+  else:
+    for ordering in orderings:
+      result = _ordering_outcomes(ordering)
+      per_ordering.append({outcome for outcome, _ in result})
+      outcomes |= result
+  for stage in unplaced:
+    if any(r["state"] != _NO_MATCH for r in stage["records"]):
+      outcomes.add((_OUTCOME_UNEVALUATED, (stage["name"], None, "", "")))
+      notes.append(
+          f"{stage['name']} has an unrecognized type, so its place in the"
+          " evaluation order is unknown."
+      )
+  kinds = {outcome for outcome, _ in outcomes}
+  if kinds == {_VERDICT_ALLOWED}:
+    verdict = _VERDICT_ALLOWED
+  elif kinds == {_VERDICT_DENIED}:
+    verdict = _VERDICT_DENIED
+  else:
+    verdict = _VERDICT_INDETERMINATE
+  if (
+      all(len(kinds_of) == 1 for kinds_of in per_ordering)
+      and len(set().union(*per_ordering)) > 1
+  ):
+    notes.append(
+        "Each policy order gives a definite result, but the results differ."
+    )
+  decided_by = None
+  deciders = {key for _, key in outcomes}
+  if verdict != _VERDICT_INDETERMINATE and len(deciders) == 1:
+    stage_name, priority, rule_name, action = next(iter(deciders))
+    decided_by = {
+        "stage": stage_name,
+        "priority": priority,
+        "rule": rule_name,
+        "action": action,
+    }
+
+  listed = (
+      orderings[0]
+      if orderings
+      else [*hierarchy, *system, vpc_stage, *network, implied]
+  )
+  stages: List[Dict[str, Any]] = []
+  unevaluated: List[Dict[str, Any]] = []
+  for stage in [*listed, *unplaced]:
+    if not stage["readable"]:
+      stages.append(
+          {"stage": stage["name"], "readable": False, "first_match": None}
+      )
+      continue
+    first = next((r for r in stage["records"] if r["state"] != _NO_MATCH), None)
+    stages.append({
+        "stage": stage["name"],
+        "readable": True,
+        "first_match": None if first is None else _verdict_rule_view(first),
+    })
+    for rec in stage["records"]:
+      if rec["state"] == _MATCH:
+        break
+      if rec["state"] == _UNKNOWN:
+        unevaluated.append({"stage": stage["name"], **_verdict_rule_view(rec)})
+
+  return {
+      "direction": conn["direction"],
+      "protocol": conn["protocol"],
+      "port": conn["port"],
+      "remote_ip": (
+          None if conn["remote_ip"] is None else str(conn["remote_ip"])
+      ),
+      "ip_version": conn["ip_version"],
+      "verdict": verdict,
+      "decided_by": decided_by,
+      "possible_outcomes": sorted(kinds),
+      "evaluation_order": [stage["name"] for stage in listed],
+      "stages": stages,
+      "unevaluated_rules": unevaluated[:_MAX_UNEVALUATED_RULES_SHOWN],
+      "unevaluated_rules_omitted": max(
+          0, len(unevaluated) - _MAX_UNEVALUATED_RULES_SHOWN
+      ),
+      "notes": notes,
+  }
 
 
 def inspect_network(
@@ -974,8 +1648,28 @@ def inspect_network(
     workload_id: str,
     runner: CommandRunner,
     target_port: Optional[int] = None,
+    target_protocol: str = "tcp",
+    target_ip: Optional[str] = None,
+    target_direction: str = "egress",
 ) -> Dict[str, Any]:
-  """Collects subnet, NAT, peering, firewall, and private DNS facts."""
+  """Collects subnet, NAT, peering, firewall, and private DNS facts.
+
+  Args:
+    project: Workload project.
+    region: Workload region.
+    workload_kind: `batch`, `session`, or `job`.
+    workload_id: Workload ID.
+    runner: gcloud command runner.
+    target_port: Optional port of one connection to mark matching rules for and
+      to compute a first-match firewall verdict for.
+    target_protocol: `tcp` or `udp`.
+    target_ip: Optional remote address of the connection (destination for
+      egress, source for ingress).
+    target_direction: `egress` (from the workload) or `ingress` (to it).
+
+  Returns:
+    The network report.
+  """
   warnings: List[str] = []
   workload, cluster = _fetch_workload(
       project, region, workload_kind, workload_id, runner, warnings
@@ -1038,9 +1732,12 @@ def inspect_network(
   subnet_details: Optional[Dict[str, Any]] = None
   cloud_nats: List[Dict[str, Any]] = []
   vpc_peerings: List[Dict[str, Any]] = []
-  enforcement_order = ""
+  enforcement_order: Optional[str] = None
   firewall_rules: List[Dict[str, Any]] = []
   firewall_policies: List[Dict[str, Any]] = []
+  # Unfiltered inputs of the firewall verdict (None while unreadable).
+  network_vpc_rules: Optional[List[Dict[str, Any]]] = None
+  raw_policies: Optional[List[Dict[str, Any]]] = None
   private_dns_zones: List[Dict[str, Any]] = []
 
   if can_inspect_vpc:
@@ -1160,15 +1857,17 @@ def inspect_network(
         f"compute firewall-rules list '{host_project}'",
     )
     if isinstance(raw_fws, list):
+      network_vpc_rules = []
       matched_fws: List[Dict[str, Any]] = []
       for fw in raw_fws:
-        if fw.get("disabled"):
+        if not isinstance(fw, dict) or fw.get("disabled"):
           continue
         _, fw_net = _parse_network_uri(
             _str_field(fw, "network"), host_project
         )
         if fw_net != network_name:
           continue
+        network_vpc_rules.append(fw)
         direction = _str_field(fw, "direction", "INGRESS")
         allowed = _list_field(fw, "allowed")
         denied = _list_field(fw, "denied")
@@ -1180,7 +1879,7 @@ def inspect_network(
             target_tags, target_sas, network_tags, workload_sa
         )
         port_matches = (
-            _port_matches_specs(specs, target_port)
+            _port_matches_specs(specs, target_port, target_protocol)
             if target_port is not None
             else None
         )
@@ -1217,7 +1916,7 @@ def inspect_network(
         )
       firewall_rules = matched_fws[:_MAX_FIREWALL_RULES]
 
-    firewall_policies = _inspect_firewall_policies(
+    firewall_policies, raw_policies = _inspect_firewall_policies(
         network_name,
         host_project,
         subnet_region,
@@ -1226,6 +1925,7 @@ def inspect_network(
         network_tags,
         workload_sa,
         target_port,
+        target_protocol,
     )
 
     raw_zones = _run_gcloud_json(
@@ -1251,6 +1951,28 @@ def inspect_network(
             "bound_to_workload_network": network_name in bound_nets,
         })
 
+  firewall_verdict: Optional[Dict[str, Any]] = None
+  if target_port is not None:
+    firewall_verdict = _firewall_verdict(
+        _firewall_connection(
+            target_direction.upper(),
+            target_protocol,
+            target_port,
+            target_ip,
+            subnet_details,
+            (host_project, network_name),
+            network_tags,
+            workload_sa,
+        ),
+        raw_policies,
+        network_vpc_rules,
+        enforcement_order,
+    )
+    if not can_inspect_vpc:
+      firewall_verdict["notes"].append(
+          "The cluster could not be read, so its network is unknown."
+      )
+
   return {
       **header,
       "action": "network",
@@ -1268,9 +1990,10 @@ def inspect_network(
       "subnet": subnet_details,
       "cloud_nats": cloud_nats,
       "vpc_peerings": vpc_peerings,
-      "firewall_policy_enforcement_order": enforcement_order,
+      "firewall_policy_enforcement_order": enforcement_order or "",
       "firewall_rules": firewall_rules,
       "firewall_policies": firewall_policies,
+      "firewall_verdict": firewall_verdict,
       "private_dns_zones": private_dns_zones,
       "warnings": warnings,
   }
@@ -1468,6 +2191,67 @@ def inspect_classpath(
       "classpath_and_catalog_properties": relevant_props,
       "warnings": warnings,
   }
+
+
+def _format_verdict_rule(rule: Dict[str, Any]) -> str:
+  name = f" `{rule['rule']}`" if rule.get("rule") else ""
+  return f"priority=`{rule['priority']}` `{rule['action']}`{name}"
+
+
+def _format_firewall_verdict(verdict: Dict[str, Any]) -> List[str]:
+  """Formats the first-match firewall verdict as Markdown lines."""
+  remote = verdict["remote_ip"] or {
+      4: "any IPv4 address",
+      6: "any IPv6 address",
+  }.get(verdict["ip_version"], "any address")
+  egress = verdict["direction"] == "EGRESS"
+  lines = [
+      f"## Firewall Verdict (`{verdict['direction']}"
+      f" {verdict['protocol']}:{verdict['port']}`"
+      f" {'to' if egress else 'from'} `{remote}`)"
+  ]
+  summary = f"- verdict: `{verdict['verdict']}`"
+  if verdict.get("decided_by"):
+    decided = verdict["decided_by"]
+    summary += (
+        f", decided by {decided['stage']} {_format_verdict_rule(decided)}"
+    )
+  elif verdict["verdict"] == _VERDICT_INDETERMINATE:
+    summary += (
+        f" (possible outcomes: {', '.join(verdict['possible_outcomes'])})"
+    )
+  lines.append(summary)
+  lines.append(
+      "- evaluation order: " + " -> ".join(verdict["evaluation_order"])
+  )
+  for stage in verdict["stages"]:
+    first = stage["first_match"]
+    if not stage["readable"]:
+      detail = "not readable (see warnings)"
+    elif first is None:
+      detail = "no matching rule"
+    else:
+      ranges = (
+          f" {'dest' if egress else 'src'}={first['remote_ranges']}"
+          if first["remote_ranges"]
+          else ""
+      )
+      detail = f"first match {_format_verdict_rule(first)}{ranges}"
+      if first["match"] != "match":
+        detail += " (indeterminate)"
+    lines.append(f"- {stage['stage']}: {detail}")
+  if verdict["unevaluated_rules"]:
+    lines.append("- unevaluated rules (check by hand):")
+    for rule in verdict["unevaluated_rules"]:
+      lines.append(
+          f"  - {rule['stage']} {_format_verdict_rule(rule)}:"
+          f" {'; '.join(rule['reasons'])}"
+      )
+    if verdict["unevaluated_rules_omitted"]:
+      lines.append(f"  - ... (+{verdict['unevaluated_rules_omitted']} more)")
+  for note in verdict["notes"]:
+    lines.append(f"- note: {note}")
+  return lines
 
 
 def format_markdown(report: Dict[str, Any]) -> str:
@@ -1674,6 +2458,18 @@ def format_markdown(report: Dict[str, Any]) -> str:
       lines.append(
           "- (no hierarchical, network, or system firewall policies returned)"
       )
+    if report.get("target_port") is None and (
+        report.get("firewall_rules") or report.get("firewall_policies")
+    ):
+      lines.append(
+          "- note: The first matching rule in evaluation order decides, and"
+          " `goto_next` hands off to the next level, so a lower-priority"
+          " `deny` may never apply. Re-run with `--target_port=<PORT>` (and"
+          " `--target_ip=<IP>`) for a first-match verdict."
+      )
+    if report.get("firewall_verdict"):
+      lines.append("")
+      lines.extend(_format_firewall_verdict(report["firewall_verdict"]))
     lines.append("")
     lines.append("## Private Cloud DNS Zones")
     if report["private_dns_zones"]:
@@ -1753,7 +2549,9 @@ def build_parser() -> argparse.ArgumentParser:
           "Inspects Google Cloud identity/KMS/secrets, VPC topology (PGA,"
           " Cloud NAT, peering, DNS, firewall rules and policies), or"
           " Spark/Scala classpath metadata for a Dataproc Serverless batch,"
-          " interactive session, or cluster job. Read-only."
+          " interactive session, or cluster job. Read-only. For a failed"
+          " connection, add --target_port (and --target_ip) to"
+          " --action=network for a first-match firewall verdict."
       )
   )
   target = parser.add_mutually_exclusive_group(required=True)
@@ -1788,8 +2586,34 @@ def build_parser() -> argparse.ArgumentParser:
       "--target_port",
       type=int,
       help=(
-          "Optional TCP port (e.g. 5432, 3306, 443) to match against VPC"
-          " firewall rules (--action=network)"
+          "Port of a failed connection (e.g. 5432, 3306, 443) for"
+          " --action=network. Pass it for connection timeouts or refusals:"
+          " it marks matching VPC firewall and firewall policy rules and"
+          " computes a first-match firewall verdict that accounts for rule"
+          " order and goto_next"
+      ),
+  )
+  parser.add_argument(
+      "--target_protocol",
+      choices=["tcp", "udp"],
+      default="tcp",
+      help="Protocol for --target_port (default: %(default)s)",
+  )
+  parser.add_argument(
+      "--target_ip",
+      help=(
+          "Optional remote IP address for the firewall verdict: the"
+          " destination for egress, the source for ingress. Without it,"
+          " rules that match only some remote addresses are indeterminate"
+      ),
+  )
+  parser.add_argument(
+      "--target_direction",
+      choices=["egress", "ingress"],
+      default="egress",
+      help=(
+          "Connection direction for the firewall verdict, relative to the"
+          " workload VMs (default: %(default)s)"
       ),
   )
   parser.add_argument(
@@ -1810,6 +2634,13 @@ def main(
 
   if args.target_port is not None and not (1 <= args.target_port <= 65535):
     parser.error("--target_port must be between 1 and 65535")
+  if args.target_ip is not None:
+    if args.target_port is None:
+      parser.error("--target_ip requires --target_port")
+    try:
+      ipaddress.ip_address(args.target_ip)
+    except ValueError:
+      parser.error("--target_ip must be an IPv4 or IPv6 address")
 
   try:
     project = args.project or resolve_default_project(runner)
@@ -1848,6 +2679,9 @@ def main(
           workload_id,
           runner,
           target_port=args.target_port,
+          target_protocol=args.target_protocol,
+          target_ip=args.target_ip,
+          target_direction=args.target_direction,
       )
     else:
       report = inspect_classpath(
