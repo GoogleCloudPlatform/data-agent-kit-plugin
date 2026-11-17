@@ -36,21 +36,37 @@ in `/usr/lib/hadoop/lib/`.
 ## 3. Configuring Azure Storage Properties (Spark Connect & Batch Compatible)
 
 > [!CAUTION]
-> **NEVER** use `spark._jsc.hadoopConfiguration()` or
-> `spark.sparkContext._jsc.hadoopConfiguration()`. In Spark Connect sessions
-> (`ManagedSparkSession`), `_jsc` and `sparkContext` do not exist and raise
-> `AttributeError` / `PySparkAttributeError: [JVM_ATTRIBUTE_NOT_SUPPORTED]`.
+> **NEVER** call `spark._jsc.hadoopConfiguration()` or
+> `spark.sparkContext._jsc.hadoopConfiguration()` in **any** PySpark workload
+> (including standalone `.py` Serverless batch and cluster scripts as well as
+> Spark Connect and Remote Kernel notebooks). `_jsc` accesses private Py4J JVM
+> internals that fail on Spark Connect (`ManagedSparkSession`) with
+> `AttributeError` / `PySparkAttributeError: [JVM_ATTRIBUTE_NOT_SUPPORTED]`, and
+> is unnecessary in batch and cluster jobs when `spark.hadoop.fs.azure.*`
+> properties are set on `SparkSession.builder` before `.getOrCreate()`. Do NOT
+> add `_jsc.hadoopConfiguration()` alongside `SparkSession.builder.config(...)`
+> as a fallback.
 
-Configure `fs.azure.*` properties using either:
+Configure `fs.azure.*` properties according to the execution mode:
 
--   **Before session creation**:
+-   **Standalone `.py` batch and cluster jobs (`SparkSession.builder`)**:
+    Pass all `fs.azure.*` properties via
     `.config("spark.hadoop.fs.azure.<property>", "<value>")` on
-    `SparkSession.builder` (or
-    `session_config.runtime_config.properties["spark.hadoop.fs.azure.<property>"]`
-    for `ManagedSparkSession`), OR
--   **At runtime on an active `spark` session**:
-    `spark.conf.set("fs.azure.<property>", "<value>")` (or
-    `spark.conf.set("spark.hadoop.fs.azure.<property>", "<value>")`).
+    `SparkSession.builder` **before** calling `.getOrCreate()`. On a classic JVM
+    `SparkSession`, calling `spark.conf.set("fs.azure.*", ...)` after
+    `.getOrCreate()` updates Spark SQL configuration rather than the initialized
+    `SparkContext` Hadoop `Configuration`.
+-   **Local Python / Spark Connect notebooks (`.ipynb`,
+    `ManagedSparkSession`)**:
+    Set `spark.conf.set("fs.azure.<property>", "<value>")` on the active Spark
+    Connect session, or pass
+    `.config("spark.hadoop.fs.azure.<property>", "<value>")` on
+    `ManagedSparkSession.builder` before calling `.getOrCreate()`.
+-   **Pre-initialized Remote Kernel notebooks (`.ipynb`, classic JVM)**:
+    Because `spark` is already initialized and `SparkSession.builder` cannot be
+    re-invoked, use `spark.conf.set("fs.azure.<property>", "<value>")` for
+    DataFrame and Spark SQL reads/writes (which read per-session Hadoop settings
+    via `SessionState.newHadoopConf()`) without calling `_jsc`.
 
 ## 4. Retrieving Azure Credentials from Google Cloud Secret Manager
 
@@ -134,49 +150,121 @@ logging.info("Row count: %d", df.count())
 
 ### B. Azure Blob Storage (`wasbs://`) with Account Key or SAS Token
 
--   **Using a Storage Account Key**:
+-   **Standalone `.py` batch / cluster job (`SparkSession.builder`)**:
 
-    ```python
-    spark.conf.set(
-        f"fs.azure.account.key.{storage_account}.blob.core.windows.net",
-        azure_account_key,
-    )
-    df = spark.read.parquet(
-        f"wasbs://{container}@{storage_account}.blob.core.windows.net/<PATH_TO_DATA>"
-    )
-    ```
+    -   **Using a Storage Account Key**:
 
--   **Using a Container SAS Token** (strip any leading `?` from the SAS token):
+        ```python
+        spark = (
+            SparkSession.builder.appName("azure-blob-read-job")
+            .config(
+                f"spark.hadoop.fs.azure.account.key.{storage_account}.blob.core.windows.net",
+                azure_account_key,
+            )
+            .getOrCreate()
+        )
+        df = spark.read.parquet(
+            f"wasbs://{container}@{storage_account}.blob.core.windows.net/<PATH_TO_DATA>"
+        )
+        ```
 
-    ```python
-    sas_token = get_secret(project_id, "<AZURE_SAS_TOKEN_SECRET_ID>").lstrip("?")
-    spark.conf.set(
-        f"fs.azure.sas.{container}.{storage_account}.blob.core.windows.net",
-        sas_token,
-    )
-    df = spark.read.parquet(
-        f"wasbs://{container}@{storage_account}.blob.core.windows.net/<PATH_TO_DATA>"
-    )
-    ```
+    -   **Using a Container SAS Token** (strip any leading `?` from the SAS
+        token):
+
+        ```python
+        sas_token = get_secret(project_id, "<AZURE_SAS_TOKEN_SECRET_ID>").lstrip("?")
+        spark = (
+            SparkSession.builder.appName("azure-blob-sas-read-job")
+            .config(
+                f"spark.hadoop.fs.azure.sas.{container}.{storage_account}.blob.core.windows.net",
+                sas_token,
+            )
+            .getOrCreate()
+        )
+        df = spark.read.parquet(
+            f"wasbs://{container}@{storage_account}.blob.core.windows.net/<PATH_TO_DATA>"
+        )
+        ```
+
+-   **Interactive notebook (`.ipynb` — Local Python / Spark Connect or Remote
+    Kernel)**:
+
+    -   **Using a Storage Account Key**:
+
+        ```python
+        spark.conf.set(
+            f"fs.azure.account.key.{storage_account}.blob.core.windows.net",
+            azure_account_key,
+        )
+        df = spark.read.parquet(
+            f"wasbs://{container}@{storage_account}.blob.core.windows.net/<PATH_TO_DATA>"
+        )
+        ```
+
+    -   **Using a Container SAS Token** (strip any leading `?` from the SAS
+        token):
+
+        ```python
+        sas_token = get_secret(project_id, "<AZURE_SAS_TOKEN_SECRET_ID>").lstrip("?")
+        spark.conf.set(
+            f"fs.azure.sas.{container}.{storage_account}.blob.core.windows.net",
+            sas_token,
+        )
+        df = spark.read.parquet(
+            f"wasbs://{container}@{storage_account}.blob.core.windows.net/<PATH_TO_DATA>"
+        )
+        ```
 
 ### C. ADLS Gen2 (`abfss://`) with Service Principal (OAuth 2.0 Client Credentials)
 
-```python
-client_secret = get_secret(project_id, "<AZURE_CLIENT_SECRET_ID>")
-dfs_host = f"{storage_account}.dfs.core.windows.net"
+-   **Standalone `.py` batch / cluster job (`SparkSession.builder`)**:
 
-spark.conf.set(f"fs.azure.account.auth.type.{dfs_host}", "OAuth")
-spark.conf.set(
-    f"fs.azure.account.oauth.provider.type.{dfs_host}",
-    "org.apache.hadoop.fs.azurebfs.oauth2.ClientCredsTokenProvider",
-)
-spark.conf.set(f"fs.azure.account.oauth2.client.id.{dfs_host}", "<CLIENT_ID>")
-spark.conf.set(f"fs.azure.account.oauth2.client.secret.{dfs_host}", client_secret)
-spark.conf.set(
-    f"fs.azure.account.oauth2.client.endpoint.{dfs_host}",
-    "https://login.microsoftonline.com/<TENANT_ID>/oauth2/token",
-)
-```
+    ```python
+    client_secret = get_secret(project_id, "<AZURE_CLIENT_SECRET_ID>")
+    dfs_host = f"{storage_account}.dfs.core.windows.net"
+
+    spark = (
+        SparkSession.builder.appName("azure-adls-oauth-job")
+        .config(f"spark.hadoop.fs.azure.account.auth.type.{dfs_host}", "OAuth")
+        .config(
+            f"spark.hadoop.fs.azure.account.oauth.provider.type.{dfs_host}",
+            "org.apache.hadoop.fs.azurebfs.oauth2.ClientCredsTokenProvider",
+        )
+        .config(
+            f"spark.hadoop.fs.azure.account.oauth2.client.id.{dfs_host}",
+            "<CLIENT_ID>",
+        )
+        .config(
+            f"spark.hadoop.fs.azure.account.oauth2.client.secret.{dfs_host}",
+            client_secret,
+        )
+        .config(
+            f"spark.hadoop.fs.azure.account.oauth2.client.endpoint.{dfs_host}",
+            "https://login.microsoftonline.com/<TENANT_ID>/oauth2/token",
+        )
+        .getOrCreate()
+    )
+    ```
+
+-   **Interactive notebook (`.ipynb` — Local Python / Spark Connect or Remote
+    Kernel)**:
+
+    ```python
+    client_secret = get_secret(project_id, "<AZURE_CLIENT_SECRET_ID>")
+    dfs_host = f"{storage_account}.dfs.core.windows.net"
+
+    spark.conf.set(f"fs.azure.account.auth.type.{dfs_host}", "OAuth")
+    spark.conf.set(
+        f"fs.azure.account.oauth.provider.type.{dfs_host}",
+        "org.apache.hadoop.fs.azurebfs.oauth2.ClientCredsTokenProvider",
+    )
+    spark.conf.set(f"fs.azure.account.oauth2.client.id.{dfs_host}", "<CLIENT_ID>")
+    spark.conf.set(f"fs.azure.account.oauth2.client.secret.{dfs_host}", client_secret)
+    spark.conf.set(
+        f"fs.azure.account.oauth2.client.endpoint.{dfs_host}",
+        "https://login.microsoftonline.com/<TENANT_ID>/oauth2/token",
+    )
+    ```
 
 ## 6. Networking & IAM Requirements
 

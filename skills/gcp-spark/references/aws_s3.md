@@ -23,21 +23,38 @@ pre-installs `hadoop-aws.jar` and the matching AWS SDK bundle in
 ## 2. Configuring S3A Properties (Spark Connect & Batch Compatible)
 
 > [!CAUTION]
-> **NEVER** use `spark._jsc.hadoopConfiguration()` or
-> `spark.sparkContext._jsc.hadoopConfiguration()`. In Spark Connect sessions
-> (`ManagedSparkSession`), `_jsc` and `sparkContext` do not exist and raise
-> `AttributeError` / `PySparkAttributeError: [JVM_ATTRIBUTE_NOT_SUPPORTED]`.
+> **NEVER** call `spark._jsc.hadoopConfiguration()` or
+> `spark.sparkContext._jsc.hadoopConfiguration()` in **any** PySpark workload
+> (including standalone `.py` Serverless batch and cluster scripts as well as
+> Spark Connect and Remote Kernel notebooks). `_jsc` accesses private Py4J JVM
+> internals that fail on Spark Connect (`ManagedSparkSession`) with
+> `AttributeError` / `PySparkAttributeError: [JVM_ATTRIBUTE_NOT_SUPPORTED]`, and
+> is unnecessary in batch and cluster jobs when `spark.hadoop.fs.s3a.*`
+> properties are set on `SparkSession.builder` before `.getOrCreate()`. Do NOT
+> add `_jsc.hadoopConfiguration()` alongside `SparkSession.builder.config(...)`
+> as a fallback.
 
-Configure `fs.s3a.*` properties using either:
+Configure `fs.s3a.*` properties according to the execution mode:
 
--   **Before session creation**:
+-   **Standalone `.py` batch and cluster jobs (`SparkSession.builder`)**:
+    Pass all `fs.s3a.*` properties (including credentials, `endpoint`,
+    `path.style.access`, and `connection.ssl.enabled`) via
     `.config("spark.hadoop.fs.s3a.<property>", "<value>")` on
-    `SparkSession.builder` (or
-    `session_config.runtime_config.properties["spark.hadoop.fs.s3a.<property>"]`
-    for `ManagedSparkSession`), OR
--   **At runtime on an active `spark` session**:
-    `spark.conf.set("fs.s3a.<property>", "<value>")` (or
-    `spark.conf.set("spark.hadoop.fs.s3a.<property>", "<value>")`).
+    `SparkSession.builder` **before** calling `.getOrCreate()`. On a classic JVM
+    `SparkSession`, calling `spark.conf.set("fs.s3a.*", ...)` after
+    `.getOrCreate()` updates Spark SQL configuration rather than the initialized
+    `SparkContext` Hadoop `Configuration`.
+-   **Local Python / Spark Connect notebooks (`.ipynb`,
+    `ManagedSparkSession`)**:
+    Set `spark.conf.set("fs.s3a.<property>", "<value>")` on the active Spark
+    Connect session, or pass
+    `.config("spark.hadoop.fs.s3a.<property>", "<value>")` on
+    `ManagedSparkSession.builder` before calling `.getOrCreate()`.
+-   **Pre-initialized Remote Kernel notebooks (`.ipynb`, classic JVM)**:
+    Because `spark` is already initialized and `SparkSession.builder` cannot be
+    re-invoked, use `spark.conf.set("fs.s3a.<property>", "<value>")` for
+    DataFrame and Spark SQL reads/writes (which read per-session Hadoop settings
+    via `SessionState.newHadoopConf()`) without calling `_jsc`.
 -   **Endpoint & Region Alignment (`fs.s3a.endpoint`)**: Always set
     `fs.s3a.endpoint` explicitly to the bucket's regional endpoint
     (`s3.<AWS_REGION>.amazonaws.com`) to avoid cross-region redirects and v4
@@ -140,10 +157,14 @@ df = (
 )
 ```
 
-### B. Interactive Notebook (`.ipynb`) / Spark Connect (`ManagedSparkSession`)
+### B. Interactive Notebook (`.ipynb`, Spark Connect & Remote Kernel)
 
-In Spark Connect sessions, set `fs.s3a.*` via `spark.conf.set(...)` (or via
-`session_config.runtime_config.properties` before `getOrCreate()`):
+In Local Python / Spark Connect notebooks, set `fs.s3a.*` via
+`spark.conf.set(...)` on the active session (or pass
+`.config("spark.hadoop.fs.s3a.<property>", "<value>")` on
+`ManagedSparkSession.builder` before `.getOrCreate()`). On pre-initialized
+Remote Kernel notebooks (classic JVM), use `spark.conf.set(...)` on the active
+`spark` session for DataFrame and Spark SQL reads/writes:
 
 ```python
 spark.conf.set(
@@ -161,13 +182,40 @@ df.show(10)
 ### C. S3-Compatible Object Storage / Custom Endpoint
 
 When connecting to S3-compatible object storage or a custom S3 endpoint, also
-set `fs.s3a.path.style.access` and `fs.s3a.connection.ssl.enabled`:
+configure `fs.s3a.endpoint`, `fs.s3a.path.style.access`, and
+`fs.s3a.connection.ssl.enabled` (`"true"` by default for HTTPS; set to `"false"`
+only for plain HTTP endpoints) without calling `_jsc.hadoopConfiguration()`:
 
-```python
-spark.conf.set("fs.s3a.endpoint", "<CUSTOM_S3_ENDPOINT>")
-spark.conf.set("fs.s3a.path.style.access", "true")
-spark.conf.set("fs.s3a.connection.ssl.enabled", "true")
-```
+-   **Standalone `.py` batch / cluster job (`SparkSession.builder`)**:
+
+    ```python
+    spark = (
+        SparkSession.builder.appName("s3-custom-endpoint-job")
+        .config(
+            "spark.hadoop.fs.s3a.aws.credentials.provider",
+            "org.apache.hadoop.fs.s3a.SimpleAWSCredentialsProvider",
+        )
+        .config("spark.hadoop.fs.s3a.access.key", aws_access_key)
+        .config("spark.hadoop.fs.s3a.secret.key", aws_secret_key)
+        .config("spark.hadoop.fs.s3a.endpoint", "<CUSTOM_S3_ENDPOINT>")
+        .config("spark.hadoop.fs.s3a.path.style.access", "true")
+        .config(
+            "spark.hadoop.fs.s3a.connection.ssl.enabled", "true"
+        )  # Set to "false" for plain HTTP endpoints (e.g., local MinIO)
+        .getOrCreate()
+    )
+    ```
+
+-   **Interactive notebook (`.ipynb` — Local Python / Spark Connect or Remote
+    Kernel)**:
+
+    ```python
+    spark.conf.set("fs.s3a.endpoint", "<CUSTOM_S3_ENDPOINT>")
+    spark.conf.set("fs.s3a.path.style.access", "true")
+    spark.conf.set(
+        "fs.s3a.connection.ssl.enabled", "true"
+    )  # Set to "false" for plain HTTP endpoints (e.g., local MinIO)
+    ```
 
 ## 5. Networking & IAM Requirements
 
