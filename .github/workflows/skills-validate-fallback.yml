@@ -24,6 +24,9 @@ on:
       - "skills/**"
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   skills-validate:
     runs-on: ubuntu-latest

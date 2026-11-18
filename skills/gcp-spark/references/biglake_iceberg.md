@@ -1,4 +1,4 @@
-# BigLake Iceberg Catalog in PySpark
+# BigLake Iceberg Catalog in PySpark and Spark SQL
 
 > [!IMPORTANT]
 > You MUST ALWAYS follow the Task Execution Workflow in `SKILL.md` when writing Spark code.
@@ -18,17 +18,36 @@
 
 ### Option A: Zero-Config (Preferred) — Session Template / Runtime Profile
 
-When generating PySpark **notebook** code, assume the Dataproc kernel already
-has the Iceberg catalog configured via its Runtime Profile (formerly Session
-Template). **MUST NOT add in-code catalog configuration.** Initialize the
-session as described in `SKILL.md`, passing the Iceberg-enabled `<TEMPLATE_ID>`
-to `.runtimeProfile(...)`, then read directly from the catalog registered by
-that Runtime Profile:
+When generating PySpark **notebook** code, or Spark SQL in a `.sql` query file
+with a `@datacloud.settings` header (whose `connectionInfo.sessionTemplate`
+names the Runtime Profile), assume the Spark session already has the Iceberg
+catalog configured via its Runtime Profile (formerly Session Template). **MUST
+NOT add in-code catalog configuration** (no `.config()` calls in notebooks, no
+`SET spark.sql.catalog.*` statements in SQL files). For notebooks, initialize
+the session as described in `SKILL.md`, passing the Iceberg-enabled
+`<TEMPLATE_ID>` to `.runtimeProfile(...)`, then read directly from the catalog
+registered by that Runtime Profile:
 
 ```python
 # Catalog and BigLake settings are pre-configured by the Runtime Profile.
 # No .config() calls are needed.
 df = spark.read.format("iceberg").load("`<CATALOG_NAME>`.<NAMESPACE_NAME>.<TABLE_NAME>")
+```
+
+For Spark SQL query files, keep the `@datacloud.settings` header once at the top
+and create new tables in the catalog and namespace the Runtime Profile defaults
+to (see *Target for new tables* below):
+
+```sql
+-- Runtime Profile sets spark.sql.defaultCatalog: bare table name.
+CREATE OR REPLACE TABLE <TABLE_NAME>
+USING iceberg
+AS SELECT * FROM <SOURCE_VIEW>;
+
+-- Otherwise: profile's catalog + its default namespace (`default` if unset).
+CREATE OR REPLACE TABLE `<CATALOG_NAME>`.<DEFAULT_NAMESPACE>.<TABLE_NAME>
+USING iceberg
+AS SELECT * FROM <SOURCE_VIEW>;
 ```
 
 > [!IMPORTANT] When generating notebook code, **always use the pattern shown
@@ -41,8 +60,9 @@ df = spark.read.format("iceberg").load("`<CATALOG_NAME>`.<NAMESPACE_NAME>.<TABLE
 Use this high-level routing algorithm to determine `<TEMPLATE_ID>` and
 `<CATALOG_NAME>`:
 
--   **If `<TEMPLATE_ID>` is already known** (passed in prompt or present in
-    existing code): go to **Case 1: Known Session Template**.
+-   **If `<TEMPLATE_ID>` is already known** (passed in prompt, present in
+    existing code, or in the `connectionInfo.sessionTemplate` of a
+    `@datacloud.settings` header): go to **Case 1: Known Session Template**.
 -   **If `<TEMPLATE_ID>` is unknown** (only table name, Dataplex entry, or
     warehouse is known): go to **Case 2: Unknown Session Template**.
 -   **If no template matches or input is incomplete**: go to **Case 3: No
@@ -66,6 +86,25 @@ gcloud beta dataproc session-templates describe <TEMPLATE_NAME> \
     (`<CATALOG_NAME>.<NAMESPACE_NAME>.<TABLE_NAME>`).
 -   If multiple catalogs are configured, use the `<CATALOG_NAME>` whose
     `spark.sql.catalog.<CATALOG_NAME>.warehouse` matches the table's warehouse.
+    When creating a new table and no warehouse is given, list the configured
+    catalogs and ask the user which one to use.
+-   **Target for new tables** (when the user names no catalog or namespace): use
+    the defaults configured in the Runtime Profile; do not pick an existing
+    namespace that happens to be in the catalog (e.g. `public_data`) and do not
+    `CREATE NAMESPACE` a new one unless the user asks.
+    -   If `spark.sql.defaultCatalog` names the Iceberg catalog, write the bare
+        table name (`<TABLE_NAME>`); Spark resolves it to that catalog and its
+        default namespace.
+    -   Otherwise, qualify with the catalog and its default namespace:
+        `` `<CATALOG_NAME>`.<DEFAULT_NAMESPACE>.<TABLE_NAME>``, where
+        `<DEFAULT_NAMESPACE>` is
+        `spark.sql.catalog.<CATALOG_NAME>.default-namespace` if set, else
+        `default` (Iceberg's default).
+-   If **no** `spark.sql.catalog.<CATALOG_NAME>` property (and no
+    `spark.sql.defaultCatalog`) is configured, the Runtime Profile has no
+    Iceberg catalog: go to **Case 3**. Do NOT fall back to unqualified table
+    names (they resolve to the non-Iceberg `spark_catalog`) or to a catalog
+    found elsewhere (another Runtime Profile, bucket, or BigLake catalog).
 
 ##### Case 2: Unknown Session Template
 
@@ -86,11 +125,40 @@ gcloud beta dataproc session-templates list \
 
 ##### Case 3: No Matching Template
 
-If no session template matches the warehouse, or if required inputs are missing:
+If no session template matches the warehouse, the known template has no Iceberg
+catalog, or required inputs are missing:
 
--   **STOP and ask the user** which Session Template to use.
--   Do **NOT** guess `<CATALOG_NAME>` or add in-code `.config()` calls in
-    notebooks.
+-   **STOP and ask the user** how to proceed. Tell them which Runtime Profile
+    you inspected and that it has no (matching) Iceberg catalog, and offer
+    options: (1) use another Runtime Profile that configures one (find
+    candidates with `gcloud beta dataproc session-templates list
+    --project=<PROJECT_ID> --location=<REGION>
+    --filter="runtimeConfig.properties:spark.sql.catalog"
+    --format="json(name.basename(), runtimeConfig.properties)"`), or (2) add a
+    BigLake Iceberg catalog (the Option B properties) to the Runtime Profile.
+-   Do **NOT** guess `<CATALOG_NAME>`, use placeholder names, add in-code
+    `.config()` calls in notebooks, or add `SET spark.sql.catalog.*` statements
+    in Spark SQL query files.
+-   **NEVER** create, edit, re-import, or delete a Runtime Profile (e.g.
+    `gcloud beta dataproc session-templates import`) without explicit user
+    confirmation; Runtime Profiles are shared with other users and workloads.
+
+#### Permission Errors on the Runtime Profile's Catalog
+
+If a statement against the Runtime Profile's catalog fails with
+`ForbiddenException` / `Permission 'biglake.<resource>.<action>' denied` (e.g.
+`biglake.tables.create denied on namespace 'default'`):
+
+-   **Report it and STOP.** Tell the user which identity runs the session (the
+    profile's `environmentConfig.executionConfig.serviceAccount` when
+    `userWorkloadAuthenticationType` is `SERVICE_ACCOUNT`, otherwise the end
+    user) and which permission is missing. Suggest granting a role that includes
+    it (e.g. `roles/biglake.editor`) on that catalog, or using a Runtime Profile
+    whose identity already has it.
+-   **NEVER** work around the error by switching to another namespace, another
+    catalog, `spark_catalog`, or unqualified table names, and NEVER grant IAM
+    roles or edit the Runtime Profile yourself without explicit user
+    confirmation.
 
 ### Option B: Explicit In-Code Configuration
 
@@ -178,7 +246,9 @@ df = (
     `spark.sql.defaultCatalog` is not set), set the current Spark catalog using
     `spark.catalog.setCurrentCatalog("<CATALOG_NAME>")`. **DO NOT** use
     backticks in this call.
--   **ALWAYS** Ensure namespace is created before writing, using:
+-   When writing to a namespace the user explicitly named, ensure it exists
+    before writing (do not create namespaces the user did not ask for; see
+    *Target for new tables*), using:
 
     ```python
     spark.sql(
