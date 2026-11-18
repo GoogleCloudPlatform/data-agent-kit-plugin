@@ -17,7 +17,7 @@ description: |
   - Troubleshooting failed Spark jobs or Dataproc batches (use @skill:gcp-spark-troubleshooting).
 license: Apache-2.0
 metadata:
-  version: v35
+  version: v36
   publisher: google
 ---
 
@@ -134,6 +134,43 @@ metadata:
         script/job is requested, or a Spark SQL script (`.sql`) when a Spark SQL
         script or `spark-sql` job/batch is requested (refer to
         `references/gcloud_dataproc.md` for `spark-sql` syntax and submission).
+    *   **Spark SQL Query Files (`@datacloud.settings`)**: A `.sql` file that
+        starts with a `/* @datacloud.settings ... */` header with
+        `"service": "SPARK"` is run by the editor on a Managed Spark session
+        created from the Runtime Profile in `connectionInfo.sessionTemplate`
+        (project and region come from the user's editor settings; use the ones
+        named in the prompt, otherwise ask). When writing SQL into such a file:
+
+        -   Keep exactly one header, unchanged, at the top of the file and write
+            only Spark SQL statements below it. NEVER paste the header, or any
+            part of it, inside or after a SQL statement.
+        -   Resolve Iceberg catalog names from that Runtime Profile by following
+            *Locating the Session Template and Catalog Name* in
+            `references/biglake_iceberg.md`. Create new tables in the catalog
+            and namespace the profile defaults to (bare table name if
+            `spark.sql.defaultCatalog` is set, else
+            `<CATALOG>.<DEFAULT_NAMESPACE>.<TABLE>` with the catalog name in
+            backticks); do not pick or create another namespace unless the user
+            asks. NEVER use placeholder or guessed identifiers (e.g.
+            `target_catalog.target_database.target_table`), unqualified names
+            that fall back to `spark_catalog`, or a catalog the Runtime Profile
+            does not configure. Do NOT add `SET spark.sql.catalog.*` or
+            `spark.sql.extensions` statements to work around a missing catalog.
+            If the Runtime Profile has no Iceberg catalog, STOP and ask the user
+            (Case 3 in `references/biglake_iceberg.md`).
+        -   Read BigQuery tables in Spark SQL through a temporary view, e.g.
+            `CREATE OR REPLACE TEMPORARY VIEW <VIEW> USING bigquery OPTIONS
+            (table '<PROJECT>.<DATASET>.<TABLE>')`; do not reference BigQuery
+            tables as if they were Spark catalog tables.
+        -   NEVER create, edit, re-import, or delete a Runtime Profile (e.g.
+            `gcloud beta dataproc session-templates import`) without explicit
+            user confirmation; Runtime Profiles are shared resources.
+        -   If a statement fails with a BigLake permission error (e.g.
+            `Permission 'biglake.tables.create' denied`), report the missing
+            permission and the session identity and STOP; NEVER switch to
+            another namespace or catalog to work around it (see *Permission
+            Errors on the Runtime Profile's Catalog* in
+            `references/biglake_iceberg.md`).
     *   **Spark Session Initialization**:
 
         > [!IMPORTANT] Initializing a Spark session on Google Cloud can take 2-3
