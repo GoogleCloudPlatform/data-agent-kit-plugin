@@ -17,7 +17,7 @@ description: |
   - Troubleshooting failed Spark jobs or Dataproc batches (use @skill:gcp-spark-troubleshooting).
 license: Apache-2.0
 metadata:
-  version: v35
+  version: v36
   publisher: google
 ---
 
