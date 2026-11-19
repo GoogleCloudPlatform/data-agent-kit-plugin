@@ -31,10 +31,12 @@ import io
 import json
 import os
 import re
+import selectors
 import shutil
 import signal
 import subprocess
 import sys
+import time
 from typing import Any, Dict, Generator, List, Optional, Tuple
 import urllib.error
 import urllib.parse
@@ -97,6 +99,70 @@ def parse_gcs_uri(uri: str) -> Tuple[Optional[str], Optional[str]]:
   return None, None
 
 
+_PROC_WAIT_TIMEOUT_SECONDS = 2.0
+_STDERR_READ_TIMEOUT_SECONDS = 1.0
+_STDERR_MAX_BYTES = 65536
+
+
+def _popen_session_kwargs() -> Dict[str, Any]:
+  """Returns Popen kwargs that isolate the child into its own process group."""
+  if os.name == "posix":
+    return {"start_new_session": True}
+  return {}
+
+
+def _read_stderr_bounded(
+    stderr_stream: Any,
+    timeout: float = _STDERR_READ_TIMEOUT_SECONDS,
+    max_bytes: int = _STDERR_MAX_BYTES,
+) -> str:
+  """Reads stderr without blocking indefinitely on lingering child processes."""
+  if stderr_stream is None or getattr(stderr_stream, "closed", False):
+    return ""
+  try:
+    fd = stderr_stream.fileno()
+  except (AttributeError, OSError, ValueError, io.UnsupportedOperation):
+    data = stderr_stream.read(max_bytes)
+    if isinstance(data, bytes):
+      return data.decode("utf-8", errors="replace")
+    return str(data)
+
+  chunks: List[bytes] = []
+  total = 0
+  if os.name == "posix":
+    deadline = time.monotonic() + timeout
+    selector = selectors.DefaultSelector()
+    try:
+      try:
+        selector.register(fd, selectors.EVENT_READ)
+      except (OSError, ValueError):
+        data = stderr_stream.read(max_bytes)
+        if isinstance(data, bytes):
+          return data.decode("utf-8", errors="replace")
+        return str(data)
+      while total < max_bytes:
+        remaining = max(0.0, deadline - time.monotonic())
+        if not selector.select(timeout=remaining):
+          break
+        try:
+          chunk = os.read(fd, min(8192, max_bytes - total))
+        except OSError:
+          break
+        if not chunk:
+          break
+        chunks.append(chunk)
+        total += len(chunk)
+    finally:
+      selector.close()
+  else:
+    data = stderr_stream.read(max_bytes)
+    if isinstance(data, bytes):
+      chunks.append(data)
+    elif data:
+      return str(data)
+  return b"".join(chunks).decode("utf-8", errors="replace")
+
+
 class _ProcessStream(io.RawIOBase):
   """Reads a child process's stdout and reaps the child when closed.
 
@@ -110,29 +176,113 @@ class _ProcessStream(io.RawIOBase):
   def __init__(self, proc: "subprocess.Popen[bytes]", description: str):
     self._proc = proc
     self._description = description
+    self._reached_eof = False
+    self._pgid: Optional[int] = None
+    if os.name == "posix" and hasattr(os, "getpgid"):
+      try:
+        pgid = os.getpgid(proc.pid)
+        if pgid != os.getpgrp():
+          self._pgid = pgid
+      except OSError:
+        pass
 
   def readable(self) -> bool:
     return True
 
   def readinto(self, b) -> int:
     assert self._proc.stdout is not None
-    return self._proc.stdout.readinto(b)
+    # Popen's default stdout is a BufferedReader whose readinto() blocks until
+    # the buffer fills; readinto1() honors RawIOBase single-read semantics so
+    # streaming consumers (head/read_range) get lines immediately.
+    if hasattr(self._proc.stdout, "readinto1"):
+      count = self._proc.stdout.readinto1(b)
+    else:
+      count = self._proc.stdout.readinto(b)
+    if count == 0 and len(b) > 0:
+      self._reached_eof = True
+    return count
+
+  def _signal_process_group(self, sig: int) -> None:
+    """Sends sig to the isolated process group, or only the direct child."""
+    if self._pgid is not None and hasattr(os, "killpg"):
+      try:
+        os.killpg(self._pgid, sig)
+        return
+      except ProcessLookupError:
+        return
+      except OSError:
+        pass
+    try:
+      if sig == getattr(signal, "SIGKILL", None):
+        self._proc.kill()
+      else:
+        self._proc.terminate()
+    except OSError:
+      pass
+
+  def _terminate_and_reap(self) -> int:
+    """Terminates the child (and isolated process group) and reaps it."""
+    self._signal_process_group(signal.SIGTERM)
+    try:
+      return self._proc.wait(timeout=_PROC_WAIT_TIMEOUT_SECONDS)
+    except subprocess.TimeoutExpired:
+      kill_sig = getattr(signal, "SIGKILL", signal.SIGTERM)
+      self._signal_process_group(kill_sig)
+      try:
+        return self._proc.wait(timeout=_PROC_WAIT_TIMEOUT_SECONDS)
+      except subprocess.TimeoutExpired:
+        return -kill_sig
 
   def close(self) -> None:
-    if self._proc.poll() is None:
-      # The caller may stop reading early (e.g. after --max_matches hits).
-      self._proc.terminate()
+    if self.closed:
+      return
+
+    polled = self._proc.poll()
+    terminated_early = not self._reached_eof and polled is None
+
+    # Close stdout first so the child sees EOF / SIGPIPE immediately.
     if self._proc.stdout is not None:
       self._proc.stdout.close()
-    if self._proc.stderr is not None:
-      stderr = self._proc.stderr.read().decode("utf-8", errors="replace")
-      self._proc.stderr.close()
+
+    if terminated_early:
+      # The caller stopped reading early (e.g. head, read_range, or search
+      # hitting --max_matches). Close stderr without reading it: subprocess
+      # workers may inherit the write FD and would deadlock stderr.read().
+      if self._proc.stderr is not None:
+        self._proc.stderr.close()
+      self._terminate_and_reap()
+      super().close()
+      return
+
+    if polled is None:
+      # Reached EOF on stdout naturally; wait briefly for exit status so a
+      # failed command still surfaces its error.
+      try:
+        returncode = self._proc.wait(timeout=_PROC_WAIT_TIMEOUT_SECONDS)
+      except subprocess.TimeoutExpired:
+        returncode = self._terminate_and_reap()
     else:
-      stderr = ""
-    returncode = self._proc.wait()
+      returncode = polled
+
+    sigkill = getattr(signal, "SIGKILL", None)
+    acceptable_exit_codes = (
+        (0, -signal.SIGTERM)
+        if sigkill is None
+        else (0, -signal.SIGTERM, -sigkill)
+    )
+
+    stderr = ""
+    if returncode not in acceptable_exit_codes:
+      stderr = _read_stderr_bounded(self._proc.stderr)
+    if self._proc.stderr is not None:
+      self._proc.stderr.close()
+
+    if self._pgid is not None:
+      self._signal_process_group(signal.SIGTERM)
+
     super().close()
     # -15/-9 mean we terminated it deliberately after reading enough.
-    if returncode not in (0, -signal.SIGTERM, -signal.SIGKILL):
+    if returncode not in acceptable_exit_codes:
       detail = stderr.strip() or f"exit code {returncode}"
       raise RuntimeError(f"{self._description} failed: {detail}")
 
@@ -255,7 +405,10 @@ class GcsStreamReader:
     try:
       cmd = ["gcloud", "storage", "cat", "-r", gcloud_range, self.uri]
       proc = subprocess.Popen(
-          cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+          cmd,
+          stdout=subprocess.PIPE,
+          stderr=subprocess.PIPE,
+          **_popen_session_kwargs(),
       )
       if proc.stdout:
         return io.BufferedReader(
@@ -299,7 +452,12 @@ class GcsStreamReader:
       pass
 
     cmd = ["gcloud", "storage", "cat", self.uri]
-    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    proc = subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        **_popen_session_kwargs(),
+    )
     if proc.stdout:
       return io.BufferedReader(_ProcessStream(proc, "'gcloud storage cat'"))
     raise RuntimeError(f"Unable to open stream for {self.uri}")
@@ -419,18 +577,24 @@ def get_decompressed_line_generator(
       text_stream = io.TextIOWrapper(
           stream_reader, encoding="utf-8", errors="replace"
       )
-      for line in text_stream:
-        yield line
-      text_stream.close()
+      try:
+        for line in text_stream:
+          yield line
+      finally:
+        text_stream.close()
+        raw_stream.close()
     elif HAS_ZSTD:
       dctx = zstandard.ZstdDecompressor()
       stream_reader = dctx.stream_reader(raw_stream)
       text_stream = io.TextIOWrapper(
           stream_reader, encoding="utf-8", errors="replace"
       )
-      for line in text_stream:
-        yield line
-      text_stream.close()
+      try:
+        for line in text_stream:
+          yield line
+      finally:
+        text_stream.close()
+        raw_stream.close()
     elif shutil.which("zstd"):
       # Fall back to the zstd CLI when no Python module is importable.
       proc = subprocess.Popen(
@@ -438,15 +602,32 @@ def get_decompressed_line_generator(
           stdin=raw_stream,
           stdout=subprocess.PIPE,
           stderr=subprocess.DEVNULL,
+          **_popen_session_kwargs(),
       )
       if not proc.stdout:
+        raw_stream.close()
         raise RuntimeError("Failed to start the zstd decompression process.")
       text_stream = io.TextIOWrapper(
           proc.stdout, encoding="utf-8", errors="replace"
       )
-      for line in text_stream:
-        yield line
-      text_stream.close()
+      try:
+        for line in text_stream:
+          yield line
+      finally:
+        try:
+          text_stream.close()
+          if proc.poll() is None:
+            proc.terminate()
+            try:
+              proc.wait(timeout=_PROC_WAIT_TIMEOUT_SECONDS)
+            except subprocess.TimeoutExpired:
+              proc.kill()
+              try:
+                proc.wait(timeout=_PROC_WAIT_TIMEOUT_SECONDS)
+              except subprocess.TimeoutExpired:
+                pass
+        finally:
+          raw_stream.close()
     else:
       raise RuntimeError(
           "Reading .zst files requires Zstandard support, which is unavailable."
@@ -666,121 +847,122 @@ def action_summarize_events(reader: GcsStreamReader) -> None:
 
   line_count = 0
 
-  for line in get_decompressed_line_generator(stream, reader.uri):
-    line_count += 1
-    line_str = line.strip()
-    if not line_str or not line_str.startswith("{"):
-      continue
+  try:
+    for line in get_decompressed_line_generator(stream, reader.uri):
+      line_count += 1
+      line_str = line.strip()
+      if not line_str or not line_str.startswith("{"):
+        continue
 
-    try:
-      event = json.loads(line_str)
-    except (json.JSONDecodeError, ValueError):
-      continue
+      try:
+        event = json.loads(line_str)
+      except (json.JSONDecodeError, ValueError):
+        continue
 
-    event_type = event.get("Event")
-    if event_type:
-      event_type_counts[event_type] += 1
+      event_type = event.get("Event")
+      if event_type:
+        event_type_counts[event_type] += 1
 
-    if event_type == "SparkListenerLogStart":
-      spark_version = event.get("Spark Version", spark_version)
-    elif event_type == "SparkListenerApplicationStart":
-      app_id = event.get("App ID", app_id)
-      app_name = event.get("App Name", app_name)
-      spark_user = event.get("User", spark_user)
-      start_time = event.get("Timestamp")
-    elif event_type == "SparkListenerApplicationEnd":
-      end_time = event.get("Timestamp")
-    elif event_type == "SparkListenerJobStart":
-      total_jobs += 1
-    elif event_type == "SparkListenerJobEnd":
-      job_result = event.get("Job Result", {})
-      if job_result.get("Result") not in (None, "JobSucceeded"):
-        failed_jobs += 1
-    elif event_type == "SparkListenerStageSubmitted":
-      total_stages += 1
-    elif event_type == "SparkListenerStageCompleted":
-      stage_info = event.get("Stage Info", {})
-      s_id = stage_info.get("Stage ID", -1)
-      s_name = stage_info.get("Stage Name", "")
-      failure_reason = stage_info.get("Failure Reason")
-      num_tasks = stage_info.get("Number of Tasks", 0)
+      if event_type == "SparkListenerLogStart":
+        spark_version = event.get("Spark Version", spark_version)
+      elif event_type == "SparkListenerApplicationStart":
+        app_id = event.get("App ID", app_id)
+        app_name = event.get("App Name", app_name)
+        spark_user = event.get("User", spark_user)
+        start_time = event.get("Timestamp")
+      elif event_type == "SparkListenerApplicationEnd":
+        end_time = event.get("Timestamp")
+      elif event_type == "SparkListenerJobStart":
+        total_jobs += 1
+      elif event_type == "SparkListenerJobEnd":
+        job_result = event.get("Job Result", {})
+        if job_result.get("Result") not in (None, "JobSucceeded"):
+          failed_jobs += 1
+      elif event_type == "SparkListenerStageSubmitted":
+        total_stages += 1
+      elif event_type == "SparkListenerStageCompleted":
+        stage_info = event.get("Stage Info", {})
+        s_id = stage_info.get("Stage ID", -1)
+        s_name = stage_info.get("Stage Name", "")
+        failure_reason = stage_info.get("Failure Reason")
+        num_tasks = stage_info.get("Number of Tasks", 0)
 
-      # Check metrics for spills
-      accumulables = stage_info.get("Accumulables", [])
-      mem_spill = 0
-      disk_spill = 0
-      for acc in accumulables:
-        acc_name = acc.get("Name", "")
-        clean_acc = acc_name.lower().replace(" ", "").replace("_", "")
-        if "memorybytesspilled" in clean_acc:
-          mem_spill = acc.get("Value", 0)
-        elif "diskbytesspilled" in clean_acc:
-          disk_spill = acc.get("Value", 0)
+        # Check metrics for spills
+        accumulables = stage_info.get("Accumulables", [])
+        mem_spill = 0
+        disk_spill = 0
+        for acc in accumulables:
+          acc_name = acc.get("Name", "")
+          clean_acc = acc_name.lower().replace(" ", "").replace("_", "")
+          if "memorybytesspilled" in clean_acc:
+            mem_spill = acc.get("Value", 0)
+          elif "diskbytesspilled" in clean_acc:
+            disk_spill = acc.get("Value", 0)
 
-      if mem_spill > 0 or disk_spill > 0:
-        spill_events.append({
-            "stage_id": s_id,
-            "stage_name": s_name,
-            "mem_spill_bytes": mem_spill,
-            "disk_spill_bytes": disk_spill,
+        if mem_spill > 0 or disk_spill > 0:
+          spill_events.append({
+              "stage_id": s_id,
+              "stage_name": s_name,
+              "mem_spill_bytes": mem_spill,
+              "disk_spill_bytes": disk_spill,
+              "line": line_count,
+          })
+
+        if failure_reason:
+          failed_stages.append({
+              "stage_id": s_id,
+              "stage_name": s_name,
+              "num_tasks": num_tasks,
+              "failure_reason": str(failure_reason)[:300],
+              "line": line_count,
+          })
+      elif event_type == "SparkListenerTaskEnd":
+        total_tasks += 1
+        task_metrics = event.get("Task Metrics", {})
+        total_gc_time += task_metrics.get("JVM GC Time", 0) or 0
+        task_end_reason = event.get("Task End Reason", {})
+        reason_type = task_end_reason.get("Reason")
+        if reason_type and reason_type != "Success":
+          task_info = event.get("Task Info", {})
+          # Spark's JsonProtocol writes ExceptionFailure as a flat object with
+          # "Class Name" and "Description"; there is no nested "Exception"
+          # object, so the previous lookup never matched and always fell back to
+          # dumping the raw reason dict.
+          exception_class = task_end_reason.get("Class Name")
+          description = (
+              task_end_reason.get("Description")
+              # FetchFailed / ExecutorLostFailure carry their detail elsewhere.
+              or task_end_reason.get("Message")
+              or task_end_reason.get("Loss Reason")
+              or task_end_reason.get("Kill Reason")
+          )
+          if exception_class and description:
+            detail = f"{exception_class}: {description}"
+          else:
+            detail = description or exception_class or str(task_end_reason)
+          failed_tasks.append({
+              "task_id": task_info.get("Task ID"),
+              "stage_id": event.get("Stage ID"),
+              "index": task_info.get("Index"),
+              "attempt": task_info.get("Attempt"),
+              "executor_id": task_info.get("Executor ID"),
+              "host": task_info.get("Host"),
+              "reason": reason_type,
+              "exception": detail[:300],
+              "line": line_count,
+          })
+      elif event_type == "SparkListenerExecutorRemoved":
+        executors_removed.append({
+            "executor_id": event.get("Executor ID"),
+            # Spark emits "Removed Reason" here, not "Reason". Reading the wrong
+            # key made every executor loss report None -- exactly the signal
+            # needed to distinguish OOM kills from preemption.
+            "reason": event.get("Removed Reason"),
+            "removed_time": event.get("Timestamp"),
             "line": line_count,
         })
-
-      if failure_reason:
-        failed_stages.append({
-            "stage_id": s_id,
-            "stage_name": s_name,
-            "num_tasks": num_tasks,
-            "failure_reason": str(failure_reason)[:300],
-            "line": line_count,
-        })
-    elif event_type == "SparkListenerTaskEnd":
-      total_tasks += 1
-      task_metrics = event.get("Task Metrics", {})
-      total_gc_time += task_metrics.get("JVM GC Time", 0) or 0
-      task_end_reason = event.get("Task End Reason", {})
-      reason_type = task_end_reason.get("Reason")
-      if reason_type and reason_type != "Success":
-        task_info = event.get("Task Info", {})
-        # Spark's JsonProtocol writes ExceptionFailure as a flat object with
-        # "Class Name" and "Description"; there is no nested "Exception"
-        # object, so the previous lookup never matched and always fell back to
-        # dumping the raw reason dict.
-        exception_class = task_end_reason.get("Class Name")
-        description = (
-            task_end_reason.get("Description")
-            # FetchFailed / ExecutorLostFailure carry their detail elsewhere.
-            or task_end_reason.get("Message")
-            or task_end_reason.get("Loss Reason")
-            or task_end_reason.get("Kill Reason")
-        )
-        if exception_class and description:
-          detail = f"{exception_class}: {description}"
-        else:
-          detail = description or exception_class or str(task_end_reason)
-        failed_tasks.append({
-            "task_id": task_info.get("Task ID"),
-            "stage_id": event.get("Stage ID"),
-            "index": task_info.get("Index"),
-            "attempt": task_info.get("Attempt"),
-            "executor_id": task_info.get("Executor ID"),
-            "host": task_info.get("Host"),
-            "reason": reason_type,
-            "exception": detail[:300],
-            "line": line_count,
-        })
-    elif event_type == "SparkListenerExecutorRemoved":
-      executors_removed.append({
-          "executor_id": event.get("Executor ID"),
-          # Spark emits "Removed Reason" here, not "Reason". Reading the wrong
-          # key made every executor loss report a reason of None -- exactly the
-          # signal needed to distinguish OOM kills from preemption.
-          "reason": event.get("Removed Reason"),
-          "removed_time": event.get("Timestamp"),
-          "line": line_count,
-      })
-
-  stream.close()
+  finally:
+    stream.close()
 
   # Format executive summary in markdown
   print("## Spark Event Log Executive Summary\n")
