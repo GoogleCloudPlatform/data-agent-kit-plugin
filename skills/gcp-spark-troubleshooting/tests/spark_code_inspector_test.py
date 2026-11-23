@@ -22,6 +22,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 import zipfile
 
 sys.path.insert(
@@ -388,6 +389,53 @@ class MalformedBytecodeTest(unittest.TestCase):
     data = struct.pack(">IHH", 0xCAFEBABE, 0, 65)
     result = spark_code_inspector.render_class_summary(data, "Truncated.class")
     self.assertIn("Failed to parse bytecode", result)
+
+
+class ZipSlipSecurityTest(unittest.TestCase):
+
+  def test_blocks_zip_slip_archive_entries(self):
+    with tempfile.TemporaryDirectory() as temp_dir:
+      victim_dir = os.path.join(temp_dir, "victim")
+      os.makedirs(victim_dir)
+      abs_entry = os.path.join(victim_dir, "Main.class")
+      traversal_inner = (
+          f"com/example/SafeJob$/{'../' * 12}{victim_dir.lstrip('/')}/Bad.class"
+      )
+      jar_path = os.path.join(temp_dir, "malicious.jar")
+      with zipfile.ZipFile(jar_path, "w") as zf:
+        zf.writestr(abs_entry, b"\xca\xfe\xba\xbe")
+        zf.writestr("../Escape.class", b"\xca\xfe\xba\xbe")
+        zf.writestr("com/example/SafeJob.class", b"\xca\xfe\xba\xbe")
+        zf.writestr("com/example/SafeJob$1.class", b"\xca\xfe\xba\xbe")
+        zf.writestr(traversal_inner, b"\xca\xfe\xba\xbe")
+
+      for unsafe in (
+          abs_entry,
+          "../Escape.class",
+          "C:/Main.class",
+          traversal_inner,
+      ):
+        with self.subTest(unsafe=unsafe):
+          with self.assertRaisesRegex(ValueError, "Unsafe archive entry path"):
+            spark_code_inspector.disassemble_with_javap(
+                b"\xca\xfe\xba\xbe", unsafe
+            )
+
+      javap = shutil.which("javap") or "/usr/bin/true"
+      with mock.patch.object(
+          shutil, "which", autospec=True, return_value=javap
+      ):
+        self.assertIn(
+            "not found in JAR archive",
+            spark_code_inspector.inspect(jar_path, "Main", 300, use_javap=True),
+        )
+        safe_out = spark_code_inspector.inspect(
+            jar_path, "com.example.SafeJob", 300, use_javap=True
+        )
+        self.assertIn("com/example/SafeJob.class", safe_out)
+        self.assertIn("com/example/SafeJob$1.class", safe_out)
+        self.assertNotIn("Bad.class", safe_out)
+      self.assertEqual(os.listdir(victim_dir), [])
 
 
 if __name__ == "__main__":
