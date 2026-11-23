@@ -1,33 +1,24 @@
 ---
 name: gcp-dataflow
-description: >
-  Guides writing, packaging, executing, and troubleshooting Apache Beam
-  pipelines on Dataflow. Use when creating new pipelines, configuring Flex
-  Templates, or analyzing performance of Dataflow jobs. Capabilities include
-  Java/Python/Go setup, Cloud Build integration, and deep diagnostic analysis
-  of job health and autoscaling.
+description: >-
+  Guides designing, building, packaging, launching, and diagnosing Google Cloud
+  Dataflow (Apache Beam) pipelines, using Google-provided Classic/Flex templates
+  or custom Java/Python/Go jobs, for moving, exporting, loading, or processing
+  data between systems in streaming or batch. Use before answering when a
+  request involves data movement, scheduled/nightly data pipelines, or backfills
+  so template vs. custom pipeline fit is checked first.
 
-  Use when:
-  - Creating an Apache Beam Dataflow pipeline.
-  - Creating a Google Dataflow Flex Template.
-  - Using an existing Google Dataflow Template.
-  - Debugging Dataflow pipeline
-  - Troubleshooting Dataflow pipeline
-  - Analyzing Performance of Dataflow pipeline.
+  Use when: a SQL or BigQuery task needs custom code, external lookups, or
+  cross-system joins; batch or streaming ML inference/embeddings; converting,
+  compacting, or reshaping Cloud Storage files (CSV, JSON, Avro, Parquet);
+  copying or replicating databases (full, incremental, CDC); or Apache Beam code,
+  Flex Templates, and Dataflow job diagnostics.
 
-  Key capabilities: Java/Python/Go project setup, Flex Templates (with
-  Cloud Build), and diagnostics for streaming job health, bottlenecks,
-  and autoscaling.
-
-  Do NOT use for:
-  - General GCP resource management unrelated to Dataflow.
-  - Issues with other GCP services (e.g., GCE, GCS, BigQuery) unless directly
-    impacting Dataflow pipeline execution.
-  - Pipeline technologies other than Apache Beam on Dataflow.
-
+  Do NOT use for pure BigQuery SQL/ML, dbt, Dataform, Spark/Dataproc, Cloud
+  Composer/Airflow orchestration, BigQuery DTS, or GCS bucket administration.
 license: Apache-2.0
 metadata:
-  version: v6
+  version: v7
   publisher: google
 ---
 
