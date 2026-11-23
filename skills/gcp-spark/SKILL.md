@@ -17,7 +17,7 @@ description: |
   - Troubleshooting failed Spark jobs or Dataproc batches (use @skill:gcp-spark-troubleshooting).
 license: Apache-2.0
 metadata:
-  version: v35
+  version: v36
   publisher: google
 ---
 
@@ -134,6 +134,12 @@ metadata:
         script/job is requested, or a Spark SQL script (`.sql`) when a Spark SQL
         script or `spark-sql` job/batch is requested (refer to
         `references/gcloud_dataproc.md` for `spark-sql` syntax and submission).
+        When authoring **new** scripts or notebooks (as opposed to prompts that
+        explicitly ask to modify, upgrade, or debug an existing `gs://` script),
+        write them from scratch following this skill and its `references/`
+        guides—do **NOT** read or copy `.py` or `.sql` scripts from prior job or
+        batch staging buckets in Cloud Storage, which may contain outdated or
+        non-portable code (such as `_jsc.hadoopConfiguration()`).
     *   **Spark Session Initialization**:
 
         > [!IMPORTANT] Initializing a Spark session on Google Cloud can take 2-3
