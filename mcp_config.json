@@ -11,8 +11,7 @@
       "command": "node",
       "type": "stdio",
       "args": [
-        "mcp/dist/index.js",
-        "--mode=data-agent-kit"
+        "mcp/dist/dak-mcp.js"
       ]
     },
     "dak-alloydb": {
