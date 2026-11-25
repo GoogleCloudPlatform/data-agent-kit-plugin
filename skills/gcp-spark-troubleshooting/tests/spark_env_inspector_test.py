@@ -199,9 +199,7 @@ class SparkEnvInspectorIdentityTest(unittest.TestCase):
         auth_props["spark.sql.catalog.lake.header.X-Iceberg-Access-Delegation"],
         "vended-credentials",
     )
-    self.assertEqual(
-        auth_props["spark.hadoop.fs.s3a.secret.key"], "<REDACTED>"
-    )
+    self.assertEqual(auth_props["spark.hadoop.fs.s3a.secret.key"], "<REDACTED>")
     self.assertEqual(
         auth_props["spark.sql.catalog.lake.credential"], "<REDACTED>"
     )
@@ -209,9 +207,7 @@ class SparkEnvInspectorIdentityTest(unittest.TestCase):
         auth_props["spark.sql.catalog.lake.header.Authorization"],
         "<REDACTED>",
     )
-    self.assertEqual(
-        auth_props["spark.ssl.keyStorePassphrase"], "<REDACTED>"
-    )
+    self.assertEqual(auth_props["spark.ssl.keyStorePassphrase"], "<REDACTED>")
     self.assertNotIn("CleartextSecret123!", stdout)
     self.assertNotIn("OAuthSecret456", stdout)
     self.assertNotIn("SecretBearerToken", stdout)
@@ -482,6 +478,7 @@ class SparkEnvInspectorIdentityTest(unittest.TestCase):
             "",
             not_found_err,
         ),
+        "logging read": (0, [], ""),
         "projects describe my-gcp-project": (
             0,
             {"projectNumber": "555666777888"},
@@ -626,12 +623,10 @@ class SparkEnvInspectorNetworkTest(unittest.TestCase):
         "ipCidrRange": "10.10.0.0/20",
         "privateIpGoogleAccess": True,
     }
-    routers_payload = [
-        {
-            "name": "ingest-router",
-            "network": "projects/my-gcp-project/global/networks/ingest-vpc",
-        }
-    ]
+    routers_payload = [{
+        "name": "ingest-router",
+        "network": "projects/my-gcp-project/global/networks/ingest-vpc",
+    }]
     nats_payload = [
         {
             "name": "ingest-nat",
@@ -641,9 +636,7 @@ class SparkEnvInspectorNetworkTest(unittest.TestCase):
         {
             "name": "private-inter-vpc-nat",
             "type": "PRIVATE",
-            "sourceSubnetworkIpRangesToNat": (
-                "ALL_SUBNETWORKS_ALL_IP_RANGES"
-            ),
+            "sourceSubnetworkIpRangesToNat": "ALL_SUBNETWORKS_ALL_IP_RANGES",
         },
         {
             "name": "secondary-only-nat",
@@ -684,23 +677,19 @@ class SparkEnvInspectorNetworkTest(unittest.TestCase):
             "denied": [{"IPProtocol": "all"}],
         },
     ]
-    dns_payload = [
-        {
-            "name": "corp-db-private-zone",
-            "dnsName": "db.internal.example.",
-            "visibility": "private",
-            "privateVisibilityConfig": {
-                "networks": [
-                    {
-                        "networkUrl": (
-                            "https://www.googleapis.com/compute/v1/projects/"
-                            "my-gcp-project/global/networks/isolated-vpc"
-                        )
-                    }
-                ]
-            },
-        }
-    ]
+    dns_payload = [{
+        "name": "corp-db-private-zone",
+        "dnsName": "db.internal.example.",
+        "visibility": "private",
+        "privateVisibilityConfig": {
+            "networks": [{
+                "networkUrl": (
+                    "https://www.googleapis.com/compute/v1/projects/"
+                    "my-gcp-project/global/networks/isolated-vpc"
+                )
+            }]
+        },
+    }]
     network_payload = {
         "name": "ingest-vpc",
         "networkFirewallPolicyEnforcementOrder": "AFTER_CLASSIC_FIREWALL",
@@ -939,6 +928,7 @@ class SparkEnvInspectorNetworkTest(unittest.TestCase):
             "",
             "ERROR: NOT_FOUND: Cluster gone-cluster",
         ),
+        "logging read": (0, [], ""),
         "compute networks subnets describe default": (0, subnet_minimal, ""),
         "compute routers list": (0, [{"name": "r1", "network": "default"}], ""),
         "compute firewall-rules list": (
@@ -1557,15 +1547,13 @@ class SparkEnvInspectorClasspathTest(unittest.TestCase):
     self.assertEqual(rep_22["jar_file_uris"], ["gs://bkt/custom_2.12-1.0.jar"])
     self.assertEqual(
         rep_22["classified_jars"],
-        [
-            {
-                "artifact": "gs://bkt/custom_2.12-1.0.jar",
-                "scala_binary_version": "2.12",
-                "spark_minor_version": None,
-                "scala_matches_runtime": True,
-                "spark_matches_runtime": None,
-            }
-        ],
+        [{
+            "artifact": "gs://bkt/custom_2.12-1.0.jar",
+            "scala_binary_version": "2.12",
+            "spark_minor_version": None,
+            "scala_matches_runtime": True,
+            "spark_matches_runtime": None,
+        }],
     )
     self.assertEqual(rep_22["file_uris"], ["gs://bkt/override-ca.pem"])
 
@@ -2262,9 +2250,7 @@ class SparkEnvInspectorRunnerMarkdownAndCliTest(unittest.TestCase):
         "secret_inspection": {
             "secret_project": "sec-p",
             "secret_id": "db-pw",
-            "principal_roles_on_secret": [
-                "roles/secretmanager.secretAccessor"
-            ],
+            "principal_roles_on_secret": ["roles/secretmanager.secretAccessor"],
             "versions": [{
                 "version": "1",
                 "state": "ENABLED",
@@ -2493,6 +2479,12 @@ class SparkEnvInspectorRunnerMarkdownAndCliTest(unittest.TestCase):
             "- ip_cidr_range: `10.0.0.0/28`",
             "- usable_hosts_estimate: `12` (total capacity, not free IPs)",
             "- private_ip_google_access: `False`",
+            (
+                "- note: Dataproc doesn't change Private Google Access on a"
+                " Shared VPC subnet in another project. If it is `False`, the"
+                " workload fails at startup until a network administrator of"
+                " `host-p` turns it on. It reaches only Google APIs."
+            ),
             "",
             "## Cloud NAT Gateways",
             (
@@ -2535,6 +2527,27 @@ class SparkEnvInspectorRunnerMarkdownAndCliTest(unittest.TestCase):
                 " bound_to_workload_network=`True` bound_networks=['vpc-1']"
             ),
         ]),
+    )
+    # A subnet in the workload's own project gets the same-project note,
+    # sessions get the same notes as batches, and cluster jobs get no note.
+    same_project = dict(net_populated, effective_host_project="proj-a")
+    self.assertIn(
+        "- note: Dataproc turns Private Google Access on when a workload"
+        " starts on a subnet in its own project, unless the Dataproc"
+        " Service Agent lacks permission to change the subnet. So"
+        " `False` on a subnet of this project doesn't block a new batch"
+        " or session there. It reaches only Google APIs.",
+        spark_env_inspector.format_markdown(same_project),
+    )
+    session = dict(net_populated, workload_type="session")
+    self.assertIn(
+        "- note: Dataproc doesn't change Private Google Access on a Shared"
+        " VPC subnet in another project.",
+        spark_env_inspector.format_markdown(session),
+    )
+    cluster_job = dict(net_populated, workload_type="job")
+    self.assertNotIn(
+        "- note: Dataproc", spark_env_inspector.format_markdown(cluster_job)
     )
 
     net_minimal = {
@@ -3100,6 +3113,1892 @@ class SparkEnvInspectorFixesTest(unittest.TestCase):
       )
     self.assertEqual(code, 1)
     self.assertIn("not installed", stderr)
+
+
+_VERDICT_NETWORK_URI = "projects/p/global/networks/vpc-v"
+
+
+def _policy(name, policy_type, rules):
+  return {"name": name, "type": policy_type, "rules": rules}
+
+
+def _policy_rule(
+    priority,
+    action,
+    *,
+    direction="EGRESS",
+    l4=None,
+    dest=None,
+    src=None,
+    match_extra=None,
+    **extra,
+):
+  match = {"layer4Configs": l4 or [{"ipProtocol": "all"}]}
+  if dest is not None:
+    match["destIpRanges"] = dest
+  if src is not None:
+    match["srcIpRanges"] = src
+  match.update(match_extra or {})
+  rule = {
+      "priority": priority,
+      "direction": direction,
+      "action": action,
+      "match": match,
+  }
+  rule.update(extra)
+  return rule
+
+
+def _vpc_rule(name, priority, *, direction="EGRESS", denied=None, **extra):
+  rule = {
+      "name": name,
+      "network": _VERDICT_NETWORK_URI,
+      "direction": direction,
+      "priority": priority,
+  }
+  if denied is not None:
+    rule["denied"] = denied
+  else:
+    rule["allowed"] = extra.pop("allowed", [{"IPProtocol": "all"}])
+  rule.update(extra)
+  return rule
+
+
+def _verdict_runner(
+    *,
+    vpc_rules=(),
+    policies=(),
+    network=None,
+    network_code=0,
+    firewalls_code=0,
+    policies_code=0,
+    stack_type="IPV4_ONLY",
+    service_account="etl@p.iam.gserviceaccount.com",
+    runtime_version="2.2",
+    subnets=None,
+    subnets_code=0,
+    routes=None,
+    routes_code=0,
+    routers=(),
+    router_status=None,
+    nats=(),
+    peering_routes=None,
+    addresses=(),
+    addresses_code=0,
+):
+  batch_payload = {
+      "runtimeConfig": {"version": runtime_version},
+      "environmentConfig": {
+          "executionConfig": {
+              "subnetworkUri": "regions/us-central1/subnetworks/sub-v",
+              "serviceAccount": service_account,
+              "networkTags": ["spark"],
+          }
+      },
+  }
+  subnet_payload = {
+      "name": "sub-v",
+      "network": _VERDICT_NETWORK_URI,
+      "ipCidrRange": "10.8.0.0/24",
+      "stackType": stack_type,
+  }
+  if subnets is None:
+    subnets = [
+        dict(
+            subnet_payload,
+            region=(
+                "https://www.googleapis.com/compute/v1/projects/p/regions/"
+                "us-central1"
+            ),
+        )
+    ]
+  if routes is None:
+    routes = [_route("default-route-internet", "0.0.0.0/0")]
+
+  def _response(code, payload):
+    return (
+        code,
+        payload if code == 0 else "",
+        "ERROR: (gcloud) 403" if code else "",
+    )
+
+  def _peering_routes(args):
+    found = (peering_routes or {}).get(args[4], [])
+    if isinstance(found, int):
+      return _response(found, [])
+    return 0, json.dumps(found), ""
+
+  def _router_status(args):
+    found = (router_status or {}).get(args[3])
+    if found is None:
+      return _response(1, {})
+    return 0, json.dumps(found), ""
+
+  return _FakeGcloud({
+      "dataproc batches describe b-fw": (0, batch_payload, ""),
+      "compute networks subnets describe sub-v": (0, subnet_payload, ""),
+      "compute networks subnets list": _response(subnets_code, list(subnets)),
+      "compute networks peerings list-routes": _peering_routes,
+      "compute routers list": (0, list(routers), ""),
+      "compute routers get-status": _router_status,
+      "compute routers nats list": (0, list(nats), ""),
+      "compute routes list": _response(routes_code, list(routes)),
+      "compute addresses list": _response(addresses_code, list(addresses)),
+      "compute networks describe vpc-v": _response(
+          network_code, {"name": "vpc-v"} if network is None else network
+      ),
+      "compute firewall-rules list": _response(firewalls_code, list(vpc_rules)),
+      "compute network-firewall-policies get-effective-firewalls": _response(
+          policies_code, {"firewallPolicys": list(policies), "firewalls": []}
+      ),
+      "dns managed-zones list": (0, [], ""),
+  })
+
+
+def _route(name, dest, *, network=_VERDICT_NETWORK_URI, **next_hop):
+  route = {"name": name, "network": network, "destRange": dest}
+  route.update(
+      next_hop
+      or {
+          "nextHopGateway": (
+              "projects/p/global/gateways/default-internet-gateway"
+          ),
+          "priority": 1000,
+      }
+  )
+  return route
+
+
+def _verdict(runner, target_port=443, **kwargs):
+  rep = spark_env_inspector.inspect_network(
+      "p", "us-central1", "batch", "b-fw", runner, target_port, **kwargs
+  )
+  return rep["firewall_verdict"]
+
+
+class SparkEnvInspectorFirewallVerdictTest(unittest.TestCase):
+
+  def test_goto_next_hands_off_and_lower_priority_deny_is_skipped(self):
+    hierarchy = _policy(
+        "folder-policy",
+        "HIERARCHY",
+        [
+            _policy_rule(1, "deny", dest=["0.0.0.0/0"], disabled=True),
+            _policy_rule(38, "deny", dest=["0.0.0.0/0"]),
+            _policy_rule(
+                31,
+                "goto_next",
+                dest=["0.0.0.0/0"],
+                l4=[{"ipProtocol": "tcp"}, {"ipProtocol": "icmp"}],
+                match_extra={"destFqdns": []},
+            ),
+            _policy_rule(10, "deny", direction="INGRESS", src=["0.0.0.0/0"]),
+        ],
+    )
+    runner = _verdict_runner(policies=[hierarchy])
+    verdict = _verdict(runner)
+    self.assertEqual(verdict["verdict"], "ALLOWED")
+    self.assertEqual(
+        verdict["decided_by"],
+        {
+            "stage": "implied rules",
+            "priority": 65535,
+            "rule": "implied allow egress",
+            "action": "allow",
+        },
+    )
+    self.assertEqual(
+        verdict["evaluation_order"],
+        [
+            "hierarchical policy `folder-policy`",
+            "VPC firewall rules",
+            "implied rules",
+        ],
+    )
+    first = verdict["stages"][0]["first_match"]
+    self.assertEqual(
+        (first["priority"], first["action"], first["match"]),
+        (31, "goto_next", "match"),
+    )
+    self.assertIsNone(verdict["stages"][1]["first_match"])
+    self.assertEqual(verdict["unevaluated_rules"], [])
+    self.assertEqual(verdict["notes"], [])
+    self.assertEqual(verdict["ip_version"], 4)
+
+    # UDP is not covered by the goto_next rule, so the deny-all decides.
+    udp = _verdict(runner, target_protocol="udp")
+    self.assertEqual(udp["verdict"], "DENIED")
+    self.assertEqual(
+        (udp["decided_by"]["stage"], udp["decided_by"]["priority"]),
+        ("hierarchical policy `folder-policy`", 38),
+    )
+
+  def test_vpc_rules_tie_breaks_and_target_scoping(self):
+    vpc_rules = [
+        _vpc_rule(
+            "deny-ingress-all",
+            10,
+            direction="INGRESS",
+            denied=[{"IPProtocol": "all"}],
+        ),
+        _vpc_rule(
+            "allow-db",
+            900,
+            destinationRanges=["10.50.0.0/16"],
+            allowed=[{"IPProtocol": "tcp", "ports": ["5432"]}],
+            targetTags=["spark"],
+        ),
+        _vpc_rule(
+            "deny-db",
+            900,
+            destinationRanges=["10.50.0.0/16"],
+            denied=[{"IPProtocol": "tcp", "ports": ["5400-5500"]}],
+        ),
+        _vpc_rule(
+            "deny-other-tag",
+            100,
+            denied=[{"IPProtocol": "all"}],
+            targetTags=["unrelated"],
+        ),
+        _vpc_rule(
+            "deny-other-sa",
+            100,
+            denied=[{"IPProtocol": "all"}],
+            targetServiceAccounts=["other@p.iam.gserviceaccount.com"],
+        ),
+        _vpc_rule(
+            "deny-disabled", 50, denied=[{"IPProtocol": "all"}], disabled=True
+        ),
+    ]
+    runner = _verdict_runner(vpc_rules=vpc_rules)
+    verdict = _verdict(runner, target_port=5432, target_ip="10.50.1.2")
+    self.assertEqual(verdict["verdict"], "DENIED")
+    self.assertEqual(verdict["decided_by"]["rule"], "deny-db")
+    self.assertEqual(verdict["stages"][0]["first_match"]["rule"], "deny-db")
+    other = _verdict(runner, target_port=5432, target_ip="192.168.7.7")
+    self.assertEqual(other["verdict"], "ALLOWED")
+    self.assertEqual(other["decided_by"]["stage"], "implied rules")
+    unknown_sa = _verdict(
+        _verdict_runner(
+            vpc_rules=vpc_rules, service_account="", runtime_version="3.0"
+        ),
+        target_port=5432,
+        target_ip="192.168.7.7",
+    )
+    self.assertEqual(unknown_sa["verdict"], "INDETERMINATE")
+    self.assertIn(
+        "workload service account is unknown",
+        unknown_sa["unevaluated_rules"][0]["reasons"][0],
+    )
+
+  def test_destination_specific_rule_needs_target_ip(self):
+    runner = _verdict_runner(
+        vpc_rules=[
+            _vpc_rule(
+                "deny-db",
+                900,
+                destinationRanges=["10.50.0.0/16"],
+                denied=[{"IPProtocol": "tcp", "ports": ["5432"]}],
+            )
+        ]
+    )
+    verdict = _verdict(runner, target_port=5432)
+    self.assertEqual(verdict["verdict"], "INDETERMINATE")
+    self.assertEqual(verdict["possible_outcomes"], ["ALLOWED", "DENIED"])
+    self.assertIsNone(verdict["decided_by"])
+    self.assertEqual(verdict["notes"], [])
+    (unevaluated,) = verdict["unevaluated_rules"]
+    self.assertEqual(unevaluated["rule"], "deny-db")
+    self.assertEqual(unevaluated["match"], "indeterminate")
+    self.assertIn("pass --target_ip", unevaluated["reasons"][0])
+    self.assertEqual(verdict["unevaluated_rules_omitted"], 0)
+    self.assertNotIn(
+        "more)",
+        "\n".join(spark_env_inspector._format_firewall_verdict(verdict)),
+    )
+    self.assertIn(
+        "(+2 more)",
+        "\n".join(
+            spark_env_inspector._format_firewall_verdict(
+                {**verdict, "unevaluated_rules_omitted": 2}
+            )
+        ),
+    )
+    with mock.patch.object(
+        spark_env_inspector, "_MAX_UNEVALUATED_RULES_SHOWN", 1
+    ):
+      self.assertEqual(
+          _verdict(runner, target_port=5432)["unevaluated_rules_omitted"], 0
+      )
+    with mock.patch.object(
+        spark_env_inspector, "_MAX_UNEVALUATED_RULES_SHOWN", 0
+    ):
+      omitted = _verdict(runner, target_port=5432)
+    self.assertEqual(omitted["unevaluated_rules_omitted"], 1)
+    self.assertEqual(
+        _verdict(runner, target_port=5432, target_ip="10.50.9.9")["verdict"],
+        "DENIED",
+    )
+    self.assertEqual(_verdict(runner, target_port=5433)["verdict"], "ALLOWED")
+
+  def test_verdict_is_definite_when_every_outcome_agrees(self):
+    system = _policy(
+        "dataproc-fw-1",
+        "SYSTEM_REGIONAL",
+        [
+            _policy_rule(
+                4,
+                "allow",
+                dest=["0.0.0.0/0"],
+                targetSecureTags=[{"name": "tagValues/1"}],
+            )
+        ],
+    )
+    verdict = _verdict(_verdict_runner(policies=[system]))
+    self.assertEqual(verdict["verdict"], "ALLOWED")
+    # The deciding rule depends on the secure tag, so none is reported.
+    self.assertIsNone(verdict["decided_by"])
+    (unevaluated,) = verdict["unevaluated_rules"]
+    self.assertIn("targets secure tags", unevaluated["reasons"][0])
+
+    denying = _verdict(
+        _verdict_runner(
+            policies=[system],
+            vpc_rules=[
+                _vpc_rule("deny-all", 1000, denied=[{"IPProtocol": "all"}])
+            ],
+        )
+    )
+    self.assertEqual(denying["verdict"], "INDETERMINATE")
+
+  def test_unresolved_selectors_and_l7_inspection_are_indeterminate(self):
+    fqdn = _policy(
+        "net-pol",
+        "NETWORK",
+        [
+            _policy_rule(
+                100,
+                "deny",
+                match_extra={"destFqdns": ["s3.amazonaws.com"]},
+            )
+        ],
+    )
+    verdict = _verdict(_verdict_runner(policies=[fqdn]), target_ip="52.1.2.3")
+    self.assertEqual(verdict["verdict"], "INDETERMINATE")
+    self.assertIn("destFqdns", verdict["unevaluated_rules"][0]["reasons"][0])
+
+    l7 = _policy(
+        "net-pol",
+        "NETWORK",
+        [
+            _policy_rule(
+                100,
+                "apply_security_profile_group",
+                dest=["0.0.0.0/0"],
+                securityProfileGroup="spg-1",
+            )
+        ],
+    )
+    inspected = _verdict(_verdict_runner(policies=[l7]))
+    self.assertEqual(inspected["verdict"], "INDETERMINATE")
+    self.assertEqual(inspected["possible_outcomes"], ["UNEVALUATED"])
+    self.assertIsNone(inspected["decided_by"])
+
+  def test_network_policy_enforcement_order(self):
+    vpc_rules = [
+        _vpc_rule(
+            "allow-https",
+            1000,
+            allowed=[{"IPProtocol": "tcp", "ports": ["443"]}],
+        )
+    ]
+    policies = [
+        _policy(
+            "global-pol",
+            "NETWORK",
+            [_policy_rule(100, "deny", dest=["0.0.0.0/0"])],
+        )
+    ]
+    after = _verdict(
+        _verdict_runner(
+            vpc_rules=vpc_rules,
+            policies=policies,
+            network={
+                "name": "vpc-v",
+                "networkFirewallPolicyEnforcementOrder": (
+                    "AFTER_CLASSIC_FIREWALL"
+                ),
+            },
+        )
+    )
+    self.assertEqual(
+        (after["verdict"], after["decided_by"]["rule"]),
+        ("ALLOWED", "allow-https"),
+    )
+    self.assertEqual(after["notes"], [])
+    before = _verdict(
+        _verdict_runner(
+            vpc_rules=vpc_rules,
+            policies=policies,
+            network={
+                "name": "vpc-v",
+                "networkFirewallPolicyEnforcementOrder": (
+                    "BEFORE_CLASSIC_FIREWALL"
+                ),
+            },
+        )
+    )
+    self.assertEqual(before["verdict"], "DENIED")
+    self.assertEqual(before["notes"], [])
+    self.assertEqual(
+        before["evaluation_order"],
+        [
+            "global network policy `global-pol`",
+            "VPC firewall rules",
+            "implied rules",
+        ],
+    )
+    unknown = _verdict(
+        _verdict_runner(vpc_rules=vpc_rules, policies=policies, network_code=1)
+    )
+    self.assertEqual(unknown["verdict"], "INDETERMINATE")
+    self.assertIn("both network firewall policy", " ".join(unknown["notes"]))
+    self.assertEqual(_verdict(_verdict_runner(network_code=1))["notes"], [])
+    for bad_network in ({}, ["unexpected"]):
+      unreadable = _verdict(
+          _verdict_runner(
+              vpc_rules=vpc_rules, policies=policies, network=bad_network
+          )
+      )
+      self.assertEqual(unreadable["verdict"], "INDETERMINATE")
+
+    regional_policies = [
+        _policy(
+            "global-pol",
+            "NETWORK",
+            [_policy_rule(100, "goto_next", dest=["0.0.0.0/0"])],
+        ),
+        _policy(
+            "reg-pol",
+            "NETWORK_REGIONAL",
+            [_policy_rule(100, "deny", dest=["0.0.0.0/0"])],
+        ),
+    ]
+    regional = _verdict(
+        _verdict_runner(
+            vpc_rules=vpc_rules,
+            policies=regional_policies,
+            network={
+                "name": "vpc-v",
+                "networkFirewallPolicyEnforcementOrder": (
+                    "BEFORE_CLASSIC_FIREWALL"
+                ),
+            },
+        )
+    )
+    self.assertEqual(regional["verdict"], "DENIED")
+    self.assertEqual(
+        regional["decided_by"]["stage"], "regional network policy `reg-pol`"
+    )
+    self.assertEqual(
+        regional["evaluation_order"],
+        [
+            "global network policy `global-pol`",
+            "regional network policy `reg-pol`",
+            "VPC firewall rules",
+            "implied rules",
+        ],
+    )
+
+  def test_order_of_several_hierarchical_policies_is_not_assumed(self):
+    allow = _policy(
+        "org-pol", "HIERARCHY", [_policy_rule(10, "allow", dest=["0.0.0.0/0"])]
+    )
+    deny = _policy(
+        "folder-pol",
+        "HIERARCHY",
+        [_policy_rule(10, "deny", dest=["0.0.0.0/0"])],
+    )
+    conflicting = _verdict(_verdict_runner(policies=[allow, deny]))
+    self.assertEqual(conflicting["verdict"], "INDETERMINATE")
+    notes = " ".join(conflicting["notes"])
+    self.assertIn("order of the 2 hierarchical policies", notes)
+    self.assertIn("results differ", notes)
+
+    hand_off = _policy(
+        "org-pol",
+        "HIERARCHY",
+        [_policy_rule(10, "goto_next", dest=["0.0.0.0/0"])],
+    )
+    agreeing = _verdict(_verdict_runner(policies=[hand_off, deny]))
+    self.assertEqual(agreeing["verdict"], "DENIED")
+    self.assertEqual(
+        agreeing["decided_by"]["stage"], "hierarchical policy `folder-pol`"
+    )
+
+    many_policies = [
+        hand_off,
+        _policy(
+            "sub-folder-pol",
+            "HIERARCHY",
+            [_policy_rule(10, "goto_next", dest=["0.0.0.0/0"])],
+        ),
+        deny,
+        _policy(
+            "sys-1",
+            "SYSTEM",
+            [_policy_rule(10, "goto_next", dest=["0.0.0.0/0"])],
+        ),
+        _policy(
+            "sys-2",
+            "SYSTEM",
+            [_policy_rule(10, "goto_next", dest=["0.0.0.0/0"])],
+        ),
+        _policy(
+            "net-1",
+            "NETWORK",
+            [_policy_rule(10, "goto_next", dest=["0.0.0.0/0"])],
+        ),
+    ]
+    many_runner = _verdict_runner(policies=many_policies, network_code=1)
+    # 3! * 2! * 2 = 24 candidate policy orderings.
+    with mock.patch.object(spark_env_inspector, "_MAX_FIREWALL_ORDERINGS", 24):
+      many_verdict = _verdict(many_runner)
+      self.assertEqual(many_verdict["verdict"], "DENIED")
+      self.assertIn(
+          "order of the 2 system policies", " ".join(many_verdict["notes"])
+      )
+    with mock.patch.object(spark_env_inspector, "_MAX_FIREWALL_ORDERINGS", 23):
+      capped = _verdict(many_runner)
+    self.assertEqual(capped["verdict"], "INDETERMINATE")
+    self.assertIn("Too many unordered policies", " ".join(capped["notes"]))
+    # Without network policies, unknown enforcement order adds only 1 tail
+    # (3! * 2! * 1 = 12 candidate orderings).
+    no_net_runner = _verdict_runner(policies=many_policies[:-1], network_code=1)
+    with mock.patch.object(spark_env_inspector, "_MAX_FIREWALL_ORDERINGS", 12):
+      self.assertEqual(_verdict(no_net_runner)["verdict"], "DENIED")
+
+  def test_unreadable_inputs(self):
+    no_policies = _verdict(_verdict_runner(policies_code=1))
+    self.assertEqual(no_policies["verdict"], "INDETERMINATE")
+    self.assertEqual(
+        no_policies["stages"][0],
+        {"stage": "firewall policies", "readable": False, "first_match": None},
+    )
+    # A hierarchical deny decides before the unreadable VPC rules.
+    deny = _policy(
+        "org-pol", "HIERARCHY", [_policy_rule(10, "deny", dest=["0.0.0.0/0"])]
+    )
+    decided = _verdict(_verdict_runner(policies=[deny], firewalls_code=1))
+    self.assertEqual(decided["verdict"], "DENIED")
+    self.assertFalse(decided["stages"][1]["readable"])
+    unknown_type = _verdict(
+        _verdict_runner(
+            policies=[
+                _policy(
+                    "odd", "", [_policy_rule(5, "deny", dest=["0.0.0.0/0"])]
+                )
+            ]
+        )
+    )
+    self.assertEqual(unknown_type["verdict"], "INDETERMINATE")
+    self.assertIn("unrecognized type", " ".join(unknown_type["notes"]))
+    self.assertEqual(
+        _verdict(_verdict_runner(policies=[deny], stack_type=""))["verdict"],
+        "DENIED",
+    )
+    no_subnet = _verdict(
+        _FakeGcloud({
+            "dataproc batches describe b-fw": (
+                0,
+                {
+                    "runtimeConfig": {"version": "2.2"},
+                    "environmentConfig": {
+                        "executionConfig": {
+                            "networkUri": _VERDICT_NETWORK_URI,
+                            "serviceAccount": "etl@p.iam.gserviceaccount.com",
+                        }
+                    },
+                },
+                "",
+            ),
+            "compute networks subnets describe vpc-v": (
+                1,
+                "",
+                "ERROR: (gcloud) 403",
+            ),
+            "compute routers list": (0, [], ""),
+            "compute networks describe vpc-v": (0, {"name": "vpc-v"}, ""),
+            "compute firewall-rules list": (0, [], ""),
+            "compute network-firewall-policies get-effective-firewalls": (
+                0,
+                {"firewallPolicys": [deny], "firewalls": []},
+                "",
+            ),
+            "dns managed-zones list": (0, [], ""),
+        })
+    )
+    self.assertEqual(no_subnet["verdict"], "INDETERMINATE")
+    self.assertIsNone(no_subnet["ip_version"])
+    self.assertIn("unreadable subnet", " ".join(no_subnet["notes"]))
+
+  def test_ingress_ipv6_and_workload_side_ranges(self):
+    intra_subnet = _vpc_rule(
+        "allow-intra",
+        65534,
+        direction="INGRESS",
+        sourceRanges=["10.8.0.0/24"],
+        allowed=[{"IPProtocol": "tcp"}],
+    )
+    runner = _verdict_runner(vpc_rules=[intra_subnet])
+    self.assertEqual(
+        _verdict(
+            runner,
+            target_port=7337,
+            target_ip="10.8.0.5",
+            target_direction="ingress",
+        )["decided_by"]["rule"],
+        "allow-intra",
+    )
+    outside = _verdict(
+        runner,
+        target_port=7337,
+        target_ip="10.9.0.5",
+        target_direction="ingress",
+    )
+    self.assertEqual(outside["verdict"], "DENIED")
+    self.assertEqual(outside["decided_by"]["rule"], "implied deny ingress")
+    tagged = _verdict(
+        _verdict_runner(
+            vpc_rules=[
+                _vpc_rule(
+                    "allow-tagged",
+                    1000,
+                    direction="INGRESS",
+                    sourceTags=["bastion"],
+                )
+            ]
+        ),
+        target_port=22,
+        target_ip="10.9.0.5",
+        target_direction="ingress",
+    )
+    self.assertEqual(tagged["verdict"], "INDETERMINATE")
+    self.assertIn("source tags", tagged["unevaluated_rules"][0]["reasons"][0])
+    self.assertEqual(
+        _verdict(
+            _verdict_runner(
+                vpc_rules=[
+                    _vpc_rule(
+                        "allow-range-or-tag",
+                        1000,
+                        direction="INGRESS",
+                        sourceRanges=["10.8.0.0/24"],
+                        sourceTags=["bastion"],
+                    )
+                ]
+            ),
+            target_port=22,
+            target_ip="10.8.0.5",
+            target_direction="ingress",
+        )["verdict"],
+        "ALLOWED",
+    )
+
+    ipv6_deny = _policy(
+        "net-pol", "NETWORK", [_policy_rule(10, "deny", dest=["::/0"])]
+    )
+    self.assertEqual(
+        _verdict(_verdict_runner(policies=[ipv6_deny]))["verdict"], "ALLOWED"
+    )
+    self.assertEqual(
+        _verdict(_verdict_runner(policies=[ipv6_deny], stack_type="IPV6_ONLY"))[
+            "verdict"
+        ],
+        "DENIED",
+    )
+    dual_stack = _verdict(
+        _verdict_runner(policies=[ipv6_deny], stack_type="IPV4_IPV6")
+    )
+    self.assertEqual(dual_stack["verdict"], "INDETERMINATE")
+    self.assertIsNone(dual_stack["ip_version"])
+    self.assertIn("IP version is unknown", " ".join(dual_stack["notes"]))
+    self.assertEqual(
+        _verdict(
+            _verdict_runner(policies=[ipv6_deny], stack_type="IPV4_IPV6"),
+            target_ip="2001:db8::1",
+        )["notes"],
+        [],
+    )
+    mismatch = _verdict(
+        _verdict_runner(policies=[ipv6_deny]), target_ip="2001:db8::1"
+    )
+    self.assertEqual(mismatch["verdict"], "DENIED")
+    self.assertIn("IPv4-only", " ".join(mismatch["notes"]))
+    ipv6_only_mismatch = _verdict(
+        _verdict_runner(policies=[ipv6_deny], stack_type="IPV6_ONLY"),
+        target_ip="10.0.0.1",
+    )
+    self.assertIn("IPv6-only", " ".join(ipv6_only_mismatch["notes"]))
+
+    whole_subnet = _policy(
+        "net-pol",
+        "NETWORK",
+        [_policy_rule(10, "deny", dest=["0.0.0.0/0"], src=["10.8.0.0/16"])],
+    )
+    self.assertEqual(
+        _verdict(_verdict_runner(policies=[whole_subnet]))["verdict"], "DENIED"
+    )
+    self.assertEqual(
+        _verdict(
+            _verdict_runner(policies=[whole_subnet], stack_type="IPV4_IPV6")
+        )["verdict"],
+        "INDETERMINATE",
+    )
+    part_subnet = _policy(
+        "net-pol",
+        "NETWORK",
+        [_policy_rule(10, "deny", dest=["0.0.0.0/0"], src=["10.8.0.0/25"])],
+    )
+    part = _verdict(_verdict_runner(policies=[part_subnet]))
+    self.assertEqual(part["verdict"], "INDETERMINATE")
+    self.assertIn("partly cover", part["unevaluated_rules"][0]["reasons"][0])
+    vpc_part = _verdict(
+        _verdict_runner(
+            vpc_rules=[
+                _vpc_rule(
+                    "deny-part-src",
+                    100,
+                    sourceRanges=["10.8.0.0/25"],
+                    denied=[{"IPProtocol": "tcp"}],
+                )
+            ]
+        )
+    )
+    self.assertEqual(vpc_part["verdict"], "INDETERMINATE")
+    self.assertIn(
+        "partly cover", vpc_part["unevaluated_rules"][0]["reasons"][0]
+    )
+    other_subnet = _policy(
+        "net-pol",
+        "NETWORK",
+        [_policy_rule(10, "deny", dest=["0.0.0.0/0"], src=["10.9.0.0/24"])],
+    )
+    self.assertEqual(
+        _verdict(_verdict_runner(policies=[other_subnet]))["verdict"],
+        "ALLOWED",
+    )
+    scoped = _policy(
+        "org-pol",
+        "HIERARCHY",
+        [
+            _policy_rule(
+                10,
+                "deny",
+                dest=["0.0.0.0/0"],
+                targetResources=["projects/p/global/networks/other-vpc"],
+            ),
+            _policy_rule(
+                15,
+                "deny",
+                dest=["0.0.0.0/0"],
+                targetServiceAccounts=["other@p.iam.gserviceaccount.com"],
+            ),
+            _policy_rule(
+                20,
+                "deny",
+                dest=["0.0.0.0/0"],
+                targetServiceAccounts=["etl@p.iam.gserviceaccount.com"],
+            ),
+        ],
+    )
+    scoped_verdict = _verdict(_verdict_runner(policies=[scoped]))
+    self.assertEqual(scoped_verdict["verdict"], "DENIED")
+    self.assertEqual(scoped_verdict["decided_by"]["priority"], 20)
+    unknown_sa = _verdict(
+        _verdict_runner(
+            policies=[scoped], service_account="", runtime_version="3.0"
+        )
+    )
+    self.assertEqual(unknown_sa["verdict"], "INDETERMINATE")
+    self.assertIn(
+        "workload service account is unknown",
+        unknown_sa["unevaluated_rules"][0]["reasons"][0],
+    )
+
+  def test_range_state_helpers(self):
+    remote = spark_env_inspector._remote_ranges_state
+    local = spark_env_inspector._local_ranges_state
+    ip = spark_env_inspector.ipaddress.ip_address
+    net = spark_env_inspector.ipaddress.ip_network
+    self.assertEqual(remote(["10.0.0.0/8"], ip("10.1.2.3"), 4), "match")
+    self.assertEqual(remote(["10.0.0.0/8"], ip("11.1.2.3"), 4), "no_match")
+    self.assertEqual(remote(["bogus"], ip("11.1.2.3"), 4), "unknown")
+    self.assertEqual(remote(["0.0.0.0/0"], None, 4), "match")
+    self.assertEqual(remote(["10.0.0.0/8"], None, 4), "unknown")
+    self.assertEqual(remote(["bogus"], None, 4), "unknown")
+    self.assertEqual(remote(["0.0.0.0/0"], None, None), "unknown")
+    self.assertEqual(remote(["bogus"], None, None), "unknown")
+    self.assertEqual(remote(["0.0.0.0/0", "::/0"], None, None), "match")
+    self.assertEqual(
+        remote(["10.0.0.0/8", "2001:db8::/32"], None, None), "unknown"
+    )
+    self.assertEqual(remote(["::/0"], None, 4), "no_match")
+    self.assertEqual(remote(["::/0"], ip("10.1.2.3"), 4), "no_match")
+    self.assertEqual(remote([], None, None), "no_match")
+    self.assertEqual(local(["10.0.0.0/8"], []), "unknown")
+    self.assertEqual(local(["10.0.0.0/8"], [net("10.8.0.0/24")]), "match")
+    self.assertEqual(
+        local(["10.8.0.0/24"], [net("10.8.0.0/24"), net("10.9.0.0/24")]),
+        "unknown",
+    )
+    self.assertEqual(local(["::/0"], [net("10.8.0.0/24")]), "no_match")
+    self.assertEqual(local(["bogus"], [net("10.8.0.0/24")]), "unknown")
+    self.assertEqual(spark_env_inspector._rule_priority({}, 1000), 1000)
+    self.assertEqual(
+        spark_env_inspector._rule_priority({"priority": "bad"}, 1000), 1000
+    )
+    self.assertEqual(
+        spark_env_inspector._rule_priority({"priority": "50"}, 1000), 50
+    )
+    self.assertEqual(
+        spark_env_inspector._policy_display_name(
+            {"displayName": "dn", "shortName": "sn", "name": "n"}
+        ),
+        "dn",
+    )
+    self.assertEqual(
+        spark_env_inspector._policy_display_name(
+            {"shortName": "sn", "name": "n"}
+        ),
+        "sn",
+    )
+    self.assertEqual(
+        spark_env_inspector._policy_display_name({"name": "n"}), "n"
+    )
+
+  def test_cli_flags_json_and_markdown(self):
+    hierarchy = _policy(
+        "folder-policy",
+        "HIERARCHY",
+        [
+            _policy_rule(31, "goto_next", dest=["0.0.0.0/0"]),
+            _policy_rule(38, "deny", dest=["0.0.0.0/0"]),
+        ],
+    )
+    runner = _verdict_runner(
+        policies=[hierarchy],
+        vpc_rules=[
+            _vpc_rule(
+                "deny-db",
+                900,
+                destinationRanges=["10.50.0.0/16"],
+                denied=[{"IPProtocol": "tcp"}],
+            )
+        ],
+    )
+    base = [
+        "--project=p",
+        "--region=us-central1",
+        "--batch_id=b-fw",
+        "--action=network",
+    ]
+    for bad in (
+        ["--target_ip=10.0.0.1"],
+        ["--target_port=443", "--target_ip=x"],
+    ):
+      with contextlib.redirect_stderr(io.StringIO()):
+        with self.assertRaises(SystemExit, msg=bad):
+          spark_env_inspector.main(base + bad, runner=runner)
+
+    code, stdout, _ = _run_cli(base + ["--format=json"], runner)
+    self.assertEqual(code, 0)
+    self.assertIsNone(json.loads(stdout)["firewall_verdict"])
+    code, stdout, _ = _run_cli(base, runner)
+    self.assertEqual(code, 0)
+    self.assertIn("Re-run with `--target_port=<PORT>`", stdout)
+    self.assertNotIn("## Firewall Verdict", stdout)
+
+    code, stdout, _ = _run_cli(base + ["--target_port=443"], runner)
+    self.assertEqual(code, 0)
+    self.assertNotIn("Re-run with `--target_port=<PORT>`", stdout)
+    verdict_md = stdout.split("## Firewall Verdict", 1)[1].split("\n\n", 1)[0]
+    self.assertEqual(
+        "## Firewall Verdict" + verdict_md,
+        "\n".join([
+            "## Firewall Verdict (`EGRESS tcp:443` to `any IPv4 address`)",
+            "- verdict: `INDETERMINATE` (possible outcomes: ALLOWED, DENIED)",
+            (
+                "- evaluation order: hierarchical policy `folder-policy` ->"
+                " VPC firewall rules -> implied rules"
+            ),
+            (
+                "- hierarchical policy `folder-policy`: first match"
+                " priority=`31` `goto_next` dest=['0.0.0.0/0']"
+            ),
+            (
+                "- VPC firewall rules: first match priority=`900` `deny`"
+                " `deny-db` dest=['10.50.0.0/16'] (indeterminate)"
+            ),
+            (
+                "- implied rules: first match priority=`65535` `allow`"
+                " `implied allow egress`"
+            ),
+            "- unevaluated rules (check by hand):",
+            (
+                "  - VPC firewall rules priority=`900` `deny` `deny-db`:"
+                " matches only some destination addresses; pass --target_ip"
+                " to evaluate it"
+            ),
+            (
+                "- note: Pass `--target_ip=<IP>` with the address from the"
+                " logs to also check which route carries the traffic."
+            ),
+        ]),
+    )
+    self.assertNotIn("## Route Verdict", stdout)
+    code, stdout, _ = _run_cli(
+        base + ["--target_port=443", "--target_ip=10.50.0.9"], runner
+    )
+    self.assertEqual(code, 0)
+    self.assertIn(
+        "## Firewall Verdict (`EGRESS tcp:443` to `10.50.0.9`)", stdout
+    )
+    self.assertIn(
+        "- verdict: `DENIED`, decided by VPC firewall rules priority=`900`"
+        " `deny` `deny-db`",
+        stdout,
+    )
+    self.assertNotIn("Pass `--target_ip=<IP>`", stdout)
+    self.assertIn("## Route Verdict (`EGRESS` to `10.50.0.9`)", stdout)
+    self.assertIn("- route: `NO_ROUTE`; firewall: `DENIED`", stdout)
+
+
+_CORP_NETWORK_URI = "projects/p/global/networks/corp-vpc"
+_REGION_URI = "https://www.googleapis.com/compute/v1/projects/p/regions/"
+
+
+def _subnet(
+    name, cidr, network=_VERDICT_NETWORK_URI, region="us-central1", **extra
+):
+  subnet = {
+      "name": name,
+      "network": network,
+      "ipCidrRange": cidr,
+      "region": _REGION_URI + region,
+  }
+  subnet.update(extra)
+  return subnet
+
+
+def _network_with_peering(state="ACTIVE", **extra):
+  network = {
+      "name": "vpc-v",
+      "peerings": [{
+          "name": "to-corp",
+          "network": _CORP_NETWORK_URI,
+          "state": state,
+      }],
+  }
+  network.update(extra)
+  return network
+
+
+def _network_report(runner, target_ip, **kwargs):
+  return spark_env_inspector.inspect_network(
+      "p",
+      "us-central1",
+      "batch",
+      "b-fw",
+      runner,
+      kwargs.pop("target_port", 5432),
+      target_ip=target_ip,
+      **kwargs,
+  )
+
+
+class SparkEnvInspectorRouteVerdictTest(unittest.TestCase):
+
+  def test_private_address_in_unpeered_network_has_no_route(self):
+    runner = _verdict_runner(
+        subnets=[
+            _subnet("sub-v", "10.8.0.0/24"),
+            _subnet("corp-sub", "10.60.3.0/24", network=_CORP_NETWORK_URI),
+        ],
+        vpc_rules=[
+            _vpc_rule(
+                "deny-db",
+                900,
+                destinationRanges=["10.60.3.0/24"],
+                denied=[{"IPProtocol": "tcp", "ports": ["5432"]}],
+                targetTags=["spark"],
+            )
+        ],
+    )
+    report = _network_report(runner, "10.60.3.7")
+    route = report["route_verdict"]
+    self.assertEqual(route["verdict"], "NO_ROUTE")
+    self.assertEqual(route["route"]["source"], "internet_gateway")
+    self.assertEqual(route["route"]["dest_range"], "0.0.0.0/0")
+    self.assertEqual(
+        route["destination_owner"],
+        [{
+            "project": "p",
+            "network": "corp-vpc",
+            "subnet": "corp-sub",
+            "region": "us-central1",
+            "range": "10.60.3.0/24",
+            "range_name": "primary",
+            "is_workload_network": False,
+            "peered_with_workload_network": False,
+        }],
+    )
+    notes = " ".join(route["notes"])
+    self.assertIn("does not carry traffic to private", notes)
+    self.assertIn("which has no ACTIVE peering with `vpc-v`", notes)
+    self.assertIn("ingress firewall rules are not evaluated", notes)
+    self.assertEqual(
+        route["checked"],
+        {
+            "subnet_ranges": 1,
+            "static_routes": 1,
+            "active_peerings": 0,
+            "peering_routes": 0,
+            "dynamic_routes": 0,
+        },
+    )
+    self.assertEqual(route["unevaluated"], [])
+    self.assertEqual(report["warnings"], [])
+    self.assertEqual(
+        report["connection_summary"],
+        {
+            "route_verdict": "NO_ROUTE",
+            "firewall_verdict": "DENIED",
+            "blocking": ["route", "firewall"],
+            "indeterminate": [],
+        },
+    )
+    # No route at all, for example after the default route was deleted.
+    bare = _network_report(_verdict_runner(routes=[]), "10.60.3.7")
+    self.assertEqual(bare["route_verdict"]["verdict"], "NO_ROUTE")
+    self.assertIsNone(bare["route_verdict"]["route"])
+    bare_notes = " ".join(bare["route_verdict"]["notes"])
+    self.assertIn("not even a default", bare_notes)
+
+  def test_peering_routes(self):
+    runner = _verdict_runner(
+        network=_network_with_peering(),
+        subnets=[
+            _subnet("sub-v", "10.8.0.0/24"),
+            _subnet("corp-sub", "10.60.3.0/24", network=_CORP_NETWORK_URI),
+        ],
+        peering_routes={
+            "to-corp": [
+                {"destRange": "10.60.3.0/24", "imported": False},
+                {
+                    "destRange": "10.60.0.0/16",
+                    "imported": True,
+                    "priority": 0,
+                    "type": "SUBNET_PEERING_ROUTE",
+                },
+            ]
+        },
+    )
+    report = _network_report(runner, "10.60.3.7")
+    route = report["route_verdict"]
+    self.assertEqual(route["verdict"], "ROUTED")
+    self.assertEqual(
+        route["route"],
+        {
+            "source": "peering",
+            "name": "to-corp",
+            "dest_range": "10.60.0.0/16",
+            "priority": 0,
+            "next_hop": "peering `to-corp` to `p/corp-vpc`",
+        },
+    )
+    (owner,) = route["destination_owner"]
+    self.assertTrue(owner["peered_with_workload_network"])
+    self.assertEqual(route["checked"]["peering_routes"], 1)
+    self.assertEqual(report["connection_summary"]["blocking"], [])
+    unreadable = _network_report(
+        _verdict_runner(
+            network=_network_with_peering(),
+            peering_routes={"to-corp": 1},
+        ),
+        "10.60.3.7",
+    )["route_verdict"]
+    self.assertEqual(unreadable["verdict"], "INDETERMINATE")
+    self.assertIn("`to-corp` to `p/corp-vpc`", unreadable["unevaluated"][0])
+    inactive = _network_report(
+        _verdict_runner(
+            network=_network_with_peering(state="INACTIVE"),
+            peering_routes={"to-corp": [{"destRange": "10.60.0.0/16"}]},
+        ),
+        "10.60.3.7",
+    )["route_verdict"]
+    self.assertEqual(inactive["verdict"], "NO_ROUTE")
+    self.assertIn("is INACTIVE", " ".join(inactive["notes"]))
+
+  def test_subnet_static_dynamic_and_psc_routes(self):
+    subnets = [
+        _subnet(
+            "sub-v",
+            "10.8.0.0/24",
+            secondaryIpRanges=[
+                {"rangeName": "pods", "ipCidrRange": "10.9.0.0/16"}
+            ],
+            ipv6CidrRange="2600:1900:4000::/64",
+            internalIpv6Prefix="fd20:1::/64",
+            externalIpv6Prefix="2600:1900:4001::/64",
+        ),
+        _subnet("sub-eu", "10.10.0.0/24", region="europe-west1"),
+    ]
+    vpn = _route(
+        "to-onprem",
+        "172.16.0.0/12",
+        nextHopVpnTunnel="projects/p/regions/us-central1/vpnTunnels/t1",
+        priority=100,
+        tags=["onprem-access"],
+    )
+    router = {
+        "name": "bgp-router",
+        "network": _VERDICT_NETWORK_URI,
+        "region": _REGION_URI + "us-central1",
+        "bgpPeers": [{"name": "peer-1"}],
+    }
+    status = {
+        "result": {
+            "bestRoutes": [{
+                "destRange": "172.16.8.0/24",
+                "nextHopIp": "169.254.0.2",
+                "priority": 200,
+            }]
+        }
+    }
+    psc = {
+        "name": "apis-endpoint",
+        "address": "10.255.0.5",
+        "purpose": "PRIVATE_SERVICE_CONNECT",
+        "network": _VERDICT_NETWORK_URI,
+    }
+    psc_behind_tagged = {
+        "name": "tagged-range-psc",
+        "address": "172.20.0.5",
+        "purpose": "PRIVATE_SERVICE_CONNECT",
+        "network": _VERDICT_NETWORK_URI,
+    }
+    runner = _verdict_runner(
+        subnets=subnets,
+        routes=[_route("default-route-internet", "0.0.0.0/0"), vpn],
+        routers=[router],
+        router_status={"bgp-router": status},
+        addresses=[psc, psc_behind_tagged],
+    )
+    secondary = _network_report(
+        _verdict_runner(subnets=subnets, addresses_code=1), "10.9.4.4"
+    )["route_verdict"]
+    self.assertEqual(
+        (secondary["verdict"], secondary["route"]["source"]),
+        ("ROUTED", "subnet"),
+    )
+    self.assertEqual(secondary["unevaluated"], [])
+    self.assertEqual(
+        secondary["notes"],
+        ["The destination network's ingress firewall rules are not evaluated."],
+    )
+    for ipv6_addr in ("2600:1900:4000::1", "fd20:1::1", "2600:1900:4001::1"):
+      ipv6_route = _network_report(runner, ipv6_addr)["route_verdict"]
+      self.assertEqual(
+          (ipv6_route["verdict"], ipv6_route["route"]["source"]),
+          ("ROUTED", "subnet"),
+      )
+      self.assertEqual(ipv6_route["destination_owner"][0]["range_name"], "ipv6")
+      self.assertNotIn("to-onprem", " ".join(ipv6_route["notes"]))
+    other_region = _network_report(runner, "10.10.0.7")["route_verdict"]
+    self.assertEqual(
+        other_region["route"]["next_hop"], "subnet `sub-eu` (europe-west1)"
+    )
+    dynamic = _network_report(runner, "172.16.8.9")["route_verdict"]
+    self.assertEqual(dynamic["route"]["source"], "dynamic")
+    self.assertEqual(
+        dynamic["route"]["next_hop"],
+        "Cloud Router `bgp-router` (next hop `169.254.0.2`)",
+    )
+    # The VPN route applies only to a tag the workload VMs do not carry.
+    tagged = _network_report(runner, "172.20.0.1")["route_verdict"]
+    self.assertEqual(tagged["verdict"], "NO_ROUTE")
+    self.assertIn("applies only to network tags", " ".join(tagged["notes"]))
+    psc_route = _network_report(runner, "10.255.0.5")["route_verdict"]
+    self.assertEqual(
+        psc_route["route"],
+        {
+            "source": "psc_endpoint",
+            "name": "apis-endpoint",
+            "dest_range": "10.255.0.5/32",
+            "priority": 0,
+            "next_hop": "Private Service Connect endpoint `apis-endpoint`",
+        },
+    )
+    self.assertEqual(
+        _network_report(runner, "172.20.0.5")["route_verdict"]["route"][
+            "source"
+        ],
+        "psc_endpoint",
+    )
+    self.assertEqual(
+        spark_env_inspector._route_next_hop(
+            {"nextHopGateway": "projects/p/global/gateways/custom-gw"}
+        ),
+        ("static", "gateway `custom-gw`"),
+    )
+    self.assertEqual(
+        spark_env_inspector._route_next_hop({"nextHopPeering": "peer-1"}),
+        ("peering", "peering `peer-1`"),
+    )
+    self.assertEqual(
+        spark_env_inspector._route_next_hop(
+            {"nextHopNetwork": _VERDICT_NETWORK_URI}
+        ),
+        ("subnet", "subnet route"),
+    )
+    self.assertEqual(
+        spark_env_inspector._route_next_hop({}),
+        ("static", "unknown next hop"),
+    )
+    tagged_vpn = dict(vpn, tags=["spark"])
+    via_vpn = _network_report(
+        _verdict_runner(subnets=subnets, routes=[tagged_vpn]), "172.20.0.1"
+    )["route_verdict"]
+    self.assertEqual(via_vpn["route"]["next_hop"], "VPN tunnel `t1`")
+    # The longest prefix wins over a lower priority number.
+    self.assertEqual(
+        _network_report(
+            _verdict_runner(
+                subnets=subnets,
+                routes=[tagged_vpn],
+                routers=[router],
+                router_status={"bgp-router": status},
+            ),
+            "172.16.8.9",
+        )["route_verdict"]["route"]["source"],
+        "dynamic",
+    )
+    # Dynamic routes of a router whose status cannot be read are unknown.
+    unknown = _network_report(
+        _verdict_runner(subnets=subnets, routers=[router]), "172.16.8.9"
+    )["route_verdict"]
+    self.assertEqual(unknown["verdict"], "INDETERMINATE")
+    self.assertIn("`bgp-router`", unknown["unevaluated"][0])
+
+  def test_global_dynamic_routing_lists_routers_of_every_region(self):
+    router = {
+        "name": "eu-router",
+        "network": _VERDICT_NETWORK_URI,
+        "region": _REGION_URI + "europe-west1",
+        "bgpPeers": [{"name": "peer-1"}],
+    }
+    runner = _verdict_runner(
+        network={"name": "vpc-v", "routingConfig": {"routingMode": "GLOBAL"}},
+        routers=[router],
+        router_status={
+            "eu-router": {
+                "result": {
+                    "bestRoutes": [
+                        {"destRange": "192.168.0.0/16", "nextHopIp": "1.2.3.4"}
+                    ]
+                }
+            }
+        },
+    )
+    route = _network_report(runner, "192.168.1.1")["route_verdict"]
+    self.assertEqual(route["route"]["name"], "eu-router")
+    (status_call,) = [
+        call
+        for call in runner.calls
+        if call[:3] == ["compute", "routers", "get-status"]
+    ]
+    self.assertIn("--region=europe-west1", status_call)
+    self.assertIn(
+        ["compute", "routers", "list", "--project=p", "--format=json"],
+        runner.calls,
+    )
+
+  def test_public_address_and_internet_egress(self):
+    no_nat = _network_report(
+        _verdict_runner(addresses_code=1), "52.1.2.3", target_port=443
+    )
+    route = no_nat["route_verdict"]
+    self.assertEqual(route["verdict"], "ROUTED")
+    self.assertEqual(route["unevaluated"], [])
+    self.assertEqual(route["route"]["next_hop"], "default internet gateway")
+    self.assertEqual(route["internet_egress"], "NONE")
+    self.assertIn("Private Google Access covers only", " ".join(route["notes"]))
+    self.assertNotIn("ingress firewall", " ".join(route["notes"]))
+    self.assertEqual(
+        no_nat["connection_summary"]["blocking"],
+        ["internet egress (no Cloud NAT)"],
+    )
+    self.assertIn(
+        "- internet_egress: `NONE`",
+        spark_env_inspector.format_markdown(no_nat),
+    )
+    nat_runner = _verdict_runner(
+        routers=[{"name": "r1", "network": _VERDICT_NETWORK_URI}],
+        nats=[{
+            "name": "nat-1",
+            "sourceSubnetworkIpRangesToNat": "ALL_SUBNETWORKS",
+        }],
+    )
+    with_nat = _network_report(nat_runner, "52.1.2.3", target_port=443)
+    self.assertEqual(with_nat["route_verdict"]["internet_egress"], "CLOUD_NAT")
+    self.assertEqual(with_nat["connection_summary"]["blocking"], [])
+
+  def test_unreadable_sources_skipped_directions_and_markdown(self):
+    unreadable = _network_report(
+        _verdict_runner(subnets_code=1, routes_code=1, addresses_code=1),
+        "10.60.3.7",
+    )
+    route = unreadable["route_verdict"]
+    self.assertEqual(route["verdict"], "INDETERMINATE")
+    self.assertEqual(len(route["unevaluated"]), 3)
+    self.assertEqual(
+        unreadable["connection_summary"]["indeterminate"], ["route"]
+    )
+    unreadable_md = spark_env_inspector.format_markdown(unreadable)
+    self.assertIn("- route: none", unreadable_md)
+    self.assertIn(
+        "- not evaluated: the subnets of the host project could not be listed",
+        unreadable_md,
+    )
+    self.assertIn(
+        "- undecided: route (see the verdicts above).",
+        unreadable_md,
+    )
+    self.assertIsNone(
+        _network_report(
+            _verdict_runner(), "10.60.3.7", target_direction="ingress"
+        )["route_verdict"]
+    )
+    self.assertIsNone(_network_report(_verdict_runner(), None)["route_verdict"])
+
+    report = _network_report(
+        _verdict_runner(
+            subnets=[
+                _subnet("sub-v", "10.8.0.0/24"),
+                _subnet("corp-sub", "10.60.3.0/24", network=_CORP_NETWORK_URI),
+            ]
+        ),
+        "10.60.3.7",
+    )
+    markdown = spark_env_inspector.format_markdown(report)
+    route_md = markdown.split("## Route Verdict", 1)[1].split("\n\n", 1)[0]
+    self.assertEqual(
+        "## Route Verdict" + route_md,
+        "\n".join([
+            "## Route Verdict (`EGRESS` to `10.60.3.7`)",
+            "- verdict: `NO_ROUTE`",
+            (
+                "- route: `default-route-internet` dest=`0.0.0.0/0`"
+                " priority=`1000` via default internet gateway"
+            ),
+            (
+                "- destination_owner: subnet `corp-sub` (`10.60.3.0/24`,"
+                " us-central1) of network `p/corp-vpc` (peered with the"
+                " workload network: `False`)"
+            ),
+            (
+                "- checked: 1 subnet ranges, 1 static or system routes, 0"
+                " ACTIVE peerings (0 imported routes), 0 dynamic routes"
+            ),
+            (
+                "- note: Only the default internet route covers this address,"
+                " and the default internet gateway does not carry traffic to"
+                " private or other non-public addresses."
+            ),
+            (
+                "- note: `10.60.3.7` is in subnet `corp-sub` (`10.60.3.0/24`)"
+                " of network `p/corp-vpc`, which has no ACTIVE peering with"
+                " `vpc-v`. Traffic to it needs VPC Network Peering, Cloud VPN,"
+                " or Cloud Interconnect between the networks."
+            ),
+            (
+                "- note: The destination network's ingress firewall rules are"
+                " not evaluated."
+            ),
+        ]),
+    )
+    summary_md = markdown.split("## Connection Summary", 1)[1].split("\n\n", 1)[
+        0
+    ]
+    self.assertEqual(
+        "## Connection Summary" + summary_md,
+        "\n".join([
+            "## Connection Summary",
+            "- route: `NO_ROUTE`; firewall: `ALLOWED`",
+            (
+                "- blocked by: route. The connection needs a route, an"
+                " allowing firewall verdict, and, for public addresses from"
+                " internal-IP-only VMs, Cloud NAT; a fix must address every"
+                " blocking part."
+            ),
+        ]),
+    )
+    open_path = spark_env_inspector._format_connection_summary({
+        "route_verdict": "ROUTED",
+        "firewall_verdict": "ALLOWED",
+        "blocking": [],
+        "indeterminate": [],
+    })
+    self.assertIn("no blocking route or firewall rule", open_path[-1])
+
+  def test_unreadable_cluster_gives_indeterminate_route(self):
+    runner = _FakeGcloud({
+        "dataproc jobs describe j-1": (
+            0,
+            {
+                "placement": {"clusterName": "gone"},
+                "status": {"state": "ERROR"},
+            },
+            "",
+        ),
+        "dataproc clusters describe gone": (1, "", "ERROR: NOT_FOUND"),
+        "logging read": (0, [], ""),
+    })
+    report = spark_env_inspector.inspect_network(
+        "p", "us-central1", "job", "j-1", runner, 5432, target_ip="10.1.1.1"
+    )
+    self.assertEqual(report["route_verdict"]["verdict"], "INDETERMINATE")
+    self.assertEqual(
+        report["connection_summary"]["indeterminate"], ["route", "firewall"]
+    )
+
+
+class DeletedClusterAuditLogFallbackTest(unittest.TestCase):
+
+  def test_deleted_cluster_recovers_default_sa_iam_scopes_and_classpath(self):
+    job_payload = {
+        "placement": {
+            "clusterName": "ephemeral-lakehouse",
+            "clusterUuid": "uuid-target-1",
+        },
+        "status": {"state": "ERROR", "stateStartTime": "2026-11-06T05:25:00Z"},
+        "statusHistory": [
+            {
+                "state": "PENDING",
+                "stateStartTime": "2026-11-06T05:20:01.123456789Z",
+            },
+            {"state": "RUNNING", "stateStartTime": "2026-11-06T05:21:00Z"},
+        ],
+        "pysparkJob": {"mainPythonFileUri": "gs://bkt/job.py"},
+    }
+    # Simulate an LRO pair: last=True entry has cluster_uuid (no request),
+    # first=True entry has CreateClusterRequest (empty serviceAccount ->
+    # default Compute Engine SA, image 3.0 -> Spark 4.1 / Scala 2.13).
+    audit_entries = [
+        {
+            "operation": {"id": "op-1", "last": True},
+            "resource": {
+                "type": "cloud_dataproc_cluster",
+                "labels": {"cluster_uuid": "uuid-target-1"},
+            },
+            "protoPayload": {
+                "methodName": (
+                    "google.cloud.dataproc.v1.ClusterController.CreateCluster"
+                ),
+            },
+        },
+        {
+            "operation": {"id": "op-1", "first": True},
+            "protoPayload": {
+                "methodName": (
+                    "google.cloud.dataproc.v1.ClusterController.CreateCluster"
+                ),
+                "request": {
+                    "cluster": {
+                        "clusterName": "ephemeral-lakehouse",
+                        "config": {
+                            "gceClusterConfig": {
+                                "serviceAccountScopes": [
+                                    "https://www.googleapis.com/auth/cloud-platform"
+                                ],
+                                "subnetworkUri": (
+                                    "projects/my-proj/regions/us-central1/subnetworks/dp-sub"
+                                ),
+                            },
+                            "softwareConfig": {
+                                "imageVersion": "3.0-debian13",
+                                "optionalComponents": ["ICEBERG"],
+                                "properties": {
+                                    "spark:spark.sql.catalog.bl": (
+                                        "org.apache.iceberg.spark.SparkCatalog"
+                                    )
+                                },
+                            },
+                        },
+                    }
+                },
+            },
+        },
+    ]
+    default_sa = "999888777666-compute@developer.gserviceaccount.com"
+    runner = _FakeGcloud({
+        "dataproc jobs describe job-del-1": (0, job_payload, ""),
+        "dataproc clusters describe ephemeral-lakehouse": (
+            1,
+            "",
+            "ERROR: NOT_FOUND: Cluster ephemeral-lakehouse",
+        ),
+        "logging read": (0, audit_entries, ""),
+        "projects describe my-proj": (
+            0,
+            {"projectNumber": "999888777666"},
+            "",
+        ),
+        "projects get-iam-policy my-proj": (
+            0,
+            {
+                "bindings": [{
+                    "role": "roles/dataproc.worker",
+                    "members": [f"serviceAccount:{default_sa}"],
+                }]
+            },
+            "",
+        ),
+        "compute networks subnets describe dp-sub": (
+            0,
+            {
+                "name": "dp-sub",
+                "network": "projects/my-proj/global/networks/dp-vpc",
+                "ipCidrRange": "10.0.0.0/24",
+                "privateIpGoogleAccess": True,
+            },
+            "",
+        ),
+        "compute routers list": (0, [], ""),
+        "compute networks describe dp-vpc": (0, {}, ""),
+        "compute firewall-rules list": (0, [], ""),
+        "compute networks get-effective-firewalls": (0, {}, ""),
+        "dns managed-zones list": (0, [], ""),
+    })
+
+    code, stdout, stderr = _run_cli(
+        [
+            "--project=my-proj",
+            "--region=us-central1",
+            "--job-id=job-del-1",
+            "--action=identity",
+            "--format=json",
+        ],
+        runner,
+    )
+    self.assertEqual(code, 0, msg=stderr)
+    rep = json.loads(stdout)
+    self.assertEqual(rep["cluster_source"], "create_cluster_audit_log")
+    self.assertEqual(rep["effective_service_account"], default_sa)
+    self.assertTrue(rep["default_service_account_inferred"])
+    self.assertEqual(rep["effective_principal"], f"serviceAccount:{default_sa}")
+    self.assertEqual(rep["project_iam_roles"], ["roles/dataproc.worker"])
+    self.assertEqual(
+        rep["service_account_scopes"],
+        ["https://www.googleapis.com/auth/cloud-platform"],
+    )
+    self.assertEqual(rep["runtime_version"], "3.0-debian13")
+    self.assertTrue(
+        any("UpdateCluster" in w and "NOT_FOUND" in w for w in rep["warnings"]),
+        msg=rep["warnings"],
+    )
+
+    # Filter must bound timestamp to latest job stateStartTime (so LRO last
+    # entries for jobs submitted during CREATING stay in range) and omit
+    # --freshness.
+    logging_calls = [c for c in runner.calls if c and c[0] == "logging"]
+    self.assertEqual(len(logging_calls), 1)
+    self.assertIn('timestamp<="2026-11-06T05:25:00Z"', logging_calls[0][2])
+    self.assertNotIn("--freshness=400d", logging_calls[0])
+
+    # Markdown output surfaces cluster_source cleanly.
+    code_md, md_out, _ = _run_cli(
+        [
+            "--project=my-proj",
+            "--job-id=job-del-1",
+            "--action=identity",
+        ],
+        runner,
+    )
+    self.assertEqual(code_md, 0)
+    self.assertIn("- cluster_source: `create_cluster_audit_log`", md_out)
+
+    # Classpath and network also benefit from the recovered config.
+    cp = spark_env_inspector.inspect_classpath(
+        "my-proj", "us-central1", "job", "job-del-1", runner
+    )
+    self.assertEqual(cp["cluster_source"], "create_cluster_audit_log")
+    self.assertEqual(cp["runtime_spark_version"], "4.1")
+    self.assertEqual(cp["runtime_scala_binary_version"], "2.13")
+    self.assertEqual(cp["optional_components"], ["ICEBERG"])
+
+    net = spark_env_inspector.inspect_network(
+        "my-proj", "us-central1", "job", "job-del-1", runner
+    )
+    self.assertEqual(net["cluster_source"], "create_cluster_audit_log")
+    self.assertEqual(net["effective_subnetwork"], "dp-sub")
+    # Image 3.0 omits internalIpOnly -> inferred True for 2.2+.
+    self.assertTrue(net["internal_ip_only"])
+
+  def test_audit_log_skips_failed_create_and_mismatched_uuid(self):
+    job_payload = {
+        "placement": {
+            "clusterName": "reused-name",
+            "clusterUuid": "uuid-expected",
+        },
+        "status": {"state": "ERROR"},
+    }
+    audit_entries = [
+        # Asynchronous LRO failure: operation.last has non-zero status while
+        # operation.first had an empty status; both share op-async-fail and
+        # must be skipped.
+        {
+            "operation": {"id": "op-async-fail", "last": True},
+            "protoPayload": {
+                "status": {"code": 8, "message": "RESOURCE_EXHAUSTED"},
+            },
+        },
+        {
+            "operation": {"id": "op-async-fail", "first": True},
+            "protoPayload": {
+                "request": {
+                    "cluster": {
+                        "clusterName": "reused-name",
+                        "clusterUuid": "uuid-expected",
+                        "config": {
+                            "gceClusterConfig": {
+                                "serviceAccount": (
+                                    "async-bad@p.iam.gserviceaccount.com"
+                                )
+                            }
+                        },
+                    }
+                },
+            },
+        },
+        # Synchronous failed create attempt must be ignored.
+        {
+            "operation": {"id": "op-failed"},
+            "protoPayload": {
+                "status": {"code": 7, "message": "PERMISSION_DENIED"},
+                "request": {
+                    "cluster": {
+                        "clusterName": "reused-name",
+                        "clusterUuid": "uuid-expected",
+                        "config": {
+                            "gceClusterConfig": {
+                                "serviceAccount": (
+                                    "bad@p.iam.gserviceaccount.com"
+                                )
+                            }
+                        },
+                    }
+                },
+            },
+        },
+        # Different cluster UUID reusing the same name must not match.
+        {
+            "operation": {"id": "op-other"},
+            "resource": {"labels": {"cluster_uuid": "uuid-different"}},
+            "protoPayload": {
+                "request": {
+                    "cluster": {
+                        "clusterName": "reused-name",
+                        "config": {
+                            "gceClusterConfig": {
+                                "serviceAccount": (
+                                    "other@p.iam.gserviceaccount.com"
+                                )
+                            }
+                        },
+                    }
+                }
+            },
+        },
+        # Matching UUID entry.
+        {
+            "operation": {"id": "op-match"},
+            "protoPayload": {
+                "response": {"metadata": {"clusterUuid": "uuid-expected"}},
+                "request": {
+                    "cluster": {
+                        "clusterName": "reused-name",
+                        "config": {
+                            "gceClusterConfig": {
+                                "serviceAccount": (
+                                    "good@p.iam.gserviceaccount.com"
+                                ),
+                                "internalIpOnly": False,
+                            },
+                            "softwareConfig": {"imageVersion": "2.2-debian12"},
+                        },
+                    }
+                },
+            },
+        },
+    ]
+    runner = _FakeGcloud({
+        "dataproc jobs describe j-reused": (0, job_payload, ""),
+        "dataproc clusters describe reused-name": (1, "", "ERROR: NOT_FOUND"),
+        "logging read": (0, audit_entries, ""),
+        "projects get-iam-policy my-proj": (0, {"bindings": []}, ""),
+    })
+    rep = spark_env_inspector.inspect_identity(
+        "my-proj", "us-central1", "job", "j-reused", runner
+    )
+    self.assertEqual(
+        rep["effective_service_account"], "good@p.iam.gserviceaccount.com"
+    )
+    # Job has no timestamps -> --freshness=400d is passed.
+    logging_calls = [c for c in runner.calls if c and c[0] == "logging"]
+    self.assertIn("--freshness=400d", logging_calls[0])
+
+    # Explicit internalIpOnly=False is preserved even on image 2.2+.
+    _, recovered_cluster = spark_env_inspector._fetch_workload(
+        "my-proj", "us-central1", "job", "j-reused", runner, []
+    )
+    self.assertFalse(
+        recovered_cluster["config"]["gceClusterConfig"]["internalIpOnly"]
+    )
+
+  def test_audit_log_not_queried_on_permission_denied_and_rejects_uuid_mismatch(
+      self,
+  ):
+    # Include "404" in the cluster name to ensure PERMISSION_DENIED is never
+    # misclassified as NOT_FOUND by a naive substring check.
+    runner_403 = _FakeGcloud({
+        "dataproc jobs describe j-403": (
+            0,
+            {
+                "placement": {"clusterName": "live-cluster-404"},
+                "status": {"state": "ERROR"},
+            },
+            "",
+        ),
+        "dataproc clusters describe live-cluster-404": (
+            1,
+            "",
+            "ERROR: PERMISSION_DENIED: dataproc.clusters.get",
+        ),
+    })
+    warnings_403 = []
+    _, cluster_403 = spark_env_inspector._fetch_workload(
+        "my-proj", "us-central1", "job", "j-403", runner_403, warnings_403
+    )
+    self.assertIsNone(cluster_403)
+    self.assertFalse(any(c[0] == "logging" for c in runner_403.calls))
+    self.assertEqual(len(warnings_403), 1)
+
+    # When every audit entry has a conflicting cluster_uuid, return None.
+    runner_mismatch = _FakeGcloud({
+        "dataproc jobs describe j-mm": (
+            0,
+            {
+                "placement": {
+                    "clusterName": "c-mm",
+                    "clusterUuid": "uuid-want",
+                },
+                "status": {"state": "ERROR"},
+            },
+            "",
+        ),
+        "dataproc clusters describe c-mm": (1, "", "ERROR: NOT_FOUND"),
+        "logging read": (
+            0,
+            [{
+                "resource": {"labels": {"cluster_uuid": "uuid-wrong"}},
+                "protoPayload": {
+                    "request": {
+                        "cluster": {"clusterName": "c-mm", "config": {}}
+                    }
+                },
+            }],
+            "",
+        ),
+    })
+    warnings_mm = []
+    _, cluster_mm = spark_env_inspector._fetch_workload(
+        "my-proj", "us-central1", "job", "j-mm", runner_mismatch, warnings_mm
+    )
+    self.assertIsNone(cluster_mm)
+    self.assertEqual(len(warnings_mm), 1)
+    self.assertIn("NOT_FOUND", warnings_mm[0])
+
+  def test_audit_log_errors_surface_in_warnings_alongside_not_found(self):
+    job_payload = {
+        "placement": {"clusterName": "gone-c"},
+        "status": {"state": "ERROR"},
+    }
+    # 1. PERMISSION_DENIED on logging.logEntries.list is reported.
+    runner_perm = _FakeGcloud({
+        "dataproc jobs describe j-log-403": (0, job_payload, ""),
+        "dataproc clusters describe gone-c": (1, "", "ERROR: NOT_FOUND"),
+        "logging read": (
+            1,
+            "",
+            "ERROR: PERMISSION_DENIED: logging.logEntries.list",
+        ),
+    })
+    warnings_perm = []
+    _, cluster_perm = spark_env_inspector._fetch_workload(
+        "my-proj", "us-central1", "job", "j-log-403", runner_perm, warnings_perm
+    )
+    self.assertIsNone(cluster_perm)
+    self.assertEqual(len(warnings_perm), 2)
+    self.assertIn("NOT_FOUND", warnings_perm[0])
+    self.assertIn("PERMISSION_DENIED", warnings_perm[1])
+
+    # 2. Invalid JSON from logging read is also reported.
+    runner_bad_json = _FakeGcloud({
+        "dataproc jobs describe j-log-json": (0, job_payload, ""),
+        "dataproc clusters describe gone-c": (1, "", "ERROR: NOT_FOUND"),
+        "logging read": (0, "{not valid json", ""),
+    })
+    warnings_json = []
+    _, cluster_json = spark_env_inspector._fetch_workload(
+        "my-proj",
+        "us-central1",
+        "job",
+        "j-log-json",
+        runner_bad_json,
+        warnings_json,
+    )
+    self.assertIsNone(cluster_json)
+    self.assertEqual(len(warnings_json), 2)
+    self.assertIn("invalid JSON", warnings_json[1])
+
+  def test_hyphenated_cli_aliases_parse_to_canonical_dests(self):
+    parser = spark_env_inspector.build_parser()
+    args_batch = parser.parse_args([
+        "--batch-id=b1",
+        "--action=network",
+        "--target-port=5432",
+        "--target-protocol=udp",
+        "--target-ip=10.0.0.1",
+        "--target-direction=ingress",
+    ])
+    self.assertEqual(args_batch.batch_id, "b1")
+    self.assertEqual(args_batch.target_port, 5432)
+    self.assertEqual(args_batch.target_protocol, "udp")
+    self.assertEqual(args_batch.target_ip, "10.0.0.1")
+    self.assertEqual(args_batch.target_direction, "ingress")
+
+    args_sess = parser.parse_args([
+        "--session-id=s1",
+        "--action=identity",
+        "--secret-id=sec1",
+    ])
+    self.assertEqual(args_sess.session_id, "s1")
+    self.assertEqual(args_sess.secret_id, "sec1")
+
+    args_job = parser.parse_args(["--job-id=j1", "--action=classpath"])
+    self.assertEqual(args_job.job_id, "j1")
 
 
 if __name__ == "__main__":

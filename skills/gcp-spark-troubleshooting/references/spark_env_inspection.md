@@ -3,7 +3,8 @@
 Use `scripts/spark_env_inspector.py` to collect read-only Google Cloud identity,
 VPC network, and runtime classpath metadata for Dataproc Serverless batches,
 interactive sessions, and standard GCE cluster jobs. The script only runs
-`describe`, `list`, and `get-iam-policy` style `gcloud` commands: it never
+read-only `gcloud` commands (`describe`, `list`, `list-routes`, `get-status`,
+`get-iam-policy`, and `logging read` for deleted-cluster audit logs): it never
 changes resources and never reads secret payloads.
 
 Treat the script as an opaque tool: you MUST run
@@ -24,11 +25,16 @@ python3 scripts/spark_env_inspector.py \
   --action=identity
 ```
 
--   **Target flags** (choose one):
+-   **Target flags** (choose one; multi-word flags accept underscores or
+    hyphens):
     -   `--batch_id=<BATCH_ID>`: Dataproc Serverless batch.
     -   `--session_id=<SESSION_ID>`: Dataproc Serverless interactive session.
     -   `--job_id=<JOB_ID>`: Standard Dataproc GCE cluster job. When the cluster
-        still exists, the script also inspects `placement.clusterName`.
+        still exists, the script also inspects `placement.clusterName`. If
+        `clusters describe` returns `NOT_FOUND` (deleted or ephemeral cluster),
+        the script automatically attempts to recover creation-time cluster
+        configuration from the `ClusterController.CreateCluster` Cloud Audit Log
+        and records a caveat in `warnings`.
 -   **Common options**:
     -   `--project=<PROJECT_ID>`: GCP project ID (defaults to active `gcloud`
         project).
@@ -87,7 +93,10 @@ OAuth scope errors, CMEK failures, or Secret Manager errors.
 ### VPC, Subnet, NAT, Peering, Firewall & DNS (`--action=network`)
 
 Run this plane when logs show `ConnectTimeoutException`, `UnknownHostException`,
-`No route to host`, or subnet IP exhaustion in `stateMessage`.
+`No route to host`, or subnet IP exhaustion in `stateMessage`. For a failed
+connection, pass `--target_port=<PORT>` (and `--target_ip=<IP>` when the logs
+show the remote address) to get a first-match firewall verdict and, for egress
+with `--target_ip`, a route verdict.
 
 -   `effective_host_project` and `effective_network`: Resolves the VPC network
     and Shared VPC host project from `subnetworkUri` or `networkUri`.
@@ -98,11 +107,9 @@ Run this plane when logs show `ConnectTimeoutException`, `UnknownHostException`,
     `private_ip_google_access`.
     -   `usable_hosts_estimate` is the total capacity of the primary range, not
         the number of free addresses.
-    -   Dataproc enables Private Google Access automatically on the subnet of
-        Serverless workloads and internal-IP-only clusters (the default on image
-        `2.2+`). If it reads `False` on an internal-IP workload, Google APIs and
-        Cloud Storage are reachable only through another path such as Cloud
-        NAT.
+    -   What `private_ip_google_access: False` means for a new workload, a
+        running cluster, or a Shared VPC subnet is in the Google APIs entry of
+        Egress Paths by Destination in `references/ingestion_triage_matrix.md`.
 -   `cloud_nats`: Lists Cloud Router NAT gateways on the VPC in the workload
     region and sets `covers_workload_subnet` when a public NAT translates the
     workload's primary subnet range. Cloud NAT is only needed for public
@@ -122,6 +129,49 @@ Run this plane when logs show `ConnectTimeoutException`, `UnknownHostException`,
     regional system firewall policy rules for the network and region. Long IP
     range lists are truncated, and rules that target secure tags report
     `applies_to_workload=None`.
+-   `firewall_verdict` (with `--target_port`; optional `--target_protocol`,
+    `--target_ip`, and `--target_direction`): Evaluates one connection (by
+    default, TCP egress from the workload) in the order below. It reports the
+    first matching rule of each policy, including `goto_next` rules, the
+    deciding rule, and a `verdict` of `ALLOWED`, `DENIED`, or `INDETERMINATE`.
+    -   A rule is indeterminate when its match depends on something the script
+        does not resolve: secure tags, address groups, FQDNs, geolocations,
+        threat intelligence lists, network context, source tags or service
+        accounts, an unknown workload service account, or a range that covers
+        only some remote addresses when `--target_ip` is not given.
+    -   The verdict stays `ALLOWED` or `DENIED` when every possible outcome
+        agrees. Otherwise it is `INDETERMINATE`, and `unevaluated_rules` lists
+        the rules to check by hand. L7 inspection rules
+        (`apply_security_profile_group`) and unreadable firewall data also give
+        `INDETERMINATE`.
+    -   Without `--target_ip`, the connection uses the subnet's IP version
+        (IPv4 on single-stack subnets).
+-   `route_verdict` (egress, with `--target_ip`): Picks the route that carries
+    traffic to the address the way VPC routing does: subnet routes of the
+    workload network first, then the most specific destination and the lowest
+    priority number among static routes (only those whose network tags the
+    workload VMs carry), routes imported over `ACTIVE` peerings, dynamic routes
+    of Cloud Routers with BGP sessions, and global Private Service Connect
+    endpoints.
+    -   `ROUTED`: `route` names the route and its next hop. For a public
+        address sent to the default internet gateway, `internet_egress` tells
+        how the VMs leave the network: `EXTERNAL_IP`, `CLOUD_NAT`, or `NONE`
+        when internal-IP-only VMs have no Cloud NAT covering the subnet
+        (Private Google Access covers only Google APIs).
+    -   `NO_ROUTE`: no route covers the address, or only the default internet
+        route does and the address is private. The default internet gateway
+        never carries traffic to private addresses.
+    -   `INDETERMINATE`: route data that could change the result could not be
+        read; `unevaluated` lists it.
+    -   `destination_owner`: Subnets of the host project that contain the
+        address, with their network and `peered_with_workload_network`.
+        Addresses in other projects are not looked up, and the destination
+        network's ingress firewall rules are not evaluated.
+-   `connection_summary` (with both verdicts): Lists the workload-side parts
+    that block the connection (`route`, `internet egress (no Cloud NAT)`,
+    `firewall`). The connection needs all of them, so recommend a fix for
+    each blocking part: an allow rule alone does not help a connection that
+    has no route.
 -   `private_dns_zones`: Lists private Cloud DNS zones in the host project and
     sets `bound_to_workload_network`. If `False`, the workload VPC cannot
     resolve records in that zone. Zones in other projects (cross-project
@@ -141,7 +191,9 @@ order:
 
 `allow` and `deny` stop evaluation, while `goto_next` continues to the next
 level. A rule with `applies_to_workload=False` cannot allow or block the
-workload's traffic, even if it matches the port.
+workload's traffic, even if it matches the port. The API does not report the
+order of several hierarchical (or system) policies, so `firewall_verdict`
+evaluates every order and is `INDETERMINATE` if the results differ.
 
 Serverless runtime `3.0+` workloads (except on Shared VPC) get an auto-created
 regional system firewall policy (`dataproc-firewall-policy-*` or
@@ -183,8 +235,12 @@ catalog settings.
     could be resolved.
 -   If secondary calls (such as `get-iam-policy`, VPC queries, or describing a
     deleted cluster) return `403` or `404`, the script still exits `0` and
-    records the skipped check in `warnings`. Always report `warnings` explicitly
-    instead of assuming an unqueried IAM role, NAT, or firewall rule is absent.
+    records the skipped check in `warnings`. For deleted clusters, when
+    creation-time configuration is recovered from Cloud Audit Logs
+    (`cluster_source: create_cluster_audit_log`), a warning notes that
+    post-creation `UpdateCluster` changes and server-side defaults may not be
+    reflected. Always report `warnings` explicitly instead of assuming an
+    unqueried IAM role, NAT, or firewall rule is absent.
 -   Long VPC firewall rule and policy rule lists are capped; a warning reports
     the truncation.
 
@@ -207,6 +263,17 @@ Confirm resource-level access with these read-only commands:
     --principal-email=<EMAIL> --permission=<PERMISSION>`.
 -   **Effective firewalls of a cluster VM**: `gcloud compute instances
     network-interfaces get-effective-firewalls <VM_NAME> --zone=<ZONE>`.
+-   **Routes**: `gcloud compute routes list --project=<HOST_PROJECT>
+    --filter="network~/networks/<NETWORK>$"` and, per peering, `gcloud compute
+    networks peerings list-routes <PEERING> --network=<NETWORK>
+    --region=<REGION> --direction=INCOMING`.
+-   **Deleted cluster history (Cloud Audit Logs)**: When `clusters describe`
+    returns `NOT_FOUND`, `spark_env_inspector.py` automatically queries
+    `ClusterController.CreateCluster` audit logs. To inspect manually or check
+    post-creation `UpdateCluster` changes, run: `gcloud logging read
+    'protoPayload.serviceName="dataproc.googleapis.com" AND
+    protoPayload.resourceName="projects/<PROJECT>/regions/<REGION>/clusters/<CLUSTER>"'
+    --project=<PROJECT> --freshness=30d --limit=20 --order=desc --format=json`.
 -   **VPC Service Controls**: Errors with `Request is prohibited by
     organization's policy` include a `vpcServiceControlsUniqueIdentifier`;
     look it up in the Cloud Audit Logs of the protected project.

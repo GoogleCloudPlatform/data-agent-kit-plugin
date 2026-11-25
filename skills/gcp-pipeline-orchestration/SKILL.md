@@ -8,7 +8,7 @@ description: This skill helps the agent generate or update orchestration pipelin
   This skill also helps deploy and trigger orchestration pipelines.
 license: Apache-2.0
 metadata:
-  version: v7
+  version: v8
   publisher: google
 ---
 
@@ -535,6 +535,12 @@ Deploy → Poll → Trigger flow.
 > ```
 >
 > Get `project`, `region`, and `composer_environment` from `deployment.yaml`.
+> All identifier arguments (`project`, `location`, `environment`, `dag_id`) must
+> match `^[A-Za-z0-9._-]+$` (never `.`, `..`, or path-traversal sequences), and
+> the script only sends credentials over HTTPS to `composer.googleapis.com` and
+> Cloud Composer Inverting Proxy hosts (`*.composer.googleusercontent.com` /
+> `*.composer.byoid.googleusercontent.com`) with redirects disabled. The script
+> exits non-zero if validation or triggering fails.
 
 ## Definition of done
 
