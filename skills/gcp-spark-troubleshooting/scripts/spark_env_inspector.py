@@ -23,7 +23,12 @@ Collects factual Google Cloud environment metadata across three planes:
   * `network`: VPC/subnet URIs, CIDR capacity, Private Google Access, Cloud
     NAT coverage, VPC peerings, VPC firewall rules that apply to the workload
     (with optional `--target_port` matching), effective hierarchical, network,
-    and system firewall policy rules, and Cloud DNS private zone bindings.
+    and system firewall policy rules, Cloud DNS private zone bindings, and,
+    with `--target_port`, a first-match firewall verdict for one connection
+    that reports `INDETERMINATE` when a rule cannot be evaluated. With
+    `--target_ip`, egress connections also get a route verdict (the subnet,
+    peering, static, dynamic, or Private Service Connect route that carries
+    the traffic, or `NO_ROUTE`) and a summary of the blocking parts.
   * `classpath`: Dataproc runtime/image version, mapped Spark and Scala binary
     versions, attached JARs/packages with detected Scala (`_2.12` / `_2.13`)
     and Spark (`spark-3.5`, `-3.5_2.13`) versions compared with the runtime,
@@ -39,13 +44,16 @@ Written against the Python standard library only.
 """
 
 import argparse
+import datetime
 import ipaddress
+import itertools
 import json
+import math
 import re
 import shutil
 import subprocess
 import sys
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
 DEFAULT_REGION = "us-central1"
 _GCLOUD_TIMEOUT_SECONDS = 60
@@ -87,6 +95,50 @@ _SPARK_MINOR_RES = (
 _MAX_FIREWALL_RULES = 100
 _MAX_POLICY_RULES = 80
 _MAX_RANGES_SHOWN = 5
+# First-match firewall verdict for one connection (`--target_port`).
+_VERDICT_ALLOWED = "ALLOWED"
+_VERDICT_DENIED = "DENIED"
+_VERDICT_INDETERMINATE = "INDETERMINATE"
+# Terminal outcome of a matching rule whose effect the inspector cannot
+# evaluate, such as `apply_security_profile_group` (L7 inspection decides).
+_OUTCOME_UNEVALUATED = "UNEVALUATED"
+# Per-rule match states for the connection.
+_MATCH = "match"
+_NO_MATCH = "no_match"
+_UNKNOWN = "unknown"
+_IMPLIED_RULE_PRIORITY = 65535
+# Upper bound on the policy orders evaluated when the API does not report the
+# order (several hierarchical or system policies, unknown enforcement order).
+_MAX_FIREWALL_ORDERINGS = 720
+_MAX_UNEVALUATED_RULES_SHOWN = 10
+_PROTOCOL_NUMBERS = {"tcp": "6", "udp": "17"}
+# Route verdict for one egress destination (`--target_ip`).
+_ROUTE_ROUTED = "ROUTED"
+_ROUTE_NO_ROUTE = "NO_ROUTE"
+_ROUTE_INDETERMINATE = "INDETERMINATE"
+_DEFAULT_INTERNET_GATEWAY = "default-internet-gateway"
+# Tie-breaker between routes with the same destination prefix and priority.
+_ROUTE_SOURCE_RANK = {
+    "subnet": 0,
+    "psc_endpoint": 1,
+    "static": 2,
+    "peering": 3,
+    "dynamic": 4,
+    "internet_gateway": 5,
+}
+# Next-hop fields of a static route, in the order they are reported.
+_STATIC_NEXT_HOP_FIELDS = (
+    ("nextHopVpnTunnel", "VPN tunnel"),
+    ("nextHopInterconnectAttachment", "Interconnect attachment"),
+    ("nextHopIlb", "internal load balancer"),
+    ("nextHopInstance", "instance"),
+    ("nextHopIp", "IP address"),
+    ("nextHopHub", "Network Connectivity Center hub"),
+)
+_HIERARCHY_POLICY_TYPES = ("HIERARCHY",)
+_SYSTEM_POLICY_TYPES = ("SYSTEM", "SYSTEM_GLOBAL", "SYSTEM_REGIONAL")
+_GLOBAL_NETWORK_POLICY_TYPES = ("NETWORK",)
+_REGIONAL_NETWORK_POLICY_TYPES = ("NETWORK_REGIONAL",)
 _SENSITIVE_KEY_RE = re.compile(
     r"(password|passwd|pwd|passphrase|secret|token|credential|authorization|"
     r"private[_.-]?key|access[_.-]?key|account[_.-]?key|client[_.-]?secret|"
@@ -287,6 +339,226 @@ def redact_args(raw_args: List[str]) -> List[str]:
   return sanitized
 
 
+_RFC3339_RE = re.compile(
+    r"^(\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2})(?:\.(\d+))?(Z|[+-]\d{2}:\d{2})$"
+)
+_NOT_FOUND_RE = re.compile(
+    r"(?:\bnot_found\b|\bwas not found\b|\bnot found\b|\bhttp\s*404\b"
+    r"|\b404\s+not\s+found\b)",
+    re.IGNORECASE,
+)
+
+
+def _is_not_found_error(msg: str) -> bool:
+  detail = msg.split(":", 1)[1] if ":" in msg else msg
+  return bool(_NOT_FOUND_RE.search(detail))
+
+
+def _parse_rfc3339(ts: str) -> Optional[datetime.datetime]:
+  """Parses an RFC3339 timestamp (including nanosecond precision) to UTC."""
+  match = _RFC3339_RE.match(ts.strip())
+  if not match:
+    return None
+  base, frac, tz = match.groups()
+  base = base.replace(" ", "T")
+  frac_part = f".{frac[:6].ljust(6, '0')}" if frac else ""
+  tz_part = "+00:00" if tz == "Z" else tz
+  try:
+    dt = datetime.datetime.fromisoformat(f"{base}{frac_part}{tz_part}")
+  except ValueError:
+    return None
+  return dt.astimezone(datetime.timezone.utc)
+
+
+def _job_latest_timestamp(job_dict: Dict[str, Any]) -> str:
+  """Returns the latest valid stateStartTime from a Dataproc job resource."""
+  candidates: List[Tuple[datetime.datetime, str]] = []
+  for item in _list_field(job_dict, "statusHistory"):
+    ts = _str_field(item, "stateStartTime")
+    dt = _parse_rfc3339(ts) if ts else None
+    if dt is not None:
+      candidates.append((dt, ts))
+  status_ts = _str_field(_dict_field(job_dict, "status"), "stateStartTime")
+  status_dt = _parse_rfc3339(status_ts) if status_ts else None
+  if status_dt is not None:
+    candidates.append((status_dt, status_ts))
+  if not candidates:
+    return ""
+  candidates.sort(key=lambda pair: pair[0])
+  return candidates[-1][1]
+
+
+def _image_version_is_2_2_or_newer(image_version: str) -> bool:
+  match = re.match(r"^(\d+)\.(\d+)", image_version.strip())
+  if not match:
+    return False
+  return (int(match.group(1)), int(match.group(2))) >= (2, 2)
+
+
+def _audit_entry_cluster_uuid(entry: Dict[str, Any]) -> str:
+  """Extracts clusterUuid from a CreateCluster Cloud Audit Log entry."""
+  res_labels = _dict_field(_dict_field(entry, "resource"), "labels")
+  payload = _dict_field(entry, "protoPayload")
+  response = _dict_field(payload, "response")
+  request_cluster = _dict_field(_dict_field(payload, "request"), "cluster")
+  for candidate in (
+      _str_field(res_labels, "cluster_uuid"),
+      _str_field(_dict_field(response, "metadata"), "clusterUuid"),
+      _str_field(response, "clusterUuid"),
+      _str_field(_dict_field(payload, "metadata"), "clusterUuid"),
+      _str_field(request_cluster, "clusterUuid"),
+  ):
+    if candidate:
+      return candidate
+  return ""
+
+
+def _recover_deleted_cluster_from_audit_log(
+    project: str,
+    region: str,
+    cluster_name: str,
+    job_dict: Dict[str, Any],
+    runner: CommandRunner,
+    warnings: List[str],
+) -> Optional[Dict[str, Any]]:
+  """Recovers creation-time cluster config from CreateCluster Cloud Audit Logs.
+
+  When a Dataproc cluster has been deleted, `clusters describe` returns
+  NOT_FOUND. Cloud Admin Activity Audit Logs retain `CreateClusterRequest`
+  payloads for 400 days and preserve serviceAccount, OAuth scopes, network,
+  encryption, imageVersion, optionalComponents, and properties set at creation.
+
+  Args:
+    project: Workload project ID.
+    region: Workload region.
+    cluster_name: Deleted cluster name from `placement.clusterName`.
+    job_dict: Dataproc job resource returned by `jobs describe`.
+    runner: gcloud command runner.
+    warnings: Receives audit-log query errors if `logging read` fails or returns
+      invalid JSON; untouched when the query succeeds with no entries.
+
+  Returns:
+    A synthesized cluster dict tagged with
+    `_cluster_source="create_cluster_audit_log"`, or None if no matching
+    CreateCluster audit log entry could be read.
+  """
+  resource_name = f"projects/{project}/regions/{region}/clusters/{cluster_name}"
+  filter_parts = [
+      'protoPayload.serviceName="dataproc.googleapis.com"',
+      (
+          '(protoPayload.methodName="google.cloud.dataproc.v1.ClusterController.CreateCluster"'
+          ' OR protoPayload.methodName="google.cloud.dataproc.v1beta2.ClusterController.CreateCluster")'
+      ),
+      (
+          f"(protoPayload.resourceName={json.dumps(resource_name)}"
+          ' OR (resource.type="cloud_dataproc_cluster"'
+          f" AND resource.labels.cluster_name={json.dumps(cluster_name)}"
+          f" AND resource.labels.region={json.dumps(region)}))"
+      ),
+  ]
+  job_ts = _job_latest_timestamp(job_dict)
+  if job_ts:
+    filter_parts.append(f"timestamp<={json.dumps(job_ts)}")
+
+  cmd = [
+      "logging",
+      "read",
+      " AND ".join(filter_parts),
+      f"--project={project}",
+      "--order=desc",
+      "--limit=10",
+  ]
+  if not job_ts:
+    cmd.append("--freshness=400d")
+
+  log_warnings: List[str] = []
+  entries = _run_gcloud_json(
+      runner,
+      cmd,
+      log_warnings,
+      f"logging read CreateCluster '{cluster_name}'",
+      fatal=False,
+  )
+  if entries is None:
+    warnings.extend(log_warnings)
+    return None
+  if not isinstance(entries, list) or not entries:
+    return None
+
+  op_uuid_map: Dict[str, str] = {}
+  failed_ops: Set[str] = set()
+  for entry in entries:
+    if not isinstance(entry, dict):
+      continue
+    op_id = _str_field(_dict_field(entry, "operation"), "id")
+    uuid = _audit_entry_cluster_uuid(entry)
+    if op_id and uuid and op_id not in op_uuid_map:
+      op_uuid_map[op_id] = uuid
+    status_code = _dict_field(_dict_field(entry, "protoPayload"), "status").get(
+        "code"
+    )
+    if op_id and status_code not in (None, 0, "0", ""):
+      failed_ops.add(op_id)
+
+  candidates: List[Tuple[str, Dict[str, Any]]] = []
+  for entry in entries:
+    if not isinstance(entry, dict):
+      continue
+    payload = _dict_field(entry, "protoPayload")
+    status_code = _dict_field(payload, "status").get("code")
+    if status_code not in (None, 0, "0", ""):
+      continue
+    op_id = _str_field(_dict_field(entry, "operation"), "id")
+    if op_id and op_id in failed_ops:
+      continue
+    req_cluster = _dict_field(payload, "request").get("cluster")
+    if not isinstance(req_cluster, dict):
+      continue
+    cand_uuid = _audit_entry_cluster_uuid(entry) or op_uuid_map.get(op_id, "")
+    candidates.append((cand_uuid, req_cluster))
+
+  if not candidates:
+    return None
+
+  job_cluster_uuid = _str_field(
+      _dict_field(job_dict, "placement"), "clusterUuid"
+  )
+  selected: Optional[Dict[str, Any]] = None
+  if job_cluster_uuid:
+    for cand_uuid, req_cluster in candidates:
+      if cand_uuid == job_cluster_uuid:
+        selected = req_cluster
+        break
+    if selected is None:
+      for cand_uuid, req_cluster in candidates:
+        if not cand_uuid:
+          selected = req_cluster
+          break
+  else:
+    selected = candidates[0][1]
+
+  if selected is None:
+    return None
+
+  raw_cfg = _dict_field(selected, "config")
+  cfg = dict(raw_cfg)
+  gce_cfg = dict(_dict_field(raw_cfg, "gceClusterConfig"))
+  image_ver = _str_field(_dict_field(raw_cfg, "softwareConfig"), "imageVersion")
+  # Dataproc GCE images 2.2+ default to internal-IP-only when omitted.
+  if gce_cfg.get("internalIpOnly") is None and _image_version_is_2_2_or_newer(
+      image_ver
+  ):
+    gce_cfg["internalIpOnly"] = True
+  if gce_cfg:
+    cfg["gceClusterConfig"] = gce_cfg
+
+  return {
+      "clusterName": _str_field(selected, "clusterName", cluster_name),
+      "config": cfg,
+      "_cluster_source": "create_cluster_audit_log",
+  }
+
+
 def _fetch_workload(
     project: str,
     region: str,
@@ -372,6 +644,7 @@ def _fetch_workload(
     cluster_name = _str_field(_dict_field(job_dict, "placement"), "clusterName")
     cluster_dict = None
     if cluster_name:
+      describe_warnings: List[str] = []
       raw_cluster = _run_gcloud_json(
           runner,
           [
@@ -382,12 +655,32 @@ def _fetch_workload(
               f"--project={project}",
               f"--region={region}",
           ],
-          warnings,
+          describe_warnings,
           f"clusters describe '{cluster_name}'",
           fatal=False,
       )
       if raw_cluster is not None:
         cluster_dict = _as_dict(raw_cluster)
+      else:
+        not_found = any(_is_not_found_error(w) for w in describe_warnings)
+        log_warnings: List[str] = []
+        recovered = None
+        if not_found:
+          recovered = _recover_deleted_cluster_from_audit_log(
+              project, region, cluster_name, job_dict, runner, log_warnings
+          )
+        if recovered is not None:
+          cluster_dict = recovered
+          warnings.append(
+              f"clusters describe '{cluster_name}' returned NOT_FOUND;"
+              " recovered creation-time config from Cloud Audit Logs"
+              " (CreateCluster). Subsequent UpdateCluster changes and"
+              " server-side defaults not present in the create request may not"
+              " be reflected."
+          )
+        else:
+          warnings.extend(describe_warnings)
+          warnings.extend(log_warnings)
     return job_dict, cluster_dict
 
   raise InspectorError(f"Unsupported workload kind: {workload_kind}")
@@ -416,7 +709,7 @@ def _extract_common_header(
     runtime_version = _str_field(
         _dict_field(workload, "runtimeConfig"), "version"
     )
-  return {
+  header: Dict[str, Any] = {
       "workload_type": workload_kind,
       "workload_id": workload_id,
       "project": project,
@@ -426,6 +719,10 @@ def _extract_common_header(
       "state_message": state_message,
       "runtime_version": runtime_version,
   }
+  cluster_source = _str_field(cluster, "_cluster_source")
+  if cluster_source:
+    header["cluster_source"] = cluster_source
+  return header
 
 
 def _normalize_prop_key(raw_key: Any) -> str:
@@ -763,25 +1060,27 @@ def _cidr_usable_hosts(cidr: str) -> Optional[int]:
 
 
 def _port_matches_specs(
-    specs: List[Dict[str, Any]], target_port: int
+    specs: List[Dict[str, Any]], target_port: int, protocol: str = "tcp"
 ) -> bool:
-  """Checks whether firewall rule protocol/port specs cover a TCP port.
+  """Checks whether firewall rule protocol/port specs cover a port.
 
   Accepts VPC firewall rule specs (`IPProtocol`/`ports`) and firewall policy
   `layer4Configs` entries (`ipProtocol`/`ports`).
 
   Args:
     specs: Protocol and port specs of one rule.
-    target_port: TCP port to match.
+    target_port: Port to match.
+    protocol: Protocol of the connection (`tcp` or `udp`).
 
   Returns:
-    Whether any spec covers TCP `target_port`.
+    Whether any spec covers `protocol` traffic to `target_port`.
   """
+  wanted = {"all", protocol, _PROTOCOL_NUMBERS.get(protocol, protocol)}
   for spec in specs:
     proto = _str_field(
         spec, "IPProtocol", _str_field(spec, "ipProtocol")
     ).lower()
-    if proto not in ("all", "tcp", "6"):
+    if proto not in wanted:
       continue
     ports = _list_field(spec, "ports")
     if not ports:
@@ -838,8 +1137,8 @@ def _inspect_vpc_network(
     host_project: str,
     runner: CommandRunner,
     warnings: List[str],
-) -> Tuple[List[Dict[str, Any]], str]:
-  """Returns (VPC peerings, firewall policy enforcement order) of a network."""
+) -> Tuple[List[Dict[str, Any]], Optional[str], str]:
+  """Returns (peerings, policy enforcement order or None, routing mode)."""
   raw_net = _run_gcloud_json(
       runner,
       [
@@ -868,10 +1167,15 @@ def _inspect_vpc_network(
         "import_custom_routes": bool(peer.get("importCustomRoutes", False)),
         "export_custom_routes": bool(peer.get("exportCustomRoutes", False)),
     })
-  enforcement_order = _str_field(
-      raw_net, "networkFirewallPolicyEnforcementOrder"
+  enforcement_order = (
+      _str_field(raw_net, "networkFirewallPolicyEnforcementOrder")
+      if isinstance(raw_net, dict) and raw_net
+      else None
   )
-  return peerings, enforcement_order
+  routing_mode = _str_field(
+      _dict_field(raw_net, "routingConfig"), "routingMode"
+  )
+  return peerings, enforcement_order, routing_mode
 
 
 def _inspect_firewall_policies(
@@ -883,8 +1187,24 @@ def _inspect_firewall_policies(
     network_tags: List[Any],
     workload_sa: str,
     target_port: Optional[int],
-) -> List[Dict[str, Any]]:
-  """Summarizes effective hierarchical, network, and system policy rules."""
+    target_protocol: str = "tcp",
+) -> Tuple[List[Dict[str, Any]], Optional[List[Dict[str, Any]]]]:
+  """Summarizes effective hierarchical, network, and system policy rules.
+
+  Args:
+    network_name: VPC network of the workload.
+    host_project: Project that owns the network.
+    region: Region of the workload subnet.
+    runner: gcloud command runner.
+    warnings: Partial-visibility warnings to append to.
+    network_tags: Network tags on the workload VMs.
+    workload_sa: Service account of the workload VMs ("" when unknown).
+    target_port: Optional port to mark matching rules for.
+    target_protocol: Protocol for `target_port`.
+
+  Returns:
+    (policy summaries, raw effective policies or None when unreadable).
+  """
   raw = _run_gcloud_json(
       runner,
       [
@@ -898,12 +1218,17 @@ def _inspect_firewall_policies(
       warnings,
       f"compute network-firewall-policies get-effective-firewalls ({region})",
   )
+  raw_policies = (
+      None
+      if raw is None
+      else [
+          p for p in _list_field(raw, "firewallPolicys") if isinstance(p, dict)
+      ]
+  )
   policies: List[Dict[str, Any]] = []
   total_rules = 0
   truncated = False
-  for policy in _list_field(raw, "firewallPolicys"):
-    if not isinstance(policy, dict):
-      continue
+  for policy in raw_policies or []:
     rules: List[Dict[str, Any]] = []
     raw_rules = [r for r in _list_field(policy, "rules") if isinstance(r, dict)]
     raw_rules.sort(key=lambda r: int(r.get("priority", 0)))
@@ -943,19 +1268,14 @@ def _inspect_firewall_policies(
           "target_secure_tags": secure_tags,
           "applies_to_workload": applies,
           "matches_target_port": (
-              _port_matches_specs(layer4, target_port)
+              _port_matches_specs(layer4, target_port, target_protocol)
               if target_port is not None
               else None
           ),
       })
       total_rules += 1
-    policy_name = (
-        _str_field(policy, "displayName")
-        or _str_field(policy, "shortName")
-        or _str_field(policy, "name")
-    )
     policies.append({
-        "name": policy_name,
+        "name": _policy_display_name(policy),
         "type": _str_field(policy, "type"),
         "rules": rules,
     })
@@ -964,7 +1284,1132 @@ def _inspect_firewall_policies(
         f"firewall policies: only the first {_MAX_POLICY_RULES} rules are"
         " listed"
     )
-  return policies
+  return policies, raw_policies
+
+
+def _rule_priority(rule: Dict[str, Any], default: int) -> int:
+  try:
+    return int(rule.get("priority", default))
+  except (TypeError, ValueError):
+    return default
+
+
+def _policy_display_name(policy: Dict[str, Any]) -> str:
+  return (
+      _str_field(policy, "displayName")
+      or _str_field(policy, "shortName")
+      or _str_field(policy, "name")
+  )
+
+
+def _parse_ip_networks(ranges: List[Any]) -> Tuple[List[Any], bool]:
+  """Parses IP ranges into networks and reports unparseable entries."""
+  nets: List[Any] = []
+  unparseable = False
+  for item in ranges:
+    try:
+      nets.append(ipaddress.ip_network(str(item).strip(), strict=False))
+    except ValueError:
+      unparseable = True
+  return nets, unparseable
+
+
+def _remote_ranges_state(
+    ranges: List[Any], remote_ip: Optional[Any], ip_version: Optional[int]
+) -> str:
+  """Matches the remote end of the connection against a rule's IP ranges.
+
+  Args:
+    ranges: IP ranges for the remote end (destination for egress, source for
+      ingress).
+    remote_ip: Remote address, or None when `--target_ip` is not given.
+    ip_version: IP version of the connection, or None when unknown.
+
+  Returns:
+    _MATCH, _NO_MATCH, or _UNKNOWN.
+  """
+  nets, unparseable = _parse_ip_networks(ranges)
+  if remote_ip is not None:
+    if any(remote_ip in n for n in nets):
+      return _MATCH
+    return _UNKNOWN if unparseable else _NO_MATCH
+  if ip_version is None:
+    if {n.version for n in nets if n.prefixlen == 0} == {4, 6}:
+      return _MATCH
+    return _UNKNOWN if nets or unparseable else _NO_MATCH
+  same_version = [n for n in nets if n.version == ip_version]
+  if any(n.prefixlen == 0 for n in same_version):
+    return _MATCH
+  return _UNKNOWN if same_version or unparseable else _NO_MATCH
+
+
+def _local_ranges_state(ranges: List[Any], local_nets: List[Any]) -> str:
+  """Matches the workload end of the connection against a rule's IP ranges.
+
+  The workload end can be any address of the workload subnet, so the rule
+  matches only if its ranges cover the subnet and misses only if they do not
+  overlap it.
+
+  Args:
+    ranges: IP ranges for the workload end (source for egress, destination for
+      ingress).
+    local_nets: Workload subnet ranges of the connection's IP version.
+
+  Returns:
+    _MATCH, _NO_MATCH, or _UNKNOWN.
+  """
+  if not local_nets:
+    return _UNKNOWN
+  nets, unparseable = _parse_ip_networks(ranges)
+  if all(
+      any(ln.version == n.version and ln.subnet_of(n) for n in nets)
+      for ln in local_nets
+  ):
+    return _MATCH
+  overlaps = any(ln.overlaps(n) for ln in local_nets for n in nets)
+  return _UNKNOWN if overlaps or unparseable else _NO_MATCH
+
+
+def _combine_states(states: List[str]) -> str:
+  if _NO_MATCH in states:
+    return _NO_MATCH
+  if _UNKNOWN in states:
+    return _UNKNOWN
+  return _MATCH
+
+
+def _new_rule_record(name: str, priority: int, action: str) -> Dict[str, Any]:
+  return {
+      "rule": name,
+      "priority": priority,
+      "action": action,
+      "state": _NO_MATCH,
+      "remote_ranges": [],
+      "reasons": [],
+  }
+
+
+def _finish_rule_record(
+    record: Dict[str, Any], states: List[str], reasons: List[str]
+) -> Dict[str, Any]:
+  record["state"] = _combine_states(states)
+  record["reasons"] = reasons if record["state"] == _UNKNOWN else []
+  return record
+
+
+def _remote_range_reason(conn: Dict[str, Any]) -> str:
+  end = "destination" if conn["direction"] == "EGRESS" else "source"
+  if conn["remote_ip"] is None:
+    return f"matches only some {end} addresses; pass --target_ip to evaluate it"
+  return f"has {end} ranges that could not be parsed"
+
+
+def _local_range_reason(conn: Dict[str, Any]) -> str:
+  if not conn["local_nets"]:
+    return "limits workload addresses, and the workload subnet range is unknown"
+  return "limits workload addresses to ranges that partly cover the subnet"
+
+
+def _evaluate_vpc_rule(
+    fw: Dict[str, Any], conn: Dict[str, Any]
+) -> Dict[str, Any]:
+  """Matches one VPC firewall rule against the connection."""
+  denied = _list_field(fw, "denied")
+  specs = denied or _list_field(fw, "allowed")
+  record = _new_rule_record(
+      _str_field(fw, "name"),
+      _rule_priority(fw, 1000),
+      "deny" if denied else "allow",
+  )
+  direction = _str_field(fw, "direction", "INGRESS").upper()
+  if direction != conn["direction"] or not _port_matches_specs(
+      specs, conn["port"], conn["protocol"]
+  ):
+    return record
+  states: List[str] = []
+  reasons: List[str] = []
+  applies = _target_applies(
+      _list_field(fw, "targetTags"),
+      _list_field(fw, "targetServiceAccounts"),
+      conn["network_tags"],
+      conn["workload_sa"],
+  )
+  if applies is None:
+    states.append(_UNKNOWN)
+    reasons.append(
+        "targets service accounts, and the workload service account is unknown"
+    )
+  elif not applies:
+    return record
+  if direction == "EGRESS":
+    # Egress rules without destination ranges apply to 0.0.0.0/0.
+    remote = _list_field(fw, "destinationRanges") or ["0.0.0.0/0"]
+    remote_other: List[str] = []
+    local = _list_field(fw, "sourceRanges")
+  else:
+    remote = _list_field(fw, "sourceRanges")
+    remote_other = [
+        label
+        for label, key in (
+            ("source tags", "sourceTags"),
+            ("source service accounts", "sourceServiceAccounts"),
+        )
+        if _list_field(fw, key)
+    ]
+    # Ingress rules without any source apply to 0.0.0.0/0.
+    if not remote and not remote_other:
+      remote = ["0.0.0.0/0"]
+    local = _list_field(fw, "destinationRanges")
+  record["remote_ranges"] = _summarize_ranges(remote)
+  remote_state = (
+      _remote_ranges_state(remote, conn["remote_ip"], conn["ip_version"])
+      if remote
+      else _NO_MATCH
+  )
+  if remote_state == _UNKNOWN:
+    reasons.append(_remote_range_reason(conn))
+  if remote_state != _MATCH and remote_other:
+    # A VPC rule matches a source range OR a source tag or service account.
+    remote_state = _UNKNOWN
+    reasons.append(
+        f"matches {' and '.join(remote_other)}, which are not resolved"
+    )
+  states.append(remote_state)
+  if local:
+    local_state = _local_ranges_state(local, conn["local_nets"])
+    if local_state == _UNKNOWN:
+      reasons.append(_local_range_reason(conn))
+    states.append(local_state)
+  return _finish_rule_record(record, states, reasons)
+
+
+def _policy_target_state(
+    rule: Dict[str, Any], conn: Dict[str, Any], reasons: List[str]
+) -> str:
+  """Returns whether a firewall policy rule targets the workload VMs."""
+  states: List[str] = []
+  resources = _list_field(rule, "targetResources")
+  if resources:
+    in_scope = any(
+        _parse_network_uri(str(r), conn["network"][0]) == conn["network"]
+        for r in resources
+    )
+    states.append(_MATCH if in_scope else _NO_MATCH)
+  target_sas = _list_field(rule, "targetServiceAccounts")
+  if target_sas:
+    if not conn["workload_sa"]:
+      states.append(_UNKNOWN)
+      reasons.append(
+          "targets service accounts, and the workload service account is"
+          " unknown"
+      )
+    else:
+      states.append(_MATCH if conn["workload_sa"] in target_sas else _NO_MATCH)
+  if _list_field(rule, "targetSecureTags"):
+    states.append(_UNKNOWN)
+    reasons.append("targets secure tags, which are not resolved")
+  return _combine_states(states)
+
+
+def _evaluate_policy_rule(
+    rule: Dict[str, Any], conn: Dict[str, Any]
+) -> Dict[str, Any]:
+  """Matches one firewall policy rule against the connection."""
+  record = _new_rule_record(
+      _str_field(rule, "ruleName"),
+      _rule_priority(rule, 0),
+      _str_field(rule, "action").lower(),
+  )
+  direction = _str_field(rule, "direction", "INGRESS").upper()
+  match = _dict_field(rule, "match")
+  layer4 = _list_field(match, "layer4Configs")
+  if (
+      rule.get("disabled")
+      or direction != conn["direction"]
+      or (
+          layer4
+          and not _port_matches_specs(layer4, conn["port"], conn["protocol"])
+      )
+  ):
+    return record
+  reasons: List[str] = []
+  states = [_policy_target_state(rule, conn, reasons)]
+  remote_key, local_key = (
+      ("destIpRanges", "srcIpRanges")
+      if direction == "EGRESS"
+      else ("srcIpRanges", "destIpRanges")
+  )
+  remote_ranges = _list_field(match, remote_key)
+  record["remote_ranges"] = _summarize_ranges(remote_ranges)
+  # Selectors other than IP ranges (secure tags, address groups, FQDNs,
+  # geolocations, threat intelligence lists, network context) are not
+  # resolved, so a rule that uses one is indeterminate.
+  selectors = sorted(
+      key
+      for key, value in match.items()
+      if value and key not in ("layer4Configs", "srcIpRanges", "destIpRanges")
+  )
+  if selectors:
+    states.append(_UNKNOWN)
+    reasons.append(f"uses {', '.join(selectors)}, which are not resolved")
+  else:
+    if remote_ranges:
+      remote_state = _remote_ranges_state(
+          remote_ranges, conn["remote_ip"], conn["ip_version"]
+      )
+      if remote_state == _UNKNOWN:
+        reasons.append(_remote_range_reason(conn))
+      states.append(remote_state)
+    local_ranges = _list_field(match, local_key)
+    if local_ranges:
+      local_state = _local_ranges_state(local_ranges, conn["local_nets"])
+      if local_state == _UNKNOWN:
+        reasons.append(_local_range_reason(conn))
+      states.append(local_state)
+  return _finish_rule_record(record, states, reasons)
+
+
+def _implied_rule_record(direction: str) -> Dict[str, Any]:
+  egress = direction == "EGRESS"
+  record = _new_rule_record(
+      "implied allow egress" if egress else "implied deny ingress",
+      _IMPLIED_RULE_PRIORITY,
+      "allow" if egress else "deny",
+  )
+  record["state"] = _MATCH
+  return record
+
+
+def _verdict_stage(
+    name: str, records: Optional[List[Dict[str, Any]]]
+) -> Dict[str, Any]:
+  """Builds an evaluation stage; `records=None` marks it unreadable."""
+  return {"name": name, "readable": records is not None, "records": records}
+
+
+def _firewall_orderings(
+    hierarchy: List[Dict[str, Any]],
+    system: List[Dict[str, Any]],
+    vpc_stage: Dict[str, Any],
+    network: List[Dict[str, Any]],
+    implied: Dict[str, Any],
+    enforcement_order: Optional[str],
+) -> Optional[List[List[Dict[str, Any]]]]:
+  """Lists every stage order consistent with what the API reports.
+
+  The API does not report the relative order of several hierarchical (or
+  system) policies, and the enforcement order is unknown when the network
+  cannot be read, so every consistent order is evaluated.
+
+  Args:
+    hierarchy: Hierarchical policy stages.
+    system: System policy stages.
+    vpc_stage: VPC firewall rules stage.
+    network: Global, then regional, network policy stages.
+    implied: Implied rules stage.
+    enforcement_order: The network's firewall policy enforcement order, or None
+      when the network could not be read.
+
+  Returns:
+    The candidate orders, or None when there are too many to evaluate.
+  """
+  after = [vpc_stage, *network]
+  before = [*network, vpc_stage]
+  if enforcement_order is None:
+    tails = [after, before] if network else [after]
+  elif enforcement_order == "BEFORE_CLASSIC_FIREWALL":
+    tails = [before]
+  else:
+    tails = [after]
+  count = (
+      math.factorial(len(hierarchy)) * math.factorial(len(system)) * len(tails)
+  )
+  if count > _MAX_FIREWALL_ORDERINGS:
+    return None
+  return [
+      [*h, *s, *t, implied]
+      for h in itertools.permutations(hierarchy)
+      for s in itertools.permutations(system)
+      for t in tails
+  ]
+
+
+def _ordering_outcomes(
+    stages: List[Dict[str, Any]],
+) -> Set[Tuple[str, Tuple[Any, ...]]]:
+  """Returns every (outcome, deciding rule) that one stage order can produce.
+
+  Walks the stages backward: a matching rule decides (or, for `goto_next`,
+  passes to the next stage), and an indeterminate rule contributes the
+  outcomes of both matching and not matching.
+
+  Args:
+    stages: Stages in evaluation order, ending with the implied rules.
+
+  Returns:
+    Pairs of outcome and deciding rule key.
+  """
+  entry: Set[Tuple[str, Tuple[Any, ...]]] = set()
+  for stage in reversed(stages):
+    passed = entry
+    if not stage["readable"]:
+      key = (stage["name"], None, "", "")
+      entry = {(_VERDICT_ALLOWED, key), (_VERDICT_DENIED, key)} | passed
+      continue
+    acc = passed
+    for rec in reversed(stage["records"]):
+      if rec["state"] == _NO_MATCH:
+        continue
+      key = (stage["name"], rec["priority"], rec["rule"], rec["action"])
+      if rec["action"] == "allow":
+        matched = {(_VERDICT_ALLOWED, key)}
+      elif rec["action"] == "deny":
+        matched = {(_VERDICT_DENIED, key)}
+      elif rec["action"] == "goto_next":
+        matched = passed
+      else:
+        matched = {(_OUTCOME_UNEVALUATED, key)}
+      acc = matched if rec["state"] == _MATCH else matched | acc
+    entry = acc
+  return entry
+
+
+def _firewall_connection(
+    direction: str,
+    protocol: str,
+    port: int,
+    target_ip: Optional[str],
+    subnet: Optional[Dict[str, Any]],
+    network: Tuple[str, str],
+    network_tags: List[Any],
+    workload_sa: str,
+) -> Dict[str, Any]:
+  """Describes the connection that the firewall verdict evaluates."""
+  remote_ip = ipaddress.ip_address(target_ip) if target_ip else None
+  stack = _str_field(subnet, "stack_type").upper()
+  if remote_ip is not None:
+    ip_version = remote_ip.version
+  elif not subnet or stack not in ("", "IPV4_ONLY", "IPV6_ONLY"):
+    ip_version = None
+  else:
+    ip_version = 6 if stack == "IPV6_ONLY" else 4
+  nets, _ = _parse_ip_networks([_str_field(subnet, "ip_cidr_range")])
+  local_nets = [n for n in nets if n.version == ip_version]
+  return {
+      "direction": direction,
+      "protocol": protocol,
+      "port": port,
+      "remote_ip": remote_ip,
+      "ip_version": ip_version,
+      "subnet_stack_type": stack if subnet else None,
+      "local_nets": local_nets,
+      "network": network,
+      "network_tags": network_tags,
+      "workload_sa": workload_sa,
+  }
+
+
+def _verdict_rule_view(rec: Dict[str, Any]) -> Dict[str, Any]:
+  return {
+      "rule": rec["rule"],
+      "priority": rec["priority"],
+      "action": rec["action"],
+      "match": "match" if rec["state"] == _MATCH else "indeterminate",
+      "remote_ranges": rec["remote_ranges"],
+      "reasons": rec["reasons"],
+  }
+
+
+def _firewall_verdict(
+    conn: Dict[str, Any],
+    policies: Optional[List[Dict[str, Any]]],
+    vpc_rules: Optional[List[Dict[str, Any]]],
+    enforcement_order: Optional[str],
+) -> Dict[str, Any]:
+  """Evaluates one connection through the Cloud NGFW first-match order.
+
+  Args:
+    conn: The connection (see `_firewall_connection`).
+    policies: Raw effective firewall policies, or None when unreadable.
+    vpc_rules: Enabled VPC firewall rules of the network, or None when
+      unreadable.
+    enforcement_order: The network's firewall policy enforcement order, or None
+      when the network could not be read.
+
+  Returns:
+    The verdict, the deciding rule, the first match of each policy, the rules
+    that could not be evaluated, and notes on assumptions.
+  """
+  notes: List[str] = []
+  hierarchy: List[Dict[str, Any]] = []
+  system: List[Dict[str, Any]] = []
+  network: List[Dict[str, Any]] = []
+  regional: List[Dict[str, Any]] = []
+  unplaced: List[Dict[str, Any]] = []
+  if policies is None:
+    hierarchy.append(_verdict_stage("firewall policies", None))
+  for policy in policies or []:
+    records = sorted(
+        (
+            _evaluate_policy_rule(r, conn)
+            for r in _list_field(policy, "rules")
+            if isinstance(r, dict)
+        ),
+        key=lambda r: r["priority"],
+    )
+    name = _policy_display_name(policy)
+    policy_type = _str_field(policy, "type").upper()
+    if policy_type in _HIERARCHY_POLICY_TYPES:
+      hierarchy.append(_verdict_stage(f"hierarchical policy `{name}`", records))
+    elif policy_type in _SYSTEM_POLICY_TYPES:
+      system.append(_verdict_stage(f"system policy `{name}`", records))
+    elif policy_type in _GLOBAL_NETWORK_POLICY_TYPES:
+      network.append(_verdict_stage(f"global network policy `{name}`", records))
+    elif policy_type in _REGIONAL_NETWORK_POLICY_TYPES:
+      regional.append(
+          _verdict_stage(f"regional network policy `{name}`", records)
+      )
+    else:
+      unplaced.append(
+          _verdict_stage(
+              f"policy `{name}` ({policy_type or 'no type'})", records
+          )
+      )
+  vpc_records = None
+  if vpc_rules is not None:
+    # Lower priority numbers win; at equal priority a deny beats an allow.
+    vpc_records = sorted(
+        (_evaluate_vpc_rule(fw, conn) for fw in vpc_rules),
+        key=lambda r: (r["priority"], r["action"] != "deny", r["rule"]),
+    )
+  vpc_stage = _verdict_stage("VPC firewall rules", vpc_records)
+  implied = _verdict_stage(
+      "implied rules", [_implied_rule_record(conn["direction"])]
+  )
+  network.extend(regional)
+  orderings = _firewall_orderings(
+      hierarchy,
+      system,
+      vpc_stage,
+      network,
+      implied,
+      enforcement_order,
+  )
+
+  if len(hierarchy) > 1:
+    notes.append(
+        f"The API does not report the order of the {len(hierarchy)}"
+        " hierarchical policies, so every order was evaluated."
+    )
+  if len(system) > 1:
+    notes.append(
+        f"The API does not report the order of the {len(system)} system"
+        " policies, so every order was evaluated."
+    )
+  if enforcement_order is None and network:
+    notes.append(
+        "The network could not be read, so both network firewall policy"
+        " enforcement orders were evaluated."
+    )
+  if conn["ip_version"] is None:
+    notes.append(
+        "The connection's IP version is unknown (dual-stack or unreadable"
+        " subnet); pass --target_ip."
+    )
+  elif conn["subnet_stack_type"] in (
+      "",
+      "IPV4_ONLY",
+      "IPV6_ONLY",
+  ):
+    subnet_version = 6 if conn["subnet_stack_type"] == "IPV6_ONLY" else 4
+    if subnet_version != conn["ip_version"]:
+      notes.append(
+          f"The workload subnet is IPv{subnet_version}-only, so the workload"
+          f" cannot use IPv{conn['ip_version']}."
+      )
+
+  outcomes: Set[Tuple[str, Tuple[Any, ...]]] = set()
+  per_ordering: List[Set[str]] = []
+  if orderings is None:
+    outcomes.add((_OUTCOME_UNEVALUATED, ("policy order", None, "", "")))
+    notes.append("Too many unordered policies to evaluate every order.")
+  else:
+    for ordering in orderings:
+      result = _ordering_outcomes(ordering)
+      per_ordering.append({outcome for outcome, _ in result})
+      outcomes |= result
+  for stage in unplaced:
+    if any(r["state"] != _NO_MATCH for r in stage["records"]):
+      outcomes.add((_OUTCOME_UNEVALUATED, (stage["name"], None, "", "")))
+      notes.append(
+          f"{stage['name']} has an unrecognized type, so its place in the"
+          " evaluation order is unknown."
+      )
+  kinds = {outcome for outcome, _ in outcomes}
+  if kinds == {_VERDICT_ALLOWED}:
+    verdict = _VERDICT_ALLOWED
+  elif kinds == {_VERDICT_DENIED}:
+    verdict = _VERDICT_DENIED
+  else:
+    verdict = _VERDICT_INDETERMINATE
+  if (
+      all(len(kinds_of) == 1 for kinds_of in per_ordering)
+      and len(set().union(*per_ordering)) > 1
+  ):
+    notes.append(
+        "Each policy order gives a definite result, but the results differ."
+    )
+  decided_by = None
+  deciders = {key for _, key in outcomes}
+  if verdict != _VERDICT_INDETERMINATE and len(deciders) == 1:
+    stage_name, priority, rule_name, action = next(iter(deciders))
+    decided_by = {
+        "stage": stage_name,
+        "priority": priority,
+        "rule": rule_name,
+        "action": action,
+    }
+
+  listed = (
+      orderings[0]
+      if orderings
+      else [*hierarchy, *system, vpc_stage, *network, implied]
+  )
+  stages: List[Dict[str, Any]] = []
+  unevaluated: List[Dict[str, Any]] = []
+  for stage in [*listed, *unplaced]:
+    if not stage["readable"]:
+      stages.append(
+          {"stage": stage["name"], "readable": False, "first_match": None}
+      )
+      continue
+    first = next((r for r in stage["records"] if r["state"] != _NO_MATCH), None)
+    stages.append({
+        "stage": stage["name"],
+        "readable": True,
+        "first_match": None if first is None else _verdict_rule_view(first),
+    })
+    for rec in stage["records"]:
+      if rec["state"] == _MATCH:
+        break
+      if rec["state"] == _UNKNOWN:
+        unevaluated.append({"stage": stage["name"], **_verdict_rule_view(rec)})
+
+  return {
+      "direction": conn["direction"],
+      "protocol": conn["protocol"],
+      "port": conn["port"],
+      "remote_ip": (
+          None if conn["remote_ip"] is None else str(conn["remote_ip"])
+      ),
+      "ip_version": conn["ip_version"],
+      "verdict": verdict,
+      "decided_by": decided_by,
+      "possible_outcomes": sorted(kinds),
+      "evaluation_order": [stage["name"] for stage in listed],
+      "stages": stages,
+      "unevaluated_rules": unevaluated[:_MAX_UNEVALUATED_RULES_SHOWN],
+      "unevaluated_rules_omitted": max(
+          0, len(unevaluated) - _MAX_UNEVALUATED_RULES_SHOWN
+      ),
+      "notes": notes,
+  }
+
+
+def _last_segment(uri: str) -> str:
+  return uri.rstrip("/").split("/")[-1] if uri else ""
+
+
+def _subnet_ranges(subnet: Dict[str, Any]) -> List[Tuple[str, str]]:
+  """Returns (label, CIDR) of a subnet's primary, secondary, and IPv6 ranges."""
+  ranges = [("primary", _str_field(subnet, "ipCidrRange"))]
+  for secondary in _list_field(subnet, "secondaryIpRanges"):
+    if isinstance(secondary, dict):
+      ranges.append((
+          _str_field(secondary, "rangeName", "secondary"),
+          _str_field(secondary, "ipCidrRange"),
+      ))
+  for key in ("ipv6CidrRange", "internalIpv6Prefix", "externalIpv6Prefix"):
+    ranges.append(("ipv6", _str_field(subnet, key)))
+  seen: Set[str] = set()
+  unique: List[Tuple[str, str]] = []
+  for label, cidr in ranges:
+    if cidr and cidr not in seen:
+      seen.add(cidr)
+      unique.append((label, cidr))
+  return unique
+
+
+def _route_next_hop(route: Dict[str, Any]) -> Tuple[str, str]:
+  """Returns (source, next-hop description) of a `routes list` entry."""
+  gateway = _last_segment(_str_field(route, "nextHopGateway"))
+  if gateway == _DEFAULT_INTERNET_GATEWAY:
+    return "internet_gateway", "default internet gateway"
+  if gateway:
+    return "static", f"gateway `{gateway}`"
+  peering = _str_field(route, "nextHopPeering")
+  if peering:
+    return "peering", f"peering `{peering}`"
+  for field, label in _STATIC_NEXT_HOP_FIELDS:
+    value = _str_field(route, field)
+    if value:
+      return "static", f"{label} `{_last_segment(value)}`"
+  if _str_field(route, "nextHopNetwork"):
+    return "subnet", "subnet route"
+  return "static", "unknown next hop"
+
+
+def _route_verdict(
+    target_ip: str,
+    host_project: str,
+    network_name: str,
+    region: str,
+    network_tags: List[Any],
+    internal_ip_only: bool,
+    cloud_nats: List[Dict[str, Any]],
+    peerings: List[Dict[str, Any]],
+    routing_mode: str,
+    regional_routers: Optional[List[Any]],
+    runner: CommandRunner,
+    warnings: List[str],
+) -> Dict[str, Any]:
+  """Finds the route that carries egress traffic from the workload to an IP.
+
+  Considers every subnet range of the workload network, its static and system
+  routes (honoring network tags), routes imported over ACTIVE peerings, dynamic
+  routes of Cloud Routers with BGP peers, and global Private Service Connect
+  endpoint addresses, and picks the most specific applicable route: subnet
+  routes first, then the longest prefix, the lowest priority number, and the
+  route source.
+
+  Args:
+    target_ip: Destination address.
+    host_project: Project that owns the workload network.
+    network_name: Workload VPC network.
+    region: Workload region (peering and dynamic routes are regional).
+    network_tags: Network tags on the workload VMs.
+    internal_ip_only: Whether the workload VMs lack external IP addresses.
+    cloud_nats: Cloud NAT gateways of the network in the workload region.
+    peerings: Peerings of the workload network.
+    routing_mode: Dynamic routing mode of the network (`REGIONAL`, `GLOBAL`).
+    regional_routers: Cloud Routers in the workload region, or None when they
+      could not be listed.
+    runner: gcloud command runner.
+    warnings: Partial-visibility warnings to append to.
+
+  Returns:
+    The verdict (`ROUTED`, `NO_ROUTE`, or `INDETERMINATE`), the chosen route,
+    the subnets in the host project that contain the address, what was checked,
+    the route sources that could not be read, and notes.
+  """
+  ip = ipaddress.ip_address(target_ip)
+  candidates: List[Dict[str, Any]] = []
+  owners: List[Dict[str, Any]] = []
+  unevaluated: List[str] = []
+  notes: List[str] = []
+  checked = {
+      "subnet_ranges": 0,
+      "static_routes": 0,
+      "active_peerings": 0,
+      "peering_routes": 0,
+      "dynamic_routes": 0,
+  }
+
+  def consider(
+      source: str,
+      name: str,
+      cidr: str,
+      priority: int,
+      next_hop: str,
+      applies: bool = True,
+  ) -> bool:
+    """Records a route that covers the address; returns whether it does."""
+    try:
+      net = ipaddress.ip_network(str(cidr).strip(), strict=False)
+    except ValueError:
+      return False
+    if ip not in net:
+      return False
+    candidates.append({
+        "source": source,
+        "name": name,
+        "dest_range": str(net),
+        "num_addresses": net.num_addresses,
+        "priority": priority,
+        "next_hop": next_hop,
+        "applies": applies,
+    })
+    return True
+
+  def on_network(uri: str) -> bool:
+    return _parse_network_uri(uri, host_project)[1] == network_name
+
+  # Subnet routes of the workload network, and the owner of the address.
+  raw_subnets = _run_gcloud_json(
+      runner,
+      ["compute", "networks", "subnets", "list", f"--project={host_project}"],
+      warnings,
+      f"compute networks subnets list '{host_project}'",
+  )
+  if isinstance(raw_subnets, list):
+    for subnet in raw_subnets:
+      if not isinstance(subnet, dict):
+        continue
+      sub_project, sub_network = _parse_network_uri(
+          _str_field(subnet, "network"), host_project
+      )
+      sub_name = _str_field(subnet, "name")
+      sub_region = _last_segment(_str_field(subnet, "region"))
+      for label, cidr in _subnet_ranges(subnet):
+        if sub_network == network_name:
+          checked["subnet_ranges"] += 1
+          consider(
+              "subnet",
+              sub_name,
+              cidr,
+              0,
+              f"subnet `{sub_name}` ({sub_region or 'unknown region'})",
+          )
+        try:
+          net = ipaddress.ip_network(cidr, strict=False)
+        except ValueError:
+          continue
+        if ip in net:
+          owners.append({
+              "project": sub_project,
+              "network": sub_network,
+              "subnet": sub_name,
+              "region": sub_region,
+              "range": str(net),
+              "range_name": label,
+              "is_workload_network": sub_network == network_name,
+          })
+  else:
+    unevaluated.append("the subnets of the host project could not be listed")
+
+  # Static and system routes (default internet route, custom static routes).
+  raw_routes = _run_gcloud_json(
+      runner,
+      ["compute", "routes", "list", f"--project={host_project}"],
+      warnings,
+      f"compute routes list '{host_project}'",
+  )
+  if isinstance(raw_routes, list):
+    for route in raw_routes:
+      if not isinstance(route, dict) or not on_network(
+          _str_field(route, "network")
+      ):
+        continue
+      source, next_hop = _route_next_hop(route)
+      if source == "subnet":
+        continue  # Covered by the subnet list.
+      checked["static_routes"] += 1
+      tags = _list_field(route, "tags")
+      applies = not tags or bool(set(tags).intersection(network_tags))
+      route_name = _str_field(route, "name")
+      covers = consider(
+          source,
+          route_name,
+          _str_field(route, "destRange"),
+          _rule_priority(route, 1000),
+          next_hop,
+          applies,
+      )
+      if covers:
+        if not applies:
+          notes.append(
+              f"Route `{route_name}` covers the address but applies only to"
+              f" network tags {tags}, which the workload VMs do not carry."
+          )
+        route_warnings = [
+            _str_field(w, "code")
+            for w in _list_field(route, "warnings")
+            if isinstance(w, dict)
+        ]
+        if route_warnings:
+          notes.append(
+              f"Route `{route_name}` reports warnings: {route_warnings}."
+          )
+  else:
+    unevaluated.append("the routes of the host project could not be listed")
+
+  # Routes imported over ACTIVE peerings (subnet, static, and dynamic).
+  for peer in peerings:
+    peer_label = (
+        f"`{peer.get('name')}` to"
+        f" `{peer.get('peer_project')}/{peer.get('peer_network')}`"
+    )
+    if peer.get("state") != "ACTIVE":
+      notes.append(
+          f"Peering {peer_label} is {peer.get('state') or 'not active'}, so"
+          " it exchanges no routes."
+      )
+      continue
+    checked["active_peerings"] += 1
+    imported = _run_gcloud_json(
+        runner,
+        [
+            "compute",
+            "networks",
+            "peerings",
+            "list-routes",
+            str(peer.get("name")),
+            f"--network={network_name}",
+            f"--region={region}",
+            "--direction=INCOMING",
+            f"--project={host_project}",
+        ],
+        warnings,
+        f"compute networks peerings list-routes '{peer.get('name')}'",
+    )
+    if not isinstance(imported, list):
+      unevaluated.append(
+          f"the routes imported over peering {peer_label} could not be listed"
+      )
+      continue
+    for route in imported:
+      if not isinstance(route, dict) or route.get("imported") is False:
+        continue
+      checked["peering_routes"] += 1
+      consider(
+          "peering",
+          str(peer.get("name")),
+          _str_field(route, "destRange"),
+          _rule_priority(route, 0),
+          f"peering {peer_label}",
+      )
+
+  # Dynamic routes learned by Cloud Routers with BGP sessions.
+  routers: List[Any] = []
+  if routing_mode.upper() == "GLOBAL":
+    all_routers = _run_gcloud_json(
+        runner,
+        ["compute", "routers", "list", f"--project={host_project}"],
+        warnings,
+        f"compute routers list '{host_project}'",
+    )
+    if isinstance(all_routers, list):
+      routers = all_routers
+    else:
+      unevaluated.append(
+          "the Cloud Routers of the host project could not be listed (the"
+          " network uses global dynamic routing)"
+      )
+  elif regional_routers is not None:
+    routers = regional_routers
+  else:
+    unevaluated.append(
+        f"the Cloud Routers in {region} could not be listed, so dynamic routes"
+        " are unknown"
+    )
+  for router in routers:
+    if not isinstance(router, dict) or not on_network(
+        _str_field(router, "network")
+    ):
+      continue
+    if not _list_field(router, "bgpPeers"):
+      continue  # Without BGP sessions a router learns no dynamic routes.
+    router_name = _str_field(router, "name")
+    router_region = _last_segment(_str_field(router, "region")) or region
+    status = _run_gcloud_json(
+        runner,
+        [
+            "compute",
+            "routers",
+            "get-status",
+            router_name,
+            f"--region={router_region}",
+            f"--project={host_project}",
+        ],
+        warnings,
+        f"compute routers get-status '{router_name}'",
+    )
+    if not isinstance(status, dict):
+      unevaluated.append(
+          f"the dynamic routes of Cloud Router `{router_name}` could not be"
+          " read"
+      )
+      continue
+    for route in _list_field(_dict_field(status, "result"), "bestRoutes"):
+      if not isinstance(route, dict):
+        continue
+      checked["dynamic_routes"] += 1
+      consider(
+          "dynamic",
+          router_name,
+          _str_field(route, "destRange"),
+          _rule_priority(route, 0),
+          f"Cloud Router `{router_name}` (next hop"
+          f" `{_str_field(route, 'nextHopIp', 'unknown')}`)",
+      )
+
+  # A global internal address can be a Private Service Connect endpoint for
+  # Google APIs, which no subnet contains.
+  if not ip.is_global and not any(
+      c["applies"] and c["source"] != "internet_gateway" for c in candidates
+  ):
+    raw_addresses = _run_gcloud_json(
+        runner,
+        [
+            "compute",
+            "addresses",
+            "list",
+            "--global",
+            f"--project={host_project}",
+        ],
+        warnings,
+        f"compute addresses list --global '{host_project}'",
+    )
+    if isinstance(raw_addresses, list):
+      for address in raw_addresses:
+        if (
+            isinstance(address, dict)
+            and _str_field(address, "purpose") == "PRIVATE_SERVICE_CONNECT"
+            and _str_field(address, "address") == str(ip)
+            and on_network(_str_field(address, "network"))
+        ):
+          name = _str_field(address, "name")
+          consider(
+              "psc_endpoint",
+              name,
+              f"{ip}/{ip.max_prefixlen}",
+              0,
+              f"Private Service Connect endpoint `{name}`",
+          )
+    else:
+      unevaluated.append(
+          "the global Private Service Connect addresses could not be listed"
+      )
+
+  applicable = [c for c in candidates if c["applies"]]
+  best = (
+      min(
+          applicable,
+          key=lambda c: (
+              c["source"] != "subnet",
+              c["num_addresses"],
+              c["priority"],
+              _ROUTE_SOURCE_RANK.get(c["source"], len(_ROUTE_SOURCE_RANK)),
+          ),
+      )
+      if applicable
+      else None
+  )
+  internet_egress: Optional[str] = None
+  if best is None:
+    verdict = _ROUTE_INDETERMINATE if unevaluated else _ROUTE_NO_ROUTE
+    if verdict == _ROUTE_NO_ROUTE:
+      notes.append(
+          "No route of the workload network covers this address, not even a"
+          " default internet route."
+      )
+  elif best["source"] == "internet_gateway":
+    if ip.is_global:
+      verdict = _ROUTE_ROUTED
+      nat_covers = any(n.get("covers_workload_subnet") for n in cloud_nats)
+      if not internal_ip_only:
+        internet_egress = "EXTERNAL_IP"
+      elif nat_covers:
+        internet_egress = "CLOUD_NAT"
+      else:
+        internet_egress = "NONE"
+        notes.append(
+            "The workload VMs have internal IP addresses only and no Cloud NAT"
+            " gateway covers the subnet, so packets to this public address"
+            " cannot leave the network. Private Google Access covers only"
+            " Google APIs."
+        )
+    else:
+      verdict = _ROUTE_INDETERMINATE if unevaluated else _ROUTE_NO_ROUTE
+      notes.append(
+          "Only the default internet route covers this address, and the"
+          " default internet gateway does not carry traffic to private or"
+          " other non-public addresses."
+      )
+  else:
+    verdict = _ROUTE_ROUTED
+    if unevaluated:
+      notes.append(
+          "Some route data could not be read, so a more specific route might"
+          " take precedence."
+      )
+
+  active_peers = {
+      (p.get("peer_project"), p.get("peer_network"))
+      for p in peerings
+      if p.get("state") == "ACTIVE"
+  }
+  for owner in owners:
+    owner["peered_with_workload_network"] = (
+        None
+        if owner["is_workload_network"]
+        else (owner["project"], owner["network"]) in active_peers
+    )
+    if verdict != _ROUTE_ROUTED and owner["peered_with_workload_network"] is (
+        False
+    ):
+      notes.append(
+          f"`{ip}` is in subnet `{owner['subnet']}` (`{owner['range']}`) of"
+          f" network `{owner['project']}/{owner['network']}`, which has no"
+          f" ACTIVE peering with `{network_name}`. Traffic to it needs VPC"
+          " Network Peering, Cloud VPN, or Cloud Interconnect between the"
+          " networks."
+      )
+  if not ip.is_global:
+    notes.append(
+        "The destination network's ingress firewall rules are not evaluated."
+    )
+
+  return {
+      "target_ip": str(ip),
+      "verdict": verdict,
+      "route": (
+          None
+          if best is None
+          else {
+              key: best[key]
+              for key in (
+                  "source",
+                  "name",
+                  "dest_range",
+                  "priority",
+                  "next_hop",
+              )
+          }
+      ),
+      "internet_egress": internet_egress,
+      "destination_owner": owners,
+      "checked": checked,
+      "unevaluated": unevaluated,
+      "notes": notes,
+  }
+
+
+def _connection_summary(
+    firewall_verdict: Dict[str, Any], route_verdict: Dict[str, Any]
+) -> Dict[str, Any]:
+  """Lists which parts of the workload-side path block one connection."""
+  blocking: List[str] = []
+  if route_verdict["verdict"] == _ROUTE_NO_ROUTE:
+    blocking.append("route")
+  if route_verdict["internet_egress"] == "NONE":
+    blocking.append("internet egress (no Cloud NAT)")
+  if firewall_verdict["verdict"] == _VERDICT_DENIED:
+    blocking.append("firewall")
+  indeterminate = [
+      name
+      for name, value in (
+          ("route", route_verdict["verdict"]),
+          ("firewall", firewall_verdict["verdict"]),
+      )
+      if value == _VERDICT_INDETERMINATE
+  ]
+  return {
+      "route_verdict": route_verdict["verdict"],
+      "firewall_verdict": firewall_verdict["verdict"],
+      "blocking": blocking,
+      "indeterminate": indeterminate,
+  }
 
 
 def inspect_network(
@@ -974,8 +2419,28 @@ def inspect_network(
     workload_id: str,
     runner: CommandRunner,
     target_port: Optional[int] = None,
+    target_protocol: str = "tcp",
+    target_ip: Optional[str] = None,
+    target_direction: str = "egress",
 ) -> Dict[str, Any]:
-  """Collects subnet, NAT, peering, firewall, and private DNS facts."""
+  """Collects subnet, NAT, peering, firewall, route, and private DNS facts.
+
+  Args:
+    project: Workload project.
+    region: Workload region.
+    workload_kind: `batch`, `session`, or `job`.
+    workload_id: Workload ID.
+    runner: gcloud command runner.
+    target_port: Optional port of one connection to mark matching rules for and
+      to compute a first-match firewall verdict for.
+    target_protocol: `tcp` or `udp`.
+    target_ip: Optional remote address of the connection (destination for
+      egress, source for ingress). For egress it also yields a route verdict.
+    target_direction: `egress` (from the workload) or `ingress` (to it).
+
+  Returns:
+    The network report.
+  """
   warnings: List[str] = []
   workload, cluster = _fetch_workload(
       project, region, workload_kind, workload_id, runner, warnings
@@ -1038,9 +2503,15 @@ def inspect_network(
   subnet_details: Optional[Dict[str, Any]] = None
   cloud_nats: List[Dict[str, Any]] = []
   vpc_peerings: List[Dict[str, Any]] = []
-  enforcement_order = ""
+  enforcement_order: Optional[str] = None
+  routing_mode = ""
+  # Cloud Routers of the workload region (None while unreadable).
+  regional_routers: Optional[List[Any]] = None
   firewall_rules: List[Dict[str, Any]] = []
   firewall_policies: List[Dict[str, Any]] = []
+  # Unfiltered inputs of the firewall verdict (None while unreadable).
+  network_vpc_rules: Optional[List[Dict[str, Any]]] = None
+  raw_policies: Optional[List[Dict[str, Any]]] = None
   private_dns_zones: List[Dict[str, Any]] = []
 
   if can_inspect_vpc:
@@ -1093,6 +2564,7 @@ def inspect_network(
         f"compute routers list ({subnet_region})",
     )
     if isinstance(routers, list):
+      regional_routers = routers
       for router in routers:
         r_net = _str_field(router, "network")
         _, r_net_name = _parse_network_uri(r_net, host_project)
@@ -1149,7 +2621,7 @@ def inspect_network(
                 "covers_workload_subnet": covers_subnet,
             })
 
-    vpc_peerings, enforcement_order = _inspect_vpc_network(
+    vpc_peerings, enforcement_order, routing_mode = _inspect_vpc_network(
         network_name, host_project, runner, warnings
     )
 
@@ -1160,15 +2632,17 @@ def inspect_network(
         f"compute firewall-rules list '{host_project}'",
     )
     if isinstance(raw_fws, list):
+      network_vpc_rules = []
       matched_fws: List[Dict[str, Any]] = []
       for fw in raw_fws:
-        if fw.get("disabled"):
+        if not isinstance(fw, dict) or fw.get("disabled"):
           continue
         _, fw_net = _parse_network_uri(
             _str_field(fw, "network"), host_project
         )
         if fw_net != network_name:
           continue
+        network_vpc_rules.append(fw)
         direction = _str_field(fw, "direction", "INGRESS")
         allowed = _list_field(fw, "allowed")
         denied = _list_field(fw, "denied")
@@ -1180,7 +2654,7 @@ def inspect_network(
             target_tags, target_sas, network_tags, workload_sa
         )
         port_matches = (
-            _port_matches_specs(specs, target_port)
+            _port_matches_specs(specs, target_port, target_protocol)
             if target_port is not None
             else None
         )
@@ -1217,7 +2691,7 @@ def inspect_network(
         )
       firewall_rules = matched_fws[:_MAX_FIREWALL_RULES]
 
-    firewall_policies = _inspect_firewall_policies(
+    firewall_policies, raw_policies = _inspect_firewall_policies(
         network_name,
         host_project,
         subnet_region,
@@ -1226,6 +2700,7 @@ def inspect_network(
         network_tags,
         workload_sa,
         target_port,
+        target_protocol,
     )
 
     raw_zones = _run_gcloud_json(
@@ -1251,6 +2726,62 @@ def inspect_network(
             "bound_to_workload_network": network_name in bound_nets,
         })
 
+  firewall_verdict: Optional[Dict[str, Any]] = None
+  if target_port is not None:
+    firewall_verdict = _firewall_verdict(
+        _firewall_connection(
+            target_direction.upper(),
+            target_protocol,
+            target_port,
+            target_ip,
+            subnet_details,
+            (host_project, network_name),
+            network_tags,
+            workload_sa,
+        ),
+        raw_policies,
+        network_vpc_rules,
+        enforcement_order,
+    )
+    if not can_inspect_vpc:
+      firewall_verdict["notes"].append(
+          "The cluster could not be read, so its network is unknown."
+      )
+
+  route_verdict: Optional[Dict[str, Any]] = None
+  connection_summary: Optional[Dict[str, Any]] = None
+  if target_ip and target_direction.lower() == "egress":
+    if can_inspect_vpc:
+      route_verdict = _route_verdict(
+          target_ip,
+          host_project,
+          network_name,
+          subnet_region,
+          network_tags,
+          internal_ip_only,
+          cloud_nats,
+          vpc_peerings,
+          routing_mode,
+          regional_routers,
+          runner,
+          warnings,
+      )
+    else:
+      route_verdict = {
+          "target_ip": target_ip,
+          "verdict": _ROUTE_INDETERMINATE,
+          "route": None,
+          "internet_egress": None,
+          "destination_owner": [],
+          "checked": {},
+          "unevaluated": ["the workload network"],
+          "notes": [
+              "The cluster could not be read, so its network is unknown."
+          ],
+      }
+    if firewall_verdict is not None:
+      connection_summary = _connection_summary(firewall_verdict, route_verdict)
+
   return {
       **header,
       "action": "network",
@@ -1268,9 +2799,12 @@ def inspect_network(
       "subnet": subnet_details,
       "cloud_nats": cloud_nats,
       "vpc_peerings": vpc_peerings,
-      "firewall_policy_enforcement_order": enforcement_order,
+      "firewall_policy_enforcement_order": enforcement_order or "",
       "firewall_rules": firewall_rules,
       "firewall_policies": firewall_policies,
+      "firewall_verdict": firewall_verdict,
+      "route_verdict": route_verdict,
+      "connection_summary": connection_summary,
       "private_dns_zones": private_dns_zones,
       "warnings": warnings,
   }
@@ -1470,6 +3004,139 @@ def inspect_classpath(
   }
 
 
+def _format_verdict_rule(rule: Dict[str, Any]) -> str:
+  name = f" `{rule['rule']}`" if rule.get("rule") else ""
+  return f"priority=`{rule['priority']}` `{rule['action']}`{name}"
+
+
+def _format_firewall_verdict(verdict: Dict[str, Any]) -> List[str]:
+  """Formats the first-match firewall verdict as Markdown lines."""
+  remote = verdict["remote_ip"] or {
+      4: "any IPv4 address",
+      6: "any IPv6 address",
+  }.get(verdict["ip_version"], "any address")
+  egress = verdict["direction"] == "EGRESS"
+  lines = [
+      f"## Firewall Verdict (`{verdict['direction']}"
+      f" {verdict['protocol']}:{verdict['port']}`"
+      f" {'to' if egress else 'from'} `{remote}`)"
+  ]
+  summary = f"- verdict: `{verdict['verdict']}`"
+  if verdict.get("decided_by"):
+    decided = verdict["decided_by"]
+    summary += (
+        f", decided by {decided['stage']} {_format_verdict_rule(decided)}"
+    )
+  elif verdict["verdict"] == _VERDICT_INDETERMINATE:
+    summary += (
+        f" (possible outcomes: {', '.join(verdict['possible_outcomes'])})"
+    )
+  lines.append(summary)
+  lines.append(
+      "- evaluation order: " + " -> ".join(verdict["evaluation_order"])
+  )
+  for stage in verdict["stages"]:
+    first = stage["first_match"]
+    if not stage["readable"]:
+      detail = "not readable (see warnings)"
+    elif first is None:
+      detail = "no matching rule"
+    else:
+      ranges = (
+          f" {'dest' if egress else 'src'}={first['remote_ranges']}"
+          if first["remote_ranges"]
+          else ""
+      )
+      detail = f"first match {_format_verdict_rule(first)}{ranges}"
+      if first["match"] != "match":
+        detail += " (indeterminate)"
+    lines.append(f"- {stage['stage']}: {detail}")
+  if verdict["unevaluated_rules"]:
+    lines.append("- unevaluated rules (check by hand):")
+    for rule in verdict["unevaluated_rules"]:
+      lines.append(
+          f"  - {rule['stage']} {_format_verdict_rule(rule)}:"
+          f" {'; '.join(rule['reasons'])}"
+      )
+    if verdict["unevaluated_rules_omitted"]:
+      lines.append(f"  - ... (+{verdict['unevaluated_rules_omitted']} more)")
+  for note in verdict["notes"]:
+    lines.append(f"- note: {note}")
+  return lines
+
+
+def _format_route_verdict(verdict: Dict[str, Any]) -> List[str]:
+  """Formats the route verdict for one egress destination as Markdown."""
+  lines = [
+      f"## Route Verdict (`EGRESS` to `{verdict['target_ip']}`)",
+      f"- verdict: `{verdict['verdict']}`",
+  ]
+  route = verdict["route"]
+  if route:
+    lines.append(
+        f"- route: `{route['name']}` dest=`{route['dest_range']}`"
+        f" priority=`{route['priority']}` via {route['next_hop']}"
+    )
+  else:
+    lines.append("- route: none")
+  if verdict["internet_egress"]:
+    lines.append(f"- internet_egress: `{verdict['internet_egress']}`")
+  for owner in verdict["destination_owner"]:
+    peered = owner["peered_with_workload_network"]
+    relation = (
+        "the workload network"
+        if owner["is_workload_network"]
+        else f"peered with the workload network: `{peered}`"
+    )
+    lines.append(
+        f"- destination_owner: subnet `{owner['subnet']}`"
+        f" (`{owner['range']}`, {owner['region'] or 'unknown region'}) of"
+        f" network `{owner['project']}/{owner['network']}` ({relation})"
+    )
+  checked = verdict["checked"]
+  if checked:
+    lines.append(
+        f"- checked: {checked['subnet_ranges']} subnet ranges,"
+        f" {checked['static_routes']} static or system routes,"
+        f" {checked['active_peerings']} ACTIVE peerings"
+        f" ({checked['peering_routes']} imported routes),"
+        f" {checked['dynamic_routes']} dynamic routes"
+    )
+  for item in verdict["unevaluated"]:
+    lines.append(f"- not evaluated: {item}")
+  for note in verdict["notes"]:
+    lines.append(f"- note: {note}")
+  return lines
+
+
+def _format_connection_summary(summary: Dict[str, Any]) -> List[str]:
+  """Formats which workload-side parts block one connection as Markdown."""
+  lines = [
+      "## Connection Summary",
+      f"- route: `{summary['route_verdict']}`; firewall:"
+      f" `{summary['firewall_verdict']}`",
+  ]
+  if summary["blocking"]:
+    lines.append(
+        f"- blocked by: {', '.join(summary['blocking'])}. The connection needs"
+        " a route, an allowing firewall verdict, and, for public addresses"
+        " from internal-IP-only VMs, Cloud NAT; a fix must address every"
+        " blocking part."
+    )
+  elif summary["indeterminate"]:
+    lines.append(
+        f"- undecided: {', '.join(summary['indeterminate'])} (see the"
+        " verdicts above)."
+    )
+  else:
+    lines.append(
+        "- no blocking route or firewall rule on the workload side. Check DNS,"
+        " the destination's ingress firewall rules, and whether anything"
+        " listens on the port."
+    )
+  return lines
+
+
 def format_markdown(report: Dict[str, Any]) -> str:
   """Renders an inspection dictionary into concise key-value Markdown."""
   lines: List[str] = [
@@ -1484,6 +3151,8 @@ def format_markdown(report: Dict[str, Any]) -> str:
   ]
   if report.get("cluster_name"):
     lines.append(f"- cluster_name: `{report['cluster_name']}`")
+  if report.get("cluster_source"):
+    lines.append(f"- cluster_source: `{report['cluster_source']}`")
   state_disp = _str_field(report, "state", "UNKNOWN")
   ver_disp = _str_field(report, "runtime_version", "default")
   lines.extend([
@@ -1592,11 +3261,25 @@ def format_markdown(report: Dict[str, Any]) -> str:
               f"- usable_hosts_estimate: `{sub['usable_hosts_estimate']}`"
               " (total capacity, not free IPs)"
           ),
-          (
-              "- private_ip_google_access:"
-              f" `{sub['private_ip_google_access']}`"
-          ),
+          f"- private_ip_google_access: `{sub['private_ip_google_access']}`",
       ])
+      if report.get("workload_type") in ("batch", "session"):
+        host = report.get("effective_host_project")
+        if host and host != report.get("project"):
+          lines.append(
+              "- note: Dataproc doesn't change Private Google Access on a"
+              " Shared VPC subnet in another project. If it is `False`, the"
+              " workload fails at startup until a network administrator of"
+              f" `{host}` turns it on. It reaches only Google APIs."
+          )
+        else:
+          lines.append(
+              "- note: Dataproc turns Private Google Access on when a workload"
+              " starts on a subnet in its own project, unless the Dataproc"
+              " Service Agent lacks permission to change the subnet. So"
+              " `False` on a subnet of this project doesn't block a new batch"
+              " or session there. It reaches only Google APIs."
+          )
     lines.append("")
     lines.append("## Cloud NAT Gateways")
     if report["cloud_nats"]:
@@ -1674,6 +3357,32 @@ def format_markdown(report: Dict[str, Any]) -> str:
       lines.append(
           "- (no hierarchical, network, or system firewall policies returned)"
       )
+    if report.get("target_port") is None and (
+        report.get("firewall_rules") or report.get("firewall_policies")
+    ):
+      lines.append(
+          "- note: The first matching rule in evaluation order decides, and"
+          " `goto_next` hands off to the next level, so a lower-priority"
+          " `deny` may never apply. Re-run with `--target_port=<PORT>` (and"
+          " `--target_ip=<IP>`) for a first-match verdict."
+      )
+    if report.get("firewall_verdict"):
+      lines.append("")
+      lines.extend(_format_firewall_verdict(report["firewall_verdict"]))
+      if (
+          report["firewall_verdict"].get("direction") == "EGRESS"
+          and not report["firewall_verdict"].get("remote_ip")
+      ):
+        lines.append(
+            "- note: Pass `--target_ip=<IP>` with the address from the logs to"
+            " also check which route carries the traffic."
+        )
+    if report.get("route_verdict"):
+      lines.append("")
+      lines.extend(_format_route_verdict(report["route_verdict"]))
+    if report.get("connection_summary"):
+      lines.append("")
+      lines.extend(_format_connection_summary(report["connection_summary"]))
     lines.append("")
     lines.append("## Private Cloud DNS Zones")
     if report["private_dns_zones"]:
@@ -1753,13 +3462,31 @@ def build_parser() -> argparse.ArgumentParser:
           "Inspects Google Cloud identity/KMS/secrets, VPC topology (PGA,"
           " Cloud NAT, peering, DNS, firewall rules and policies), or"
           " Spark/Scala classpath metadata for a Dataproc Serverless batch,"
-          " interactive session, or cluster job. Read-only."
+          " interactive session, or cluster job. Read-only. For a failed"
+          " connection, add --target_port (and --target_ip) to"
+          " --action=network for a first-match firewall verdict and a route"
+          " verdict."
       )
   )
   target = parser.add_mutually_exclusive_group(required=True)
-  target.add_argument("--batch_id", help="Dataproc Serverless batch ID")
-  target.add_argument("--session_id", help="Dataproc interactive session ID")
-  target.add_argument("--job_id", help="Dataproc cluster job ID")
+  target.add_argument(
+      "--batch_id",
+      "--batch-id",
+      dest="batch_id",
+      help="Dataproc Serverless batch ID",
+  )
+  target.add_argument(
+      "--session_id",
+      "--session-id",
+      dest="session_id",
+      help="Dataproc interactive session ID",
+  )
+  target.add_argument(
+      "--job_id",
+      "--job-id",
+      dest="job_id",
+      help="Dataproc cluster job ID",
+  )
 
   parser.add_argument(
       "--project", help="GCP project ID (default: active gcloud project)"
@@ -1779,6 +3506,8 @@ def build_parser() -> argparse.ArgumentParser:
   )
   parser.add_argument(
       "--secret_id",
+      "--secret-id",
+      dest="secret_id",
       help=(
           "Optional Secret Manager secret ID or resource path to inspect"
           " version states and IAM bindings (--action=identity)"
@@ -1786,10 +3515,46 @@ def build_parser() -> argparse.ArgumentParser:
   )
   parser.add_argument(
       "--target_port",
+      "--target-port",
+      dest="target_port",
       type=int,
       help=(
-          "Optional TCP port (e.g. 5432, 3306, 443) to match against VPC"
-          " firewall rules (--action=network)"
+          "Port of a failed connection (e.g. 5432, 3306, 443) for"
+          " --action=network. Pass it for connection timeouts or refusals:"
+          " it marks matching VPC firewall and firewall policy rules and"
+          " computes a first-match firewall verdict that accounts for rule"
+          " order and goto_next"
+      ),
+  )
+  parser.add_argument(
+      "--target_protocol",
+      "--target-protocol",
+      dest="target_protocol",
+      choices=["tcp", "udp"],
+      default="tcp",
+      help="Protocol for --target_port (default: %(default)s)",
+  )
+  parser.add_argument(
+      "--target_ip",
+      "--target-ip",
+      dest="target_ip",
+      help=(
+          "Optional remote IP address of the connection: the destination for"
+          " egress, the source for ingress. For egress it also gives a route"
+          " verdict (which subnet, peering, static, or dynamic route carries"
+          " the traffic, or NO_ROUTE). Without it, firewall rules that match"
+          " only some remote addresses are indeterminate"
+      ),
+  )
+  parser.add_argument(
+      "--target_direction",
+      "--target-direction",
+      dest="target_direction",
+      choices=["egress", "ingress"],
+      default="egress",
+      help=(
+          "Connection direction for the firewall verdict, relative to the"
+          " workload VMs (default: %(default)s)"
       ),
   )
   parser.add_argument(
@@ -1810,6 +3575,13 @@ def main(
 
   if args.target_port is not None and not (1 <= args.target_port <= 65535):
     parser.error("--target_port must be between 1 and 65535")
+  if args.target_ip is not None:
+    if args.target_port is None:
+      parser.error("--target_ip requires --target_port")
+    try:
+      ipaddress.ip_address(args.target_ip)
+    except ValueError:
+      parser.error("--target_ip must be an IPv4 or IPv6 address")
 
   try:
     project = args.project or resolve_default_project(runner)
@@ -1848,6 +3620,9 @@ def main(
           workload_id,
           runner,
           target_port=args.target_port,
+          target_protocol=args.target_protocol,
+          target_ip=args.target_ip,
+          target_direction=args.target_direction,
       )
     else:
       report = inspect_classpath(
