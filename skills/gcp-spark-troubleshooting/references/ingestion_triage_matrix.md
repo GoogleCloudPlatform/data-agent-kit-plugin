@@ -42,20 +42,26 @@ Identify the one that failed before recommending a role.
 ### Customer-Managed Encryption Keys (CMEK)
 
 -   At-rest CMEK is applied by Google service agents, not by the workload
-    principal. Each agent that touches a protected resource needs
-    `roles/cloudkms.cryptoKeyEncrypterDecrypter` on the key:
-    -   Dataproc Service Agent (Serverless workloads, including batch args):
-        `service-<PROJECT_NUMBER>@dataproc-accounts.iam.gserviceaccount.com`.
-    -   Compute Engine Service Agent (persistent disks):
-        `service-<PROJECT_NUMBER>@compute-system.iam.gserviceaccount.com`.
-    -   Cloud Storage service agent of the bucket's project (any bucket with a
-        default CMEK key, such as staging, warehouse, or output buckets):
+    principal. An agent needs `roles/cloudkms.cryptoKeyEncrypterDecrypter` on
+    a key only when a resource it manages uses that key:
+    -   Objects in a Cloud Storage bucket whose default key it is (staging,
+        warehouse, or output buckets): the Cloud Storage service agent of the
+        bucket's project,
         `service-<PROJECT_NUMBER>@gs-project-accounts.iam.gserviceaccount.com`.
-    -   BigQuery encryption service account (CMEK tables):
+    -   A batch, session, or cluster created with the key (`--kms-key`, or a
+        cluster's disk encryption key): the Dataproc Service Agent,
+        `service-<PROJECT_NUMBER>@dataproc-accounts.iam.gserviceaccount.com`,
+        and the Compute Engine Service Agent,
+        `service-<PROJECT_NUMBER>@compute-system.iam.gserviceaccount.com`.
+    -   CMEK BigQuery tables: the BigQuery encryption service account,
         `bq-<PROJECT_NUMBER>@bigquery-encryption.iam.gserviceaccount.com`.
 -   A missing agent grant fails I/O on the protected resource with a Cloud KMS
     permission error, while the workload principal still needs only Storage or
-    BigQuery roles. Keys must be in the same location as the resource.
+    BigQuery roles. A workload without a key of its own that writes to a CMEK
+    bucket therefore needs the key grant only for the bucket project's Cloud
+    Storage service agent; granting it to other agents or principals adds
+    access without fixing anything. Keys must be in the same location as the
+    resource.
 
 ### Lakehouse (BigLake) Iceberg REST Catalog vs. Storage
 
@@ -122,7 +128,11 @@ without a listener on that port.
 -   **Private endpoints** (Cloud SQL private IP, AlloyDB, other VPCs,
     on-premises): A route through VPC Network Peering (not transitive), Private
     Service Connect, or Cloud VPN/Interconnect, plus firewall rules that allow
-    the traffic on both sides.
+    the traffic on both sides. Without such a route a private address is
+    unreachable even when every firewall allows the traffic, because the
+    default internet gateway does not carry it. Check the route and the
+    firewall for the failing address (`route_verdict` and `firewall_verdict`
+    with `--target_ip`) and fix every part that blocks.
 
 ### Firewall Evaluation
 
