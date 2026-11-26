@@ -289,10 +289,11 @@ does not read `s`.
 
 -   **Spill with high GC** points at memory pressure rather than a tuning nit.
     Check executor memory sizing before touching partition counts.
--   **Duration skew with input or shuffle skew** is *data* skew: salt the key,
-    or let AQE split it (`spark.sql.adaptive.enabled=true`). Duration skew with
-    even byte counts points at the node: preemption, a noisy neighbour, slow
-    local disk, or slow external calls.
+-   **Duration skew with input or shuffle skew** is *data* skew: broadcast the
+    small side or salt the key. AQE splits only very large partitions (see
+    Partition Skew in `references/ingestion_triage_matrix.md`). Duration skew
+    with even byte counts points at the node: preemption, a noisy neighbour,
+    slow local disk, or slow external calls.
 -   **Large output partitions with large shuffle partitions** means shuffle
     parallelism is too low. Raise `spark.sql.shuffle.partitions`.
 -   **Output bytes far exceeding input bytes**, especially with a long

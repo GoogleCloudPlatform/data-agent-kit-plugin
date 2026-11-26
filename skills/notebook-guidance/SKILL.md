@@ -9,7 +9,7 @@ description: |-
     4. You need to query BigQuery from within a notebook. DO NOT use the Python BigQuery client library; instead, you MUST use the `%%bqsql` magics explained in this skill.
 license: Apache-2.0
 metadata:
-  version: v9
+  version: v10
   publisher: google
 ---
 
@@ -96,7 +96,9 @@ comparison is involved, favor a notebook and a visualization. A notebook is the
 
 Notebooks run in specific **Kernels** (execution backends). You MUST ensure the
 kernel’s Python environment contains the necessary libraries (`bigframes`,
-`ipykernel`, etc.).
+`ipykernel`, etc.). This section is about which kernel to **execute** a
+notebook's cells on, not what code to generate; for Spark session initialization
+follow `@skill:gcp-spark`.
 
 ### Kernel Types
 
@@ -122,9 +124,10 @@ kernel’s Python environment contains the necessary libraries (`bigframes`,
         -   Read the `metadata.kernelspec` notebook field. A **Remote Spark**
             kernel name starts with a connection hash.
     -   **Infer from Context**:
-        -   For a "Spark" notebook, evidence of a local Python setup (such as a
-            Spark Connect session) means you should lean towards **Local
-            Python**. Without such evidence, lean towards **Remote Spark**.
+        -   When choosing a kernel to **execute** an existing "Spark" notebook's
+            cells, evidence of a local Python setup (such as a Spark Connect
+            session) means you should lean towards **Local Python**. Without
+            such evidence, lean towards **Remote Spark**.
     -   **Ask when Ambiguous**: If multiple options fit, ask if they prefer a
         **Local Python** or a **Remote Kernel**.
 2.  **For Local Setup**: Use `@skill:managing-python-dependencies` to verify if

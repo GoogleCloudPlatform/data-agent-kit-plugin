@@ -192,6 +192,20 @@ def normalize_entry_path(entry_path: str) -> str:
   return normalized.removeprefix("/")
 
 
+def _is_safe_entry_name(entry_name: str) -> bool:
+  """Returns True when an archive entry path is relative without traversal."""
+  if (
+      not entry_name
+      or "\x00" in entry_name
+      or entry_name.startswith(("/", "\\"))
+  ):
+    return False
+  parts = entry_name.replace("\\", "/").split("/")
+  return (
+      ":" not in parts[0] and ".." not in parts and parts[-1] not in ("", ".")
+  )
+
+
 def resolve_entry(zf: zipfile.ZipFile, entry_path: str) -> Optional[str]:
   """Resolves a user supplied entry path to an actual archive entry name.
 
@@ -207,7 +221,9 @@ def resolve_entry(zf: zipfile.ZipFile, entry_path: str) -> Optional[str]:
     The matching entry name, or None when no entry matches.
   """
   normalized = normalize_entry_path(entry_path)
-  names = zf.namelist()
+  if not _is_safe_entry_name(normalized):
+    return None
+  names = [name for name in zf.namelist() if _is_safe_entry_name(name)]
   name_set = frozenset(names)
 
   candidates = [normalized]
@@ -248,13 +264,15 @@ def find_inner_classes(zf: zipfile.ZipFile, entry_name: str) -> List[str]:
   Returns:
     A sorted list of companion class entry names.
   """
-  if not entry_name.endswith(".class"):
+  if not entry_name.endswith(".class") or not _is_safe_entry_name(entry_name):
     return []
   prefix = entry_name.removesuffix(".class") + "$"
   return sorted(
       name
       for name in zf.namelist()
-      if name.startswith(prefix) and name.endswith(".class")
+      if _is_safe_entry_name(name)
+      and name.startswith(prefix)
+      and name.endswith(".class")
   )
 
 
@@ -509,13 +527,22 @@ def render_class_summary(data: bytes, entry_name: str) -> str:
 
 def disassemble_with_javap(data: bytes, entry_name: str) -> Optional[str]:
   """Disassembles bytecode with `javap`, returning None when unavailable."""
+  if not _is_safe_entry_name(entry_name):
+    raise ValueError(f"Unsafe archive entry path: {entry_name}")
   javap = shutil.which("javap")
   if not javap:
     return None
 
   with tempfile.TemporaryDirectory() as work_dir:
-    # Preserve the package directory layout so javap accepts the class name.
-    class_path = os.path.join(work_dir, entry_name)
+    work_real = os.path.realpath(work_dir)
+    class_path = os.path.realpath(
+        os.path.join(work_real, entry_name.replace("\\", "/"))
+    )
+    if (
+        class_path == work_real
+        or os.path.commonpath([work_real, class_path]) != work_real
+    ):
+      raise ValueError(f"Unsafe archive entry path: {entry_name}")
     os.makedirs(os.path.dirname(class_path), exist_ok=True)
     with open(class_path, "wb") as f:
       f.write(data)

@@ -42,26 +42,34 @@ Identify the one that failed before recommending a role.
 ### Customer-Managed Encryption Keys (CMEK)
 
 -   At-rest CMEK is applied by Google service agents, not by the workload
-    principal. Each agent that touches a protected resource needs
-    `roles/cloudkms.cryptoKeyEncrypterDecrypter` on the key:
-    -   Dataproc Service Agent (Serverless workloads, including batch args):
-        `service-<PROJECT_NUMBER>@dataproc-accounts.iam.gserviceaccount.com`.
-    -   Compute Engine Service Agent (persistent disks):
-        `service-<PROJECT_NUMBER>@compute-system.iam.gserviceaccount.com`.
-    -   Cloud Storage service agent of the bucket's project (any bucket with a
-        default CMEK key, such as staging, warehouse, or output buckets):
+    principal. An agent needs `roles/cloudkms.cryptoKeyEncrypterDecrypter` on
+    a key only when a resource it manages uses that key:
+    -   Objects in a Cloud Storage bucket whose default key it is (staging,
+        warehouse, or output buckets): the Cloud Storage service agent of the
+        bucket's project,
         `service-<PROJECT_NUMBER>@gs-project-accounts.iam.gserviceaccount.com`.
-    -   BigQuery encryption service account (CMEK tables):
+    -   A batch, session, or cluster created with the key (`--kms-key`, or a
+        cluster's disk encryption key): the Dataproc Service Agent,
+        `service-<PROJECT_NUMBER>@dataproc-accounts.iam.gserviceaccount.com`,
+        and the Compute Engine Service Agent,
+        `service-<PROJECT_NUMBER>@compute-system.iam.gserviceaccount.com`.
+    -   CMEK BigQuery tables: the BigQuery encryption service account,
         `bq-<PROJECT_NUMBER>@bigquery-encryption.iam.gserviceaccount.com`.
 -   A missing agent grant fails I/O on the protected resource with a Cloud KMS
     permission error, while the workload principal still needs only Storage or
-    BigQuery roles. Keys must be in the same location as the resource.
+    BigQuery roles. A workload without a key of its own that writes to a CMEK
+    bucket therefore needs the key grant only for the bucket project's Cloud
+    Storage service agent; granting it to other agents or principals adds
+    access without fixing anything. Keys must be in the same location as the
+    resource.
 
 ### Lakehouse (BigLake) Iceberg REST Catalog vs. Storage
 
 -   Catalog calls (namespaces, table metadata commits) are authorized by BigLake
-    IAM, while data and metadata files are read and written in Cloud Storage. A
-    catalog call can succeed while file I/O returns `403`.
+    IAM (`roles/biglake.viewer` for reads, `roles/biglake.editor` for table
+    metadata writes, rather than `roles/biglake.admin`), while data and metadata
+    files are read and written in Cloud Storage. A catalog call can succeed
+    while file I/O returns `403`.
 -   The catalog's credential mode decides who needs bucket access:
     -   **End-user credentials** (the default `--credential-mode=end-user`): The
         Spark principal needs BigLake roles plus bucket roles
@@ -74,9 +82,9 @@ Identify the one that failed before recommending a role.
         (with `io-impl=org.apache.iceberg.gcp.gcs.GCSFileIO`). The Spark
         principal then needs only BigLake roles. Adding the header to an
         end-user-credentials catalog changes nothing.
--   Read the mode with `gcloud alpha biglake iceberg catalogs describe
-    <CATALOG>` and the bucket bindings with `gcloud storage buckets
-    get-iam-policy gs://<BUCKET>`.
+-   Read the mode with `gcloud biglake iceberg catalogs describe <CATALOG>` and
+    the bucket bindings with
+    `gcloud storage buckets get-iam-policy gs://<BUCKET>`.
 
 ### Secrets & Database Authentication
 
@@ -111,10 +119,19 @@ without a listener on that port.
 ### Egress Paths by Destination
 
 -   **Google APIs**: Private Google Access on the subnet (Dataproc enables it
-    automatically for Serverless and internal-IP-only cluster subnets) plus a
-    route to the default internet gateway, or routes and DNS for
-    `private.googleapis.com` / `restricted.googleapis.com`. A deleted default
-    route breaks API access even with Private Google Access enabled.
+    when a Serverless workload or an internal-IP-only cluster, the default on
+    image `2.2+`, is created on a subnet in the workload's own project, unless
+    the Dataproc Service Agent lacks permission to change the subnet, and never
+    on Shared VPC subnets in another project) plus a route to the default
+    internet gateway, or routes and DNS for `private.googleapis.com` /
+    `restricted.googleapis.com`. A deleted default route breaks API access even
+    with Private Google Access enabled.
+    -   `False` on a subnet in the workload's own project doesn't block a new
+        Serverless workload or cut it off from Google APIs. Under a running
+        cluster, it means that the VMs reach Google APIs only through another
+        path, such as Cloud NAT.
+    -   On a Shared VPC subnet in another project, `False` fails the workload at
+        startup until a network administrator of the host project turns it on.
 -   **Public internet endpoints** (other clouds' object stores, public APIs,
     package mirrors): A Cloud NAT gateway on a Cloud Router in the workload
     region whose configuration covers the subnet's primary range. Private Google
@@ -122,7 +139,11 @@ without a listener on that port.
 -   **Private endpoints** (Cloud SQL private IP, AlloyDB, other VPCs,
     on-premises): A route through VPC Network Peering (not transitive), Private
     Service Connect, or Cloud VPN/Interconnect, plus firewall rules that allow
-    the traffic on both sides.
+    the traffic on both sides. Without such a route a private address is
+    unreachable even when every firewall allows the traffic, because the
+    default internet gateway does not carry it. Check the route and the
+    firewall for the failing address (`route_verdict` and `firewall_verdict`
+    with `--target_ip`) and fix every part that blocks.
 
 ### Firewall Evaluation
 
@@ -160,12 +181,21 @@ without a listener on that port.
     from the subnet's primary range. Google Cloud reserves 4 addresses per range
     ($2^{32 - p} - 4$ usable, for example `12` in a `/28`), and other workloads
     and VMs share the rest, so `usable_hosts_estimate` is an upper bound.
+-   At most, the free addresses are the range size minus the 4 reserved ones,
+    the running VMs, and the `RESERVED` addresses that no VM uses. List
+    reservations in the host project and in the workload's project: on Shared
+    VPC, service projects can reserve addresses in the host's subnets too.
 -   Exhaustion either blocks creation (`stateMessage` reports insufficient IP
     addresses and no Spark application starts) or, with dynamic allocation,
     leaves executor requests unfulfilled after the driver starts. Fix with a
     larger or additional range, a lower executor ceiling
     (`spark.dynamicAllocation.maxExecutors` or `spark.executor.instances`), or
     fewer concurrent workloads.
+-   Size a range for the driver, the executor ceiling
+    (`spark.dynamicAllocation.maxExecutors`, default 1000 on Serverless, or
+    `spark.executor.instances` without autoscaling), the reservations, and the 4
+    reserved addresses. Fewer executors work only down to the Serverless
+    minimum: 2 on runtimes `2.3` and earlier, and 1 on `3.0` and later.
 
 ### VPC Service Controls (`VPC-SC`)
 
@@ -193,25 +223,28 @@ without a listener on that port.
     `3.1` to `3.5`). Image `3.0` runs Spark `4.1` on Scala `2.13`.
 -   **Binary matching**: `_2.12` and `_2.13` artifacts are incompatible, and
     connectors built for another Spark minor version (names such as
-    `spark-3.5-...` or `...-runtime-3.5_2.13`) can fail on Spark 4 even with the
-    right Scala suffix (`NoSuchMethodError`, `NoClassDefFoundError`,
-    `AbstractMethodError`). `classified_jars` (`spark_env_inspector.py
-    --action=classpath`) compares both versions with the runtime. Note that
-    Serverless `2.2` uses Scala `2.13` while image `2.2` uses `2.12`. Pure Java
-    JDBC drivers carry neither version.
+    `spark-3.5-...` or `...-runtime-3.5_2.13`) are binary-incompatible with
+    Spark 4 even when the Scala suffix (`_2.13`) matches (`NoSuchMethodError`,
+    `NoClassDefFoundError`, `AbstractMethodError`). Never attach a Spark 3.5 or
+    4.1 build on runtime `3.0` (Spark 4.0). `classified_jars`
+    (`spark_env_inspector.py --action=classpath`) compares both versions with
+    the runtime. Note that Serverless `2.2` uses Scala `2.13` while image `2.2`
+    uses `2.12`. Pure Java JDBC drivers carry neither version.
 -   **Spark 4 defaults**: ANSI SQL mode is on, so casts, overflows, and division
     by zero that used to produce `NULL` now fail (see Section 4). Planning a
     runtime upgrade belongs to the `gcp-managed-spark-upgrades` skill.
 
 ### Bundled vs. External Connector JARs
 
--   Serverless runtimes bundle the Cloud Storage and BigQuery connectors
-    (versions are listed in each runtime's release notes). Change the BigQuery
-    connector with `dataproc.sparkBqConnector.version` or
+-   Serverless runtimes bundle the Cloud Storage, BigQuery, and Iceberg (`2.2+`
+    and `3.0`) connectors (versions are listed in each runtime's release notes).
+    Change the BigQuery connector with `dataproc.sparkBqConnector.version` or
     `dataproc.sparkBqConnector.uri` instead of adding a second copy with
-    `--jars`. GCE images provide Iceberg through the `ICEBERG` optional
-    component; otherwise attach the runtime JAR that matches the image's Spark
-    and Scala versions.
+    `--jars`, and drop any mismatched external Iceberg JAR on Serverless rather
+    than substituting a JAR for another Spark version from `gs://spark-lib/`.
+    GCE images provide Iceberg through the `ICEBERG` optional component;
+    otherwise attach the runtime JAR that matches both the image's Spark and
+    Scala versions.
 -   Connectors outside the runtime (such as the Spanner connector or vendor JDBC
     drivers) fail with `ClassNotFoundException` or `DATA_SOURCE_NOT_FOUND`
     unless attached through `--jars`/`jarFileUris` or `spark.jars.packages`.
@@ -277,6 +310,18 @@ without a listener on that port.
     opens its own connection, so keep `numPartitions` within the database's
     connection limits. `fetchsize` tunes rows per round trip and does not add
     parallelism.
+-   **JDBC TLS**: Each driver has its own TLS properties: PostgreSQL `sslmode`
+    and `sslrootcert`, MySQL `sslMode` and `trustCertificateKeyStoreUrl`, and
+    SQL Server and MariaDB `trustServerCertificate`, where `true` skips the
+    certificate check (verify with `false` and a truststore). PgJDBC has no
+    `trustServerCertificate`. A direct connection keeps certificate verification
+    on. Through a Cloud SQL or AlloyDB connector (socket factory), the driver's
+    own TLS stays off (`sslmode=disable`, `sslMode=DISABLED`, or
+    `encrypt=false`), because the connector encrypts the connection itself. On
+    Dataproc, the Conscrypt provider can break the TLS handshake of the SQL
+    Server driver and the AlloyDB connector. Remove it with
+    `dataproc.artifacts.remove=conscrypt` (Serverless) or
+    `dataproc:dataproc.conscrypt.provider.enable=false` (clusters).
 
 ### CSV Framing & ANSI Type Casting
 
@@ -295,8 +340,8 @@ without a listener on that port.
         records. `badRecordsPath` is a Databricks option that Apache Spark
         ignores.
     -   Turning ANSI mode off globally restores silent `NULL` or wrapped values
-        for every query in the job, so bad data loads unnoticed. It is a
-        trade-off for the user to decide, not a fix.
+        for every query in the job, so bad data loads unnoticed (see
+        `ANSI Mode Trade-Off` in `SKILL.md`).
 
 ### Destination Schema Alignment
 
@@ -304,10 +349,17 @@ without a listener on that port.
     `scripts/spark_code_inspector.py`) with the live destination schema (via
     `@skill:discover-assets`): `REQUIRED` columns reject nulls, and nested
     `STRUCT` / `RECORD` fields must match by name and type.
--   Fix by casting and aligning columns and by filtering or quarantining rows
-    that violate `REQUIRED`. Relaxing or extending the destination schema is a
-    change for the table owner, and dropping, replacing, or overwriting an
-    existing table loses data.
+-   Fix by casting and aligning columns whose values fit the target type, and by
+    filtering or quarantining rows that violate `REQUIRED`. Text with no
+    lossless form in the target type, such as a label in an integer column,
+    stays text: put it in a new nullable field, or leave the mapping to the
+    owner. Relaxing or extending the destination schema is a change for the
+    table owner, and dropping, replacing, or overwriting an existing table loses
+    data.
+-   BigQuery changes a column's type in place only from `INT64` to `NUMERIC`,
+    `BIGNUMERIC`, or `FLOAT64`, from `NUMERIC` to `BIGNUMERIC` or `FLOAT64`, or
+    to a wider parameterized type. Any other change, such as `INTEGER` to
+    `STRING`, needs a new field or a new table.
 
 --------------------------------------------------------------------------------
 
@@ -324,16 +376,24 @@ complete remote script with `scripts/spark_code_inspector.py`:
     Parquet, ORC, and Avro (with any internal codec) and bzip2 or uncompressed
     text are splittable.
 -   **Partition Skew**: Compare `task_quantile_metrics.duration_millis.maximum`
-    and the input byte/record quantiles with `percentile_50`. Enable Adaptive
-    Query Execution skew handling, check join and exchange sizes
-    (`spark_applications.py --action=sql`) and whether hints or
-    `spark.sql.autoBroadcastJoinThreshold` prevent broadcasting a small side,
-    or salt hot keys.
+    and the input byte/record quantiles with `percentile_50`. Adaptive Query
+    Execution (on by default from Spark 3.2) splits a skewed join partition only
+    when it exceeds
+    `spark.sql.adaptive.skewJoin.skewedPartitionThresholdInBytes` (256 MB by
+    default) and several times the median, and never splits the output of a user
+    `repartition(N, col)`. For a hot key below that size, broadcast the small
+    side and drop any repartition on the key, which keeps the hot key in one
+    task (check join sizes with `spark_applications.py --action=sql`, and remove
+    join hints or a `spark.sql.autoBroadcastJoinThreshold` setting that block
+    the broadcast), or salt the key. A keyless `repartition(N)` doesn't help
+    while a sort-merge join shuffles on the key again.
 -   **Row-Wise Python UDFs**: `@udf` functions move rows one at a time between
     the JVM and Python workers (`BatchEvalPython` in the plan, which the bundled
     tools do not print). Find them in the code with
     `scripts/spark_code_inspector.py` and replace them with built-in functions
-    or vectorized `@pandas_udf` functions.
+    from `pyspark.sql.functions` (string, hash, date, and JSON functions cover
+    most row logic). Use a vectorized `@pandas_udf` only for logic that no
+    built-in function expresses.
 -   **Small-File Overhead**: Many short tasks that each read little data mean
     scheduling dominates. Look for many small input files or a
     `spark.sql.files.maxPartitionBytes` far below its default; compact files,

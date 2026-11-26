@@ -9,7 +9,7 @@ description: 'Primary entry point for building, managing, and orchestrating data
   '
 license: Apache-2.0
 metadata:
-  version: v3
+  version: v4
   publisher: google
 ---
 
@@ -83,7 +83,7 @@ multiple pipelines already in the repo:
 Option             | Best For                                                                                                     | Skill
 ------------------ | ------------------------------------------------------------------------------------------------------------ | -----
 **Cloud Composer** | GCP Data Pipeline Orchestration deploy/schedule existing pipelines(dbt + Spark, etc.). as a unified workflow | `gcp-pipeline-orchestration`
-**Provisioning**   | Declarative GCP resource creation (Datasets, DTS, Dataproc)                                                  | `gcp-pipeline-resource-provisioning`
+**Provisioning**   | Declarative GCP resource creation (Datasets, DTS, Dataproc)                                                  | `gcp-pipeline-provisioning`
 
 > [!TIP]
 >
@@ -136,13 +136,13 @@ two-step process:
 Once the user confirms, activate the corresponding skill:
 
 Choice        | Skill to Activate
-------------- | ------------------------------------
+------------- | --------------------------------
 BigQuery DTS  | `bigquery-data-transfer-service`
 dbt           | `dbt-bigquery`
 Dataflow      | `gcp-dataflow`
 Dataform      | `dataform-bigquery`
 Spark         | `gcp-spark`
 Spark Debug   | `gcp-spark-troubleshooting`
-Provisioning  | `gcp-pipeline-resource-provisioning`
+Provisioning  | `gcp-pipeline-provisioning`
 Orchestration | `gcp-pipeline-orchestration`
 Other         | — (general GCP assistance)
