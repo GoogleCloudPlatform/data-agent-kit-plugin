@@ -4,8 +4,8 @@ description: |
   Authors, optimizes, and runs PySpark and Spark code on Google Cloud Managed Spark
   (Dataproc Serverless, clusters, and Spark Connect).
   Use when:
-  - Authoring or running Spark/PySpark notebooks in any kernel (Local Kernel with
-    spark-remote templates, Remote Spark / Remote Kernel, ManagedSparkSession, Spark Connect).
+  - Authoring or running Spark/PySpark notebooks in any kernel (Local Kernel,
+    Spark Connect, ManagedSparkSession, Remote Spark / Remote Kernel).
   - Querying, transforming, or writing data with PySpark or Spark SQL, including
     Apache / BigLake Iceberg, BigQuery, GCS, Spanner, Cloud SQL, AlloyDB,
     Amazon S3, or Azure Blob Storage / ADLS Gen2.
@@ -17,7 +17,7 @@ description: |
   - Troubleshooting failed Spark jobs or Dataproc batches (use @skill:gcp-spark-troubleshooting).
 license: Apache-2.0
 metadata:
-  version: v35
+  version: v36
   publisher: google
 ---
 
@@ -161,18 +161,9 @@ metadata:
         >     `SparkSession.builder.appName("<APP_NAME>").getOrCreate()` (never
         >     `.master("local")`).
 
-        Refer to `references/gcloud_dataproc.md` for detailed configuration.
-        Minimal initialization for **Local Python** notebooks / Spark Connect:
-
-        ```python
-        from google.cloud.managed_spark_connect import ManagedSparkSession
-
-        spark = (
-            ManagedSparkSession.builder.projectId("<PROJECT_ID>")
-            .location("<REGION>")
-            .getOrCreate()
-        )
-        ```
+        Initialize **Local Python** notebooks / Spark Connect with the two cells
+        from step 1. Refer to `references/gcloud_dataproc.md` for detailed
+        configuration.
     *   **Production Logging**: In standalone production PySpark batch jobs and
         scripts (`.py`), you MUST use the standard Python `logging` module
         instead of `print()` statements for job lifecycle, progress, and record

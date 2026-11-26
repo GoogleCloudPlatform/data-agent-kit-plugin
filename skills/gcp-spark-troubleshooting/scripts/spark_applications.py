@@ -324,6 +324,17 @@ def human_millis(ms: Any) -> str:
   return f"{value / 60_000:.1f} min"
 
 
+def human_count(num: Any) -> str:
+  """Formats a record count; None or negative (unavailable) render as n/a."""
+  if num is None:
+    return "n/a"
+  try:
+    value = int(num)
+  except (TypeError, ValueError):
+    return str(num)
+  return "n/a" if value < 0 else f"{value:,}"
+
+
 def truncate(text: Any, limit: int = _TEXT_LIMIT) -> str:
   text = str(text or "")
   return text if len(text) <= limit else text[:limit] + " ...[truncated]"
@@ -862,7 +873,14 @@ def stage_row(stage: Dict[str, Any]) -> Dict[str, Any]:
       ),
       "memoryBytesSpilled": field(metrics, "memory_bytes_spilled"),
       "diskBytesSpilled": field(metrics, "disk_bytes_spilled"),
+      "taskDurationMedianMillis": None,
+      "taskDurationMaxMillis": None,
   }
+  # Present only when the request asked for task quantile metrics.
+  durations = field(stage, "task_quantile_metrics", "duration_millis")
+  if isinstance(durations, dict) and field(durations, "count"):
+    row["taskDurationMedianMillis"] = field(durations, "percentile_50")
+    row["taskDurationMaxMillis"] = field(durations, "maximum")
   reason = field(stage, "failure_reason", default="")
   if reason:
     row["failureReason"] = summarize_error(reason)
@@ -1029,12 +1047,14 @@ def action_summary(client: SparkApplicationsClient, args) -> None:
 
 
 def action_stages(client: SparkApplicationsClient, args) -> None:
-  """Prints one row per stage."""
-  app_id, _, _ = client.resolve_application(args.application_id)
+  """Prints one row per stage, with its task duration quantiles if computed."""
+  app_id, info, _ = client.resolve_application(args.application_id)
   params: Dict[str, Any] = {}
   if args.stage_status:
     params["stageStatus"] = f"STAGE_STATUS_{args.stage_status}"
-  if args.quantiles:
+  # The table shows each stage's median and maximum task duration, so it
+  # always requests the quantiles. JSON output includes them only on request.
+  if args.quantiles or args.format != "json":
     params["summaryMetricsMask"] = "task_quantile_metrics"
   stages = client.paginate(
       "searchStages",
@@ -1055,16 +1075,25 @@ def action_stages(client: SparkApplicationsClient, args) -> None:
   if not rows:
     print("No stages matched.")
     return
+  if len(stages) >= args.limit:
+    print(
+        f"> Showing the first {args.limit} stages (--limit). If the"
+        " application has more, raise --limit, because --sort ranks only the"
+        " stages shown.\n"
+    )
   print(
-      "| Stage | Status | Tasks (failed/killed) | Duration | GC / run |"
-      " Input | Shuffle R/W | Spill mem/disk | Name |"
+      "| Stage | Status | Tasks (failed/killed) | Duration |"
+      " Task median / max | GC / run | Input | Shuffle R/W | Spill mem/disk |"
+      " Name |"
   )
-  print("|---|---|---|---|---|---|---|---|---|")
+  print("|---|---|---|---|---|---|---|---|---|---|")
   for r in rows:
     print(
         f"| {r['stageId']}.{r['attempt']} | {r['status']} |"
         f" {r['numTasks']} ({r['numFailedTasks']}/{r['numKilledTasks']}) |"
         f" {human_millis(r['durationMillis'])} |"
+        f" {human_millis(r['taskDurationMedianMillis'])} /"
+        f" {human_millis(r['taskDurationMaxMillis'])} |"
         f" {human_millis(r['jvmGcTimeMillis'])} /"
         f" {human_millis(r['executorRunTimeMillis'])} |"
         f" {human_bytes(r['inputBytes'])} |"
@@ -1073,6 +1102,22 @@ def action_stages(client: SparkApplicationsClient, args) -> None:
         f" {human_bytes(r['memoryBytesSpilled'])} /"
         f" {human_bytes(r['diskBytesSpilled'])} | {r['name']} |"
     )
+  if all(r["taskDurationMedianMillis"] is None for r in rows):
+    status = info.get("quantileDataStatus")
+    if status == "QUANTILE_DATA_STATUS_COMPLETED":
+      print("\n> No task quantiles: the stages shown ran no tasks.")
+    else:
+      if status == "QUANTILE_DATA_STATUS_FAILED":
+        cause = "Dataproc failed to compute them after the application ended"
+      else:
+        cause = (
+            "Dataproc computes them only after the Spark application ends, so"
+            " a running application has none"
+        )
+      print(
+          f"\n> No task quantiles came back: {cause}. To find slow tasks,"
+          " run --action=tasks --stage_id=<N> --sort=duration."
+      )
   for r in rows:
     if r.get("failureReason"):
       print(
@@ -1088,7 +1133,17 @@ _QUANTILE_ROWS = (
     ("Scheduler delay", ("scheduler_delay_millis",), human_millis),
     ("Input bytes", ("input_metrics", "bytes_read"), human_bytes),
     ("Output bytes", ("output_metrics", "bytes_written"), human_bytes),
-    ("Shuffle read bytes", ("shuffle_read_metrics", "read_bytes"), human_bytes),
+    # Dataproc builds this quantile from local shuffle blocks only.
+    (
+        "Shuffle read bytes (local)",
+        ("shuffle_read_metrics", "read_bytes"),
+        human_bytes,
+    ),
+    (
+        "Shuffle read records",
+        ("shuffle_read_metrics", "read_records"),
+        human_count,
+    ),
     (
         "Shuffle write bytes",
         ("shuffle_write_metrics", "write_bytes"),
@@ -1608,7 +1663,11 @@ def main(argv: Optional[List[str]] = None) -> int:
   parser.add_argument(
       "--quantiles",
       action="store_true",
-      help="Include task quantile metrics (stages)",
+      help=(
+          "Include task quantile metrics in JSON output (stages). The table"
+          " always requests them. Dataproc computes them after the Spark"
+          " application ends."
+      ),
   )
   parser.add_argument(
       "--sort",
