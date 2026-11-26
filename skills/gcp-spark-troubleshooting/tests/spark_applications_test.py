@@ -814,6 +814,127 @@ class ActionsTest(unittest.TestCase):
     self.assertEqual(query["summaryMetricsMask"], ["task_quantile_metrics"])
     self.assertIn("| 2.0 | FAILED | 4 (1/0) |", out)
     self.assertIn("Caused by: java.lang.X: y", out)
+    # No quantiles came back for this stage.
+    self.assertIn("| n/a / n/a |", out)
+    self.assertIn("No task quantiles came back: Dataproc computes them", out)
+
+  def test_stages_explains_failed_quantiles_that_cover_no_task(self):
+    apps = {
+        "sparkApplications": [{
+            "application": {
+                "applicationId": "app-1",
+                "quantileDataStatus": "QUANTILE_DATA_STATUS_FAILED",
+            }
+        }]
+    }
+    stages = {
+        "sparkApplicationStages": [{
+            "stageId": "3",
+            "status": "STAGE_STATUS_COMPLETE",
+            "numTasks": 200,
+            "taskQuantileMetrics": {"durationMillis": {}},
+        }]
+    }
+    out, _ = self._run("stages", [(200, apps), (200, stages)])
+    self.assertIn("| 3.0 | COMPLETE | 200 (0/0) | n/a | n/a / n/a |", out)
+    self.assertIn(
+        "No task quantiles came back: Dataproc failed to compute them after"
+        " the application ended.",
+        out,
+    )
+    self.assertIn("--action=tasks --stage_id=<N> --sort=duration", out)
+
+  def test_stages_with_completed_quantiles_and_no_tasks(self):
+    apps = {
+        "sparkApplications": [{
+            "application": {
+                "applicationId": "app-1",
+                "quantileDataStatus": "QUANTILE_DATA_STATUS_COMPLETED",
+            }
+        }]
+    }
+    stages = {
+        "sparkApplicationStages": [
+            {"stageId": "6", "status": "STAGE_STATUS_SKIPPED"}
+        ]
+    }
+    out, _ = self._run(
+        "stages", [(200, apps), (200, stages)], stage_status="SKIPPED"
+    )
+    self.assertIn("No task quantiles: the stages shown ran no tasks.", out)
+    self.assertNotIn("running application", out)
+
+  def test_stages_note_needs_every_stage_without_quantiles(self):
+    stages = {
+        "sparkApplicationStages": [
+            {
+                "stageId": "4",
+                "status": "STAGE_STATUS_COMPLETE",
+                "taskQuantileMetrics": {
+                    "durationMillis": {
+                        "count": "3",
+                        "percentile50": "100",
+                        "maximum": "300",
+                    }
+                },
+            },
+            {"stageId": "5", "status": "STAGE_STATUS_SKIPPED"},
+        ]
+    }
+    out, _ = self._run("stages", [(200, _APPS), (200, stages)])
+    self.assertIn("| 100 ms / 300 ms |", out)
+    self.assertIn("| n/a / n/a |", out)
+    self.assertNotIn("No task quantiles", out)
+
+  def test_stages_says_when_limit_cuts_the_list(self):
+    stages = {
+        "sparkApplicationStages": [{"stageId": "1"}, {"stageId": "2"}],
+        "nextPageToken": "next",
+    }
+    out, transport = self._run("stages", [(200, _APPS), (200, stages)], limit=2)
+    self.assertEqual(len(transport.requests), 2)
+    self.assertIn("Showing the first 2 stages (--limit).", out)
+
+  def test_stages_table_shows_task_median_and_max(self):
+    stages = {
+        "sparkApplicationStages": [{
+            "stageId": "4",
+            "status": "STAGE_STATUS_COMPLETE",
+            "numTasks": 12,
+            "name": "join at Job.py:42",
+            "taskQuantileMetrics": {
+                "durationMillis": {
+                    "count": "12",
+                    "percentile50": "4000",
+                    "maximum": "30000",
+                }
+            },
+        }]
+    }
+    out, transport = self._run("stages", [(200, _APPS), (200, stages)])
+    # The table needs the quantiles even without --quantiles.
+    self.assertEqual(
+        transport.query(1)["summaryMetricsMask"], ["task_quantile_metrics"]
+    )
+    self.assertIn("Task median / max", out)
+    self.assertIn("| 4.0 s / 30.0 s |", out)
+    self.assertNotIn("No task quantiles", out)
+    self.assertNotIn("--limit", out)
+
+  def test_stages_json_requests_quantiles_only_with_flag(self):
+    stages = {"sparkApplicationStages": [{"stageId": "4"}]}
+    _, transport = self._run(
+        "stages", [(200, _APPS), (200, stages)], format="json"
+    )
+    self.assertNotIn("summaryMetricsMask", transport.query(1))
+
+    _, transport_with_flag = self._run(
+        "stages", [(200, _APPS), (200, stages)], format="json", quantiles=True
+    )
+    self.assertEqual(
+        transport_with_flag.query(1)["summaryMetricsMask"],
+        ["task_quantile_metrics"],
+    )
 
   def test_stage_renders_quantiles(self):
     stage = {
@@ -828,7 +949,15 @@ class ActionsTest(unittest.TestCase):
                     "percentile50": "3",
                     "percentile75": "4",
                     "maximum": "90000",
-                }
+                },
+                "shuffleReadMetrics": {
+                    "readBytes": {"count": "4", "maximum": "2048"},
+                    "readRecords": {
+                        "count": "4",
+                        "percentile50": "10",
+                        "maximum": "25000",
+                    },
+                },
             },
         }
     }
@@ -841,6 +970,8 @@ class ActionsTest(unittest.TestCase):
     self.assertIn(
         "| Task duration | 1 ms | 2 ms | 3 ms | 4 ms | 1.5 min |", out
     )
+    self.assertIn("| Shuffle read bytes (local) | 0 B |", out)
+    self.assertIn("| Shuffle read records | 0 | 0 | 10 | 0 | 25,000 |", out)
 
   def test_summary_json_includes_failed_stages(self):
     responses = [
